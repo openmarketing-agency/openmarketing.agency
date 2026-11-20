@@ -25,7 +25,13 @@ jobs:
 
       - name: Validate Docker Compose
         working-directory: .
-        run: docker compose config --quiet
+        env:
+          OPENROUTER_API_KEY: compose-config-test
+        run: |
+          docker compose config --quiet
+          docker compose -f compose.yaml -f compose.vm.yaml config --quiet
+          docker compose -f compose.yaml -f compose.vm.yaml -f compose.dev.yaml config --quiet
+          OMA_RELEASE_TAG=v0.0.0 docker compose -f compose.yaml -f compose.vm.yaml -f vm/compose.release.yaml config --quiet
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -39,3 +45,13 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run build
+
+  vm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: docker build --platform linux/amd64 -f vm/Dockerfile -t oma-vm:test .
+      - run: bash vm/tests/smoke.sh oma-vm:test

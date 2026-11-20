@@ -1,0 +1,29 @@
+services:
+  vm:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: vm/Dockerfile
+    privileged: true
+    restart: unless-stopped
+    stop_grace_period: 45s
+    ports:
+      - "127.0.0.1:${OMA_GATEWAY_PORT:-8642}:8642"
+      - "127.0.0.1:${OMA_DASHBOARD_PORT:-9119}:9119"
+      - "127.0.0.1:${OMA_CATALOG_PORT:-18080}:9080"
+    volumes:
+      - vm-data:/opt/data
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in your environment file}
+      OMA_HERMES_MODEL: ${OMA_HERMES_MODEL:-openai/gpt-4.1-mini}
+      OMA_HERMES_GATEWAY_SEED: ${OMA_HERMES_GATEWAY_SEED:-}
+      OMA_INIT_CATALOG: '1'
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-m", "2", "-o", "/dev/null", "http://127.0.0.1:8642/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 120s
+
+volumes:
+  vm-data:

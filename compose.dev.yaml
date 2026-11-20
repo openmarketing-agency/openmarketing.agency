@@ -12,7 +12,10 @@ services:
           ignore:
             - package.json
             - package-lock.json
+            - node_modules/
+            - .next/
             - data/
+            - .env*
         - action: rebuild
           path: ./oma/package.json
         - action: rebuild

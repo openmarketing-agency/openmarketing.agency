@@ -1,6 +1,6 @@
 # Scheduled jobs in agent configs
 
-**Status: source contract only.** Declaring `jobs` does not register or run anything. Registration and activation require separate provisioning through the target Hermes runtime.
+Declaring `jobs` defines a schedule in the source. The [OMA VM installer](../README.md#self-host-on-a-bare-metal-server) registers bundled jobs in Hermes and leaves them paused.
 
 An agent definition can declare `jobs`, an optional list of scheduled **Hermes cron agent jobs**. The source definitions include the three requested recurring jobs below; other agents use `jobs: []`. These are declarations only, not active schedules. Missing `jobs` means none; the intended contract rejects `jobs: null`.
 
