@@ -1,10 +1,9 @@
 import { exists, parseSpec } from "./playbook";
 import { join, resolve } from "node:path";
 
-// A bare ID resolves to the repository's campaigns/ directory. In the VM
-// build the same sources are staged at the legacy path recorded by the registry.
+// A bare ID resolves to the campaign sources in the checkout or the VM image.
 const checkoutCampaigns = resolve(import.meta.dir, "..", "..", "..", "campaigns");
-const bundledCampaigns = resolve(import.meta.dir, "..", "..", "playbooks");
+const bundledCampaigns = resolve(import.meta.dir, "..", "..", "campaigns");
 
 export async function withPlaybookSources<T>(
   spec: string, skillsDir: string | undefined,

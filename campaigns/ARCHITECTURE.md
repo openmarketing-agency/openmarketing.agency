@@ -99,7 +99,7 @@ openmarketing.agency/
           SOUL.md
 ```
 
-Each campaign owns its agent configurations, SOUL files, and campaign-specific skills under its own `skills/` directory. Reusable skills remain in the repository's top-level `skills/` directory. There is no separate reusable-agent library or cross-campaign agent-override layer. For compatibility with existing installations, the VM image still stores the bundled sources at `/opt/oma/playbooks`.
+Each campaign owns its agent configurations, SOUL files, and campaign-specific skills under its own `skills/` directory. Reusable skills remain in the repository's top-level `skills/` directory. There is no separate reusable-agent library or cross-campaign agent-override layer. The VM image stores the bundled sources at `/opt/oma/campaigns` for the local campaign installer.
 
 Each campaign's root `config.yaml` declares OMA metadata: `id`, `name`, `version`, `description`, the canonical `orchestrator` agent ID, and an `agents` list of canonical IDs. Resolve each listed ID to `agents/<id>/config.yaml` and the adjacent `SOUL.md`, validating that the directory and declared ID match and have the owning campaign's prefix. The orchestrator must appear in that roster. These manifests describe the team, not a fixed execution order or native Hermes runtime configuration; the files alone do not install agents, schedule jobs, or activate a mission. Agent-level tools, skills, and jobs remain in each agent's config.
 

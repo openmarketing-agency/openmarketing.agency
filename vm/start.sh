@@ -36,6 +36,9 @@ if [[ "$HERMES_DASHBOARD" == 1 ]]; then
         --host "$HERMES_DASHBOARD_HOST" --port "$HERMES_DASHBOARD_PORT" --no-open &
 fi
 /command/s6-setuidgid hermes hermes gateway run &
+if [[ "${OMA_EXPORT_CONSOLE_GATEWAY_KEY:-0}" == 1 ]]; then
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python /opt/oma/workspace.py &
+fi
 
 # An unexpected exit should be visible to the hosting provider.
 wait -n

@@ -3,9 +3,8 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { campaigns } from "@/lib/campaigns";
 import { getDb } from "@/lib/db";
-import { maxSetupAnswerLength, setupGreeting, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
+import { maxSetupAnswerLength, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
 import { AgentChatError, answerAgentPrompt, getAgentRun, startAgentRun } from "./agent-chat";
 
 const exchange = z.object({ question: z.string(), answer: z.string() });
@@ -24,37 +23,24 @@ const schema = z.discriminatedUnion("status", [
 ]);
 type State = z.infer<typeof schema>;
 type ActiveState = Extract<State, { status: "running" }> & { handle: string };
-type Snapshot = { json: string; state: State } | undefined;
-
-const setupInstructions = [
-  "Guide the owner through Open Marketing Agency setup. Learn what they are marketing and their most important goal.",
-  "Ask at most three short questions, one at a time, using only the clarify tool. Ask for a public website if useful.",
-  "Offer two to four relevant single-select choices where helpful. Treat an empty answer as a skip.",
-  "Continue from any saved answers supplied with the request. Do not repeat their questions.",
-  "Never request secrets, credentials, or private information. Do not browse, run commands, use other tools, or change any files or settings.",
-  "Close with a brief summary and a practical next step using one of the available campaigns. Do not claim anything was configured.",
-  "Available campaigns: " + campaigns.map(({ title, description }) => `${title} — ${description}`).join(" "),
-].join("\n");
+type Snapshot = { json: string; state: State | null } | undefined;
 
 function read(userId: string): Snapshot {
-  const row = getDb().prepare("SELECT state FROM workspace_onboarding WHERE user_id = ?").get(userId);
-  if (!row) return;
-  const json = String(row.state);
-  return { json, state: schema.parse(JSON.parse(json)) };
+  const row = getDb().prepare("SELECT onboarding_state FROM users WHERE id = ?").get(userId);
+  if (row?.onboarding_state == null) return;
+  const json = String(row.onboarding_state);
+  const stored: unknown = JSON.parse(json);
+  // A JSON null is also empty, but keep its original text for the conditional update.
+  return { json, state: stored === null ? null : schema.parse(stored) };
 }
 
-function save(userId: string, previous: Snapshot, next: State) {
-  const db = getDb();
-  const json = JSON.stringify(next);
-  // Compare the entire snapshot so a response from another tab cannot overwrite fresh progress.
-  return (previous
-    ? db.prepare("UPDATE workspace_onboarding SET state = ? WHERE user_id = ? AND state = ?")
-        .run(json, userId, previous.json)
-    : db.prepare("INSERT INTO workspace_onboarding (user_id, state) VALUES (?, ?) ON CONFLICT (user_id) DO NOTHING")
-        .run(userId, json)).changes === 1;
+function save(userId: string, previous: Snapshot, next: State | null) {
+  // IS also matches a NULL snapshot on the first write, so every update guards against a concurrent change.
+  return getDb().prepare("UPDATE users SET onboarding_state = ? WHERE id = ? AND onboarding_state IS ?")
+    .run(next === null ? null : JSON.stringify(next), userId, previous?.json ?? null).changes === 1;
 }
 
-function view(state?: State, question?: SetupQuestion): OnboardingView {
+function view(state?: State | null, question?: SetupQuestion): OnboardingView {
   if (!state) return { history: [], step: { status: "intro" } };
   const { history } = state;
   if (state.status === "done" || state.status === "skipped") return { history, step: { status: "closed" } };
@@ -68,10 +54,11 @@ export function readOnboarding(userId: string): OnboardingView {
 
 export function beginOnboarding(userId: string): OnboardingView {
   const previous = read(userId);
-  if (previous && previous.state.status !== "failed") return view(previous.state);
+  const state = previous?.state;
+  if (state && state.status !== "failed") return view(state);
   // Persist the idempotency key before making any gateway request.
   const next: State = {
-    status: "running", history: previous?.state.history ?? [], sessionId: randomUUID(), turnId: randomUUID(),
+    status: "running", history: state?.history ?? [], sessionId: randomUUID(), turnId: randomUUID(),
   };
   return save(userId, previous, next) ? view(next) : readOnboarding(userId);
 }
@@ -110,18 +97,18 @@ function fail(userId: string, previous: Snapshot, state: Extract<State, { status
 }
 
 export async function refreshOnboarding(userId: string): Promise<OnboardingView> {
-  const previous = read(userId);
+  let previous = read(userId);
+  if (!previous?.state) {
+    // Only the signed-in page's POST starts the run. Reading or prefetching the page stays read-only.
+    beginOnboarding(userId);
+    previous = read(userId);
+  }
   const state = previous?.state;
   if (state?.status !== "running") return view(state);
   if (!state.handle) {
-    const input = state.history.length
-      ? "Continue my workspace setup. My saved answers: " + JSON.stringify(state.history.slice(-3).map(({ question, answer }) => ({
-          question: question.slice(0, 500), answer,
-        })))
-      : setupGreeting;
     const { handle } = await startAgentRun(userId, {
-      sessionId: state.sessionId, turnId: state.turnId, message: input,
-    }, setupInstructions);
+      sessionId: state.sessionId, turnId: state.turnId, message: "start onboarding",
+    });
     return record(userId, previous, { ...state, handle });
   }
 
@@ -130,12 +117,12 @@ export async function refreshOnboarding(userId: string): Promise<OnboardingView>
     run = await getAgentRun(userId, state.handle);
   } catch (error) {
     if (error instanceof AgentChatError && error.status === 404) {
-      return fail(userId, previous, state, "This setup session expired. Resume with your saved answers.");
+      return fail(userId, previous, state, "This setup session expired. Your previous answers are still visible here.");
     }
     throw error;
   }
   if (run.status === "failed") {
-    return fail(userId, previous, state, "The agent couldn’t finish setup. Resume with your saved answers.");
+    return fail(userId, previous, state, "The agent couldn’t finish setup. Your previous answers are still visible here.");
   }
   const question = run.status === "running" ? run.prompt : undefined;
   if (question?.kind === "approval") {
@@ -194,18 +181,25 @@ export async function submitOnboardingAnswer(userId: string, input: unknown): Pr
   return deliverAnswer(userId, { json: JSON.stringify(next), state: next }, next, question);
 }
 
-export function completeOnboarding(userId: string) {
+export function completeOnboarding(userId: string, persistCompletion = true) {
   const previous = read(userId);
-  if (previous?.state.status === "done" || previous?.state.status === "skipped") return true;
-  if (previous?.state.status !== "ready") return false;
-  return save(userId, previous, { status: "done", history: previous.state.history });
+  const state = previous?.state;
+  if (!state) return !persistCompletion;
+  if (state.status === "done" || state.status === "skipped") return true;
+  if (state.status !== "ready") return false;
+  const next: State | null = persistCompletion ? { status: "done", history: state.history } : null;
+  return save(userId, previous, next);
+}
+
+export function resetOnboarding(userId: string): OnboardingView {
+  getDb().prepare("UPDATE users SET onboarding_state = NULL WHERE id = ?").run(userId);
+  return view();
 }
 
 export function skipOnboarding(userId: string) {
   // Skipping works even while another tab is writing progress or the gateway is down.
   getDb().prepare(`
-    INSERT INTO workspace_onboarding (user_id, state) VALUES (?, ?)
-    ON CONFLICT (user_id) DO UPDATE SET state = excluded.state
-    WHERE json_extract(workspace_onboarding.state, '$.status') != 'done'
-  `).run(userId, JSON.stringify({ status: "skipped", history: [] }));
+    UPDATE users SET onboarding_state = ?
+    WHERE id = ? AND json_extract(onboarding_state, '$.status') IS NOT 'done'
+  `).run(JSON.stringify({ status: "skipped", history: [] }), userId);
 }

@@ -13,7 +13,7 @@ make production  # Production console build and the same full runtime
 
 The default OpenRouter model is [GPT-4.1 Mini](https://openrouter.ai/openai/gpt-4.1-mini). Set `OMA_HERMES_MODEL` in the environment file to choose a different OpenRouter model. Inference requires network access to OpenRouter. Set `OMA_INIT_CATALOG=0` to start Hermes without initializing the optional app catalog.
 
-Create the installation's single account at [http://localhost:3000/register](http://localhost:3000/register). After registration, you can chat with oma-agent to set up your workspace or skip straight to Campaigns. Setup answers are saved in SQLite so you can pick up where you left off. Existing accounts can start or resume setup from Campaigns. Sign in again at [http://localhost:3000/login](http://localhost:3000/login). The Hermes dashboard is on port `9119`, its authenticated gateway is on `8642`, and optional catalog apps route through Traefik on `18080`. Compose initializes the catalog. Use these commands to verify it and start a local chat:
+Create the installation's single account at [http://localhost:3000/register](http://localhost:3000/register). After registration, oma-agent opens the setup conversation with its first question. You can skip setup and go straight to Campaigns. Setup answers are saved in SQLite so you can pick up where you left off. Existing accounts can start or resume setup from Campaigns. Sign in again at [http://localhost:3000/login](http://localhost:3000/login). The Hermes dashboard is on port `9119`, its authenticated gateway is on `8642`, and optional catalog apps route through Traefik on `18080`. Compose initializes the catalog. Use these commands to verify it and start a local chat:
 
 ```sh
 docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm omactl doctor
@@ -22,7 +22,12 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes c
 
 Open [Chat](http://localhost:3000/chat) in the console to talk with the bundled Hermes agent. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available.
 
+Set `OMA_HERMES_CLARIFY_TIMEOUT=0` in `.env` to let the default profile wait indefinitely for an answer to an onboarding question. A positive value sets the wait in seconds. Leaving the variable unset keeps the profile's saved setting, which defaults to 90 seconds on a fresh installation. Recreate the VM container after changing the value.
+
 Use [Campaigns](http://localhost:3000/dashboard) in the console to configure campaign tool selections and MCP connections. Composio is optional and requires an API key for its hosted tool catalog.
+Campaign details use the saved agent records. To add an integration for an eligible agent, open **Agent tools** and browse **All tools**.
+
+The full stack shows brands, playbooks, campaigns, and agent records from the default oma-agent profile's `/opt/data/oma/` directory. Campaign overviews show their linked brand and playbook, goals, plans, and saved agents. From a brand or playbook page, edit brand details or the playbook strategy. Saves update the existing YAML in the agent volume. The dashboard lists campaigns once oma-agent has saved them.
 
 The console serves [API documentation](http://localhost:3000/docs) and a [database readiness endpoint](http://localhost:3000/health/ready).
 

@@ -157,13 +157,13 @@ export async function agentStatus(): Promise<AgentStatus> {
   }
 }
 
-export async function startAgentRun(userId: string, input: unknown, instructions?: string) {
+export async function startAgentRun(userId: string, input: unknown) {
   const parsed = turnInput.safeParse(input);
   if (!parsed.success) throw new AgentChatError(422, "Enter a valid chat message and try again.");
   const config = await gateway();
   const { sessionId, turnId, message } = parsed.data;
   const response = await sendRequest(config, "/runs", {
-    turnId, body: { session_id: sessionId, input: message, instructions },
+    turnId, body: { session_id: sessionId, input: message },
   });
   const result = z.object({ run_id: runId }).safeParse(await readJson(response));
   if (!result.success) throw new AgentChatError(502, "Hermes didn’t return a valid run identifier.");

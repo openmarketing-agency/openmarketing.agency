@@ -15,8 +15,10 @@ export interface User {
   session_version: number;
 }
 
+export const userColumns = "id, email, hashed_password, session_version";
+
 export function findUser(id: string): User | undefined {
-  return getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as User | undefined;
+  return getDb().prepare(`SELECT ${userColumns} FROM users WHERE id = ?`).get(id) as User | undefined;
 }
 
 function registrationClosed() {
@@ -38,7 +40,7 @@ export async function registerUser({ email, password }: UserCreateInput): Promis
   const user = db.prepare(`
     INSERT INTO users (id, email, hashed_password) VALUES (?, ?, ?)
     ON CONFLICT (slot) DO NOTHING
-    RETURNING *
+    RETURNING ${userColumns}
   `).get(randomUUID(), email.trim().toLowerCase(), hash) as User | undefined;
   if (!user) throw registrationClosed();
   return user;
@@ -53,7 +55,7 @@ export async function updateOwnProfile(user: User, { email, password }: UserUpda
 
     const updated = db.prepare(`
       UPDATE users SET email = ?, hashed_password = ?, session_version = ? WHERE id = ?
-      RETURNING *
+      RETURNING ${userColumns}
     `).get(email?.trim().toLowerCase() ?? current.email, hash ?? current.hashed_password,
       current.session_version + (hash === undefined ? 0 : 1), user.id) as User | undefined;
     if (!updated) throw unauthorized();

@@ -31,7 +31,6 @@ const EMPTY_TOOLKITS: Toolkit[] = [];
 export function ToolkitBrowser({
   scope = WORKSPACE_SCOPE,
   agentName,
-  suggestions = [],
   snapshot: initialSnapshot,
   selected: initialSelected = [],
   metadata: initialMetadata = [],
@@ -42,7 +41,6 @@ export function ToolkitBrowser({
 }: {
   scope?: AgentConnectionScope;
   agentName?: string;
-  suggestions?: Toolkit[];
   snapshot: ConnectionSnapshot;
   selected?: string[];
   metadata?: Toolkit[];
@@ -56,7 +54,7 @@ export function ToolkitBrowser({
   ) => void;
 }) {
   const isAgent = scope.playbookId !== "workspace";
-  const [tab, setTab] = useState(isAgent ? "suggested" : "connected");
+  const [tab, setTab] = useState(isAgent ? "assigned" : "connected");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<{ id: string; name: string }[]>(
@@ -80,8 +78,9 @@ export function ToolkitBrowser({
   const [pending, startTransition] = useTransition();
   const revision = useRef(0);
   const [retry, setRetry] = useState(0);
+  const showCategories = !isAgent || tab === "all";
   useEffect(() => {
-    if (demo) return;
+    if (demo || !showCategories) return;
     let live = true;
     toolCategoriesAction()
       .then((result) => {
@@ -99,7 +98,7 @@ export function ToolkitBrowser({
     return () => {
       live = false;
     };
-  }, [demo]);
+  }, [demo, showCategories]);
   useEffect(() => {
     const counter = revision;
     const current = ++counter.current;
@@ -147,7 +146,7 @@ export function ToolkitBrowser({
   }, [tab, search, category, retry, demo, demoCatalog]);
   // Keep no-auth tools and active accounts visible even if the catalog is temporarily unavailable.
   const merged = new Map(
-    [...suggestions, ...metadata, ...page.items].map((tool) => [
+    [...metadata, ...page.items].map((tool) => [
       tool.slug,
       tool,
     ]),
@@ -168,11 +167,7 @@ export function ToolkitBrowser({
     ]),
   ];
   const localItems = (
-    tab === "suggested"
-      ? suggestions
-      : tab === "assigned"
-        ? selected.map(known)
-        : connectedIds.map(known)
+    tab === "assigned" ? selected.map(known) : connectedIds.map(known)
   ).filter(
     (tool) =>
       `${tool.name} ${tool.slug} ${tool.description}`
@@ -184,7 +179,6 @@ export function ToolkitBrowser({
   const visible = tab === "all" ? page.items : localItems;
   const tabs = isAgent
     ? [
-        { id: "suggested", label: "Suggested" },
         { id: "assigned", label: `Added (${selected.length})` },
         { id: "all", label: "All tools" },
       ]
@@ -349,11 +343,7 @@ export function ToolkitBrowser({
       <div className="tool-browser-heading">
         <div>
           <h2>{isAgent ? "Tools for this agent" : "Your tools"}</h2>
-          <p>
-            {isAgent
-              ? "Start with a suggestion or find another tool for this role."
-              : "Connect accounts once, then choose which specialists use them."}
-          </p>
+          {!isAgent && <p>Connect accounts once, then choose which specialists use them.</p>}
         </div>
         <button
           className="icon-button"
@@ -438,11 +428,6 @@ export function ToolkitBrowser({
           <ChevronDown size={14} />
         </label>
       </div>
-      {isAgent && tab === "suggested" && (
-        <p className="tool-suggestion-note">
-          Suggestions are optional. Choose the tools that suit your workflow.
-        </p>
-      )}
       {!snapshot.configured && !demo && (
         <p className="notice">
           To enable tool connections, set <code>COMPOSIO_API_KEY</code> in the
@@ -585,7 +570,7 @@ export function ToolkitBrowser({
               {tab === "connected"
                 ? "No connected tools yet"
                 : tab === "assigned"
-                  ? "Choose tools for this agent"
+                  ? "No tools added yet"
                   : "No tools match these filters"}
             </h3>
             <p>

@@ -27,6 +27,7 @@ import {
 } from "@/lib/connection-attempt";
 import { type CatalogQuery, toolkitSlug } from "@/lib/tool-catalog";
 import { ToolConnectionConfigurationError } from "@/lib/tool-connection-service";
+import { loadAgentWorkspace, savedCampaignToolAgents } from "@/lib/server/agent-workspace";
 
 export async function refreshConnectionsAction() {
   const user = await requireUser();
@@ -164,9 +165,14 @@ export async function generateMcpAction(
 ): Promise<{ connection?: HostedMcpConnection; error?: string }> {
   const user = await requireUser();
   try {
+    const { records, error } = await loadAgentWorkspace();
+    if (error) return { error };
+    const campaign = records?.campaigns.find((item) => item.id === playbookId);
+    if (!records || !campaign) return { error: "Campaign not found." };
+    const agentIds = new Set(savedCampaignToolAgents(records, campaign).map((agent) => agent.scopeId));
     const saved = await listToolAssignments(await requireAccessToken());
     if (!saved.ok) return { error: saved.error.message };
-    const slugs = campaignToolSlugs(playbookId, saved.data);
+    const slugs = campaignToolSlugs(playbookId, saved.data.filter((assignment) => agentIds.has(assignment.agent_id)));
     const session = await (await toolConnections()).mcpSession(user.id, slugs);
     return { connection: hostedMcpConnection(session.mcp) };
   } catch (error) {

@@ -6,6 +6,7 @@
 !vm/
 !vm/bootstrap.py
 !vm/start.sh
+!vm/workspace.py
 !vm/prepare-seed.sh
 !vm/oma-soul.md
 !vm/installer/

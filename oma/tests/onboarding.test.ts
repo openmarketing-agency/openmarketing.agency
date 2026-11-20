@@ -1,16 +1,16 @@
-/** Verifies the SQLite upgrade and resumable onboarding against a simulated Runs API. */
+/** Verifies account-owned onboarding state and resumable setup against a simulated Runs API. */
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { after, test } from "node:test";
 
 import { getDb } from "../lib/db";
+import { isOnboardingDocumentRequest } from "../lib/onboarding";
 import { AgentChatError } from "../lib/server/agent-chat";
 import {
-  beginOnboarding, completeOnboarding, readOnboarding, refreshOnboarding, skipOnboarding, submitOnboardingAnswer,
+  beginOnboarding, completeOnboarding, readOnboarding, refreshOnboarding, resetOnboarding, skipOnboarding, submitOnboardingAnswer,
 } from "../lib/server/onboarding";
 
 const directory = mkdtempSync(join(tmpdir(), "oma-onboarding-test-"));
@@ -18,19 +18,8 @@ process.env.OMA_DATA_DIR = directory;
 process.env.OMA_AGENT_URL = "http://vm:8642";
 process.env.OMA_AGENT_API_KEY = "fixture-agent-key";
 
-const legacy = new DatabaseSync(join(directory, "oma.sqlite"));
-legacy.exec(`
-  CREATE TABLE users (
-    id TEXT PRIMARY KEY NOT NULL,
-    slot INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK (slot = 1),
-    email TEXT NOT NULL,
-    hashed_password TEXT NOT NULL,
-    session_version INTEGER NOT NULL DEFAULT 0
-  ) STRICT;
-  INSERT INTO users (id, email, hashed_password) VALUES ('owner', 'owner@example.test', 'fixture-hash');
-  PRAGMA user_version = 1;
-`);
-legacy.close();
+getDb().prepare("INSERT INTO users (id, email, hashed_password) VALUES (?, ?, ?)")
+  .run("owner", "owner@example.test", "fixture-hash");
 
 after(() => {
   getDb().close();
@@ -42,9 +31,21 @@ const firstQuestion = {
   question: "What are you working on?", choices: ["A new site"], multi_select: false,
 };
 
-test("upgrades a version 1 database and resumes setup after a lost clarification response", async (t) => {
-  assert.equal(getDb().prepare("SELECT email FROM users WHERE id = ?").get("owner")?.email, "owner@example.test");
-  assert.equal(getDb().prepare("PRAGMA user_version").get()?.user_version, 2);
+test("a document load can request a reset while in-app navigation and prefetches resume setup", () => {
+  assert.equal(isOnboardingDocumentRequest(new Headers({
+    "sec-fetch-dest": "document", "sec-fetch-mode": "navigate",
+  })), true);
+  assert.equal(isOnboardingDocumentRequest(new Headers({
+    "sec-fetch-dest": "empty", "sec-fetch-mode": "cors", rsc: "1",
+  })), false);
+  assert.equal(isOnboardingDocumentRequest(new Headers({
+    "sec-fetch-dest": "document", "sec-fetch-mode": "navigate", "sec-purpose": "prefetch",
+  })), false);
+});
+
+test("starts onboarding on the first refresh and resumes after a lost clarification response", async (t) => {
+  assert.equal(getDb().prepare("SELECT onboarding_state FROM users WHERE id = ?").get("owner")?.onboarding_state, null);
+  assert.equal(getDb().prepare("SELECT 1 FROM sqlite_schema WHERE name = 'workspace_onboarding'").get(), undefined);
   assert.equal(readOnboarding("owner").step.status, "intro");
   assert.equal(completeOnboarding("owner"), false);
 
@@ -54,8 +55,7 @@ test("upgrades a version 1 database and resumes setup after a lost clarification
   t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
     if (url.endsWith("/runs")) {
       const body = JSON.parse(String(options.body));
-      assert.match(body.instructions, /using only the clarify tool/);
-      assert.equal(body.input, "I’m ready to set up my marketing workspace.");
+      assert.deepEqual(body, { session_id: body.session_id, input: "start onboarding" });
       const key = new Headers(options.headers).get("Idempotency-Key");
       assert.ok(key);
       keys.push(key);
@@ -75,7 +75,6 @@ test("upgrades a version 1 database and resumes setup after a lost clarification
       : { status: "running", pending_controls: [firstQuestion] });
   });
 
-  beginOnboarding("owner");
   await Promise.all([refreshOnboarding("owner"), refreshOnboarding("owner")]);
   assert.equal(keys.length, 2);
   assert.equal(keys[0], keys[1]);
@@ -95,18 +94,23 @@ test("upgrades a version 1 database and resumes setup after a lost clarification
   });
   assert.equal(replyCount, 1);
   assert.equal(completeOnboarding("owner"), true);
+  skipOnboarding("owner");
   assert.equal(beginOnboarding("owner").step.status, "closed");
+  const row = getDb().prepare("SELECT onboarding_state FROM users WHERE id = ?").get("owner");
+  assert.deepEqual(JSON.parse(String(row?.onboarding_state)), {
+    status: "done", history: [{ question: firstQuestion.question, answer: "A new site" }],
+  });
 });
 
-test("restarts an expired run with the saved answers and blocks tool approvals", async (t) => {
-  getDb().exec("DELETE FROM workspace_onboarding");
+test("keeps saved answers in the transcript on restart and blocks tool approvals", async (t) => {
+  getDb().prepare("UPDATE users SET onboarding_state = NULL WHERE id = ?").run("owner");
   let starts = 0;
   let status = "question";
   t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
     if (url.endsWith("/runs")) {
       starts++;
-      const { input } = JSON.parse(String(options.body));
-      if (starts === 2) assert.match(input, /"answer":"A new site"/);
+      const body = JSON.parse(String(options.body));
+      assert.deepEqual(body, { session_id: body.session_id, input: "start onboarding" });
       return Response.json({ run_id: `run_onboarding_${starts}` }, { status: 202 });
     }
     if (url.endsWith("/clarify")) return new Response(null, { status: 204 });
@@ -136,10 +140,69 @@ test("restarts an expired run with the saved answers and blocks tool approvals",
   assert.equal(completeOnboarding("owner"), false);
 });
 
-test("skips setup without any gateway and cannot reopen it on a stale request", async () => {
-  getDb().exec("DELETE FROM workspace_onboarding");
-  beginOnboarding("owner");
+test("a stored JSON null reads as fresh setup and is replaced on the first refresh", async (t) => {
+  const db = getDb();
+  db.prepare("UPDATE users SET onboarding_state = ? WHERE id = ?").run("null", "owner");
+  const stored = () => db.prepare("SELECT onboarding_state FROM users WHERE id = ?").get("owner")?.onboarding_state;
+
+  assert.deepEqual(readOnboarding("owner"), { history: [], step: { status: "intro" } });
+  assert.equal(stored(), "null");
+  assert.equal(completeOnboarding("owner"), false);
+
+  const gateway = t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url.endsWith("/runs")) return Response.json({ run_id: "run_fresh_setup" }, { status: 202 });
+    assert.ok(url.endsWith("/runs/run_fresh_setup"));
+    return Response.json({ status: "running", pending_controls: [firstQuestion] });
+  });
+
+  assert.equal((await refreshOnboarding("owner")).step.status, "running");
+  assert.notEqual(stored(), "null");
+  const { step } = await refreshOnboarding("owner");
+  assert.equal(step.status, "running");
+  assert.equal(step.question?.question, firstQuestion.question);
+  assert.equal(gateway.mock.callCount(), 2);
+});
+
+test("finishing a development setup clears the account state for another run", () => {
+  const ready = {
+    status: "ready",
+    history: [{ question: firstQuestion.question, answer: "A new site" }],
+    message: "Start with the SEO campaign.",
+  };
+  getDb().prepare("UPDATE users SET onboarding_state = ? WHERE id = ?").run(JSON.stringify(ready), "owner");
+
+  assert.equal(completeOnboarding("owner", false), true);
+  assert.deepEqual(readOnboarding("owner"), { history: [], step: { status: "intro" } });
+  assert.equal(getDb().prepare("SELECT onboarding_state FROM users WHERE id = ?").get("owner")?.onboarding_state, null);
+  assert.equal(completeOnboarding("owner", false), true);
+});
+
+test("resetting a finished setup makes the account eligible to start again", () => {
+  getDb().prepare("UPDATE users SET onboarding_state = ? WHERE id = ?")
+    .run(JSON.stringify({ status: "done", history: [] }), "owner");
+  assert.equal(readOnboarding("owner").step.status, "closed");
+
+  assert.deepEqual(resetOnboarding("owner"), { history: [], step: { status: "intro" } });
+  assert.equal(getDb().prepare("SELECT onboarding_state FROM users WHERE id = ?").get("owner")?.onboarding_state, null);
+});
+
+test("skipping setup during automatic startup keeps it closed", async (t) => {
+  getDb().prepare("UPDATE users SET onboarding_state = NULL WHERE id = ?").run("owner");
+  const requested = Promise.withResolvers<void>();
+  const response = Promise.withResolvers<Response>();
+  const gateway = t.mock.method(globalThis, "fetch", () => {
+    requested.resolve();
+    return response.promise;
+  });
+
+  const startup = refreshOnboarding("owner");
+  await requested.promise;
   skipOnboarding("owner");
-  assert.deepEqual(await refreshOnboarding("owner"), { history: [], step: { status: "closed" } });
+  response.resolve(Response.json({ run_id: "run_onboarding" }, { status: 202 }));
+
+  const closed = { history: [], step: { status: "closed" } };
+  assert.deepEqual(await startup, closed);
+  assert.deepEqual(await refreshOnboarding("owner"), closed);
   assert.equal(beginOnboarding("owner").step.status, "closed");
+  assert.equal(gateway.mock.callCount(), 1);
 });

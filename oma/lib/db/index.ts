@@ -1,4 +1,4 @@
-/** Opens the installation's SQLite database and applies schema changes before serving requests. */
+/** Opens the installation's SQLite database and initializes the schema for a fresh installation. */
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -19,19 +19,20 @@ export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
   }
 }
 
-function migrate(db: DatabaseSync): void {
+function initializeSchema(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
-    if (version === 2) return;
-    if (version !== 0 && version !== 1) throw new Error("This SQLite database requires a newer version of OMA.");
+    if (version === 3) return;
+    if (version !== 0) throw new Error("This SQLite database uses a different schema. Start OMA with a fresh data directory.");
 
-    if (version === 0) db.exec(`
+    db.exec(`
       CREATE TABLE users (
         id TEXT PRIMARY KEY NOT NULL,
         slot INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK (slot = 1),
         email TEXT NOT NULL,
         hashed_password TEXT NOT NULL,
-        session_version INTEGER NOT NULL DEFAULT 0
+        session_version INTEGER NOT NULL DEFAULT 0,
+        onboarding_state TEXT CHECK (onboarding_state IS NULL OR json_valid(onboarding_state))
       ) STRICT;
 
       CREATE TABLE refresh_tokens (
@@ -65,15 +66,7 @@ function migrate(db: DatabaseSync): void {
         PRIMARY KEY (user_id, playbook_id, agent_id, toolkit_slug)
       ) STRICT;
 
-    `);
-
-    db.exec(`
-      CREATE TABLE workspace_onboarding (
-        user_id TEXT PRIMARY KEY NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        state TEXT NOT NULL CHECK (json_valid(state))
-      ) STRICT;
-
-      PRAGMA user_version = 2;
+      PRAGMA user_version = 3;
     `);
   });
 }
@@ -86,8 +79,8 @@ export function getDb(): DatabaseSync {
   const db = new DatabaseSync(join(directory, "oma.sqlite"), { timeout: 5000, enableForeignKeyConstraints: true });
 
   try {
+    initializeSchema(db);
     db.exec("PRAGMA journal_mode = WAL");
-    migrate(db);
   } catch (error) {
     db.close();
     throw error;

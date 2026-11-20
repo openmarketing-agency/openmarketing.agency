@@ -1,0 +1,39 @@
+/** Saves the signed-in owner's brand or strategy edits back to oma-agent. */
+
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+
+import { requireUser } from "@/lib/dal";
+import { brandUpdate, playbookUpdate, saveWorkspaceRecord, WorkspaceRequestError } from "@/lib/server/agent-workspace";
+
+export async function saveWorkspaceEdit(
+  collection: "brands" | "playbooks",
+  id: string,
+  _previous: { message: string },
+  form: FormData,
+) {
+  await requireUser();
+  if (collection !== "brands" && collection !== "playbooks") return { message: "This workspace record was not found." };
+  const revision = form.get("revision");
+  const parsed = collection === "brands"
+    ? brandUpdate.safeParse({
+      revision, name: form.get("name"), description: form.get("description"), knowledge_base: form.get("knowledge_base"),
+    })
+    : playbookUpdate.safeParse({ revision, strategy: form.get("strategy") });
+  if (!parsed.success) return { message: "Check the required fields and character limits." };
+
+  try {
+    await saveWorkspaceRecord(collection, id, parsed.data);
+  } catch (error) {
+    if (error instanceof WorkspaceRequestError) return { message: error.message };
+    throw error;
+  }
+
+  const path = "/workspace/" + collection + "/" + id;
+  revalidatePath("/dashboard");
+  revalidatePath("/campaigns/[id]", "page");
+  revalidatePath(path);
+  redirect(path + "?saved=1");
+}

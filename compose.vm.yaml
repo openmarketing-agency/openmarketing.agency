@@ -7,6 +7,7 @@ services:
     environment:
       OMA_AGENT_URL: ${OMA_AGENT_URL:-http://vm:8642}
       OMA_AGENT_API_KEY_FILE: /run/oma-console/gateway.key
+      OMA_WORKSPACE_SOCKET: /run/oma-console/workspace.sock
 
   vm:
     platform: linux/amd64
@@ -26,6 +27,7 @@ services:
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in your environment file}
       OMA_HERMES_MODEL: ${OMA_HERMES_MODEL:-openai/gpt-4.1-mini}
+      OMA_HERMES_CLARIFY_TIMEOUT: ${OMA_HERMES_CLARIFY_TIMEOUT:-}
       OMA_HERMES_GATEWAY_SEED: ${OMA_HERMES_GATEWAY_SEED:-}
       OMA_INIT_CATALOG: ${OMA_INIT_CATALOG:-1}
       OMA_EXPORT_CONSOLE_GATEWAY_KEY: '1'

@@ -10,7 +10,7 @@ import { tokenPairBody } from "../common/serialize";
 import { loadSettings, type Settings } from "../settings";
 import { hashPassword, PASSWORD_MAX_LENGTH, verifyPassword } from "./password";
 import { readRefreshToken, signAccessToken, signRefreshToken } from "./tokens";
-import { findUser, type User } from "./users";
+import { findUser, userColumns, type User } from "./users";
 
 interface RefreshRow {
   expires_at: number;
@@ -39,7 +39,7 @@ export async function login(username: string, password: string) {
   if (password.length > PASSWORD_MAX_LENGTH) throw badCredentials();
   const settings = loadSettings();
   const db = getDb();
-  const user = db.prepare("SELECT * FROM users WHERE email = ?")
+  const user = db.prepare(`SELECT ${userColumns} FROM users WHERE email = ?`)
     .get(username.trim().toLowerCase()) as User | undefined;
   if (!user) {
     // Match the password verification cost even for an unknown email.

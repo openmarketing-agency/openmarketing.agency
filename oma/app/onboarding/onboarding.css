@@ -121,12 +121,6 @@
   min-block-size: 1.5rem;
 }
 
-.onboarding-title {
-  margin-block-end: 8px;
-  font-size: 1.5rem;
-  line-height: 1.2;
-}
-
 .onboarding-reply-text {
   max-inline-size: 60ch;
   color: var(--inverse-text);
