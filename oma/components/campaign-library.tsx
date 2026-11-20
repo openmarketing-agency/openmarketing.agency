@@ -1,11 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, BookOpen, Search, Users, Workflow } from "lucide-react";
 import { campaigns, campaignTools, tools } from "@/lib/campaigns";
 import { AgentIcon } from "@/components/agent-icon";
 
-export function CampaignLibrary({ demo = false }: { demo?: boolean }) {
+export function CampaignLibrary({ demo = false, setup }: { demo?: boolean; setup?: ReactNode }) {
   const [query, setQuery] = useState("");
   const filtered = campaigns.filter((p) =>
     `${p.title} ${p.description} ${p.agents.map((agent) => agent.role).join(" ")} ${campaignTools(
@@ -28,6 +28,7 @@ export function CampaignLibrary({ demo = false }: { demo?: boolean }) {
           {campaigns.length} {campaigns.length === 1 ? "campaign" : "campaigns"}
         </span>
       </header>
+      {setup}
       <div className="agent-library-toolbar">
         <h2>Your campaigns</h2>
         <label className="search-box">
