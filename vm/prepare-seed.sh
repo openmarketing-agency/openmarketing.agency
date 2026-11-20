@@ -12,7 +12,7 @@ trap 'rm -rf "$scratch"' EXIT
 printf '{}\n' > "$scratch/setup.yaml"
 touch "$scratch/setup.env"
 
-manifests=(playbooks/*/config.yaml)
+manifests=(campaigns/*/config.yaml)
 (( ${#manifests[@]} > 0 )) || { echo 'No campaigns found' >&2; exit 1; }
 for manifest in "${manifests[@]}"; do
     campaign=${manifest%/config.yaml}

@@ -1,6 +1,8 @@
 /** Shows the signed-in owner's setup conversation in the cloud onboarding layout. */
 
+import { randomUUID } from "node:crypto";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
@@ -8,6 +10,7 @@ import { logoutAction } from "@/app/actions/auth";
 import { skipSetup } from "@/app/actions/onboarding";
 import { Brand } from "@/components/brand";
 import { requireUser } from "@/lib/dal";
+import { isOnboardingDocumentRequest } from "@/lib/onboarding";
 import { readOnboarding } from "@/lib/server/onboarding";
 
 import { OnboardingChat } from "./onboarding-chat";
@@ -18,7 +21,11 @@ export const metadata: Metadata = { title: "Set up your workspace" };
 async function Setup() {
   const user = await requireUser();
   const initial = readOnboarding(user.id);
-  if (initial.step.status === "closed") redirect("/dashboard");
+  const development = process.env.NODE_ENV === "development";
+  if (initial.step.status === "closed" && !development) redirect("/dashboard");
+  const resetOnOpen = development && isOnboardingDocumentRequest(await headers());
+  // Next can preserve the previous chat's client state when reopening the route.
+  const chatKey = development ? randomUUID() : undefined;
 
   return (
     <div className="onboarding-page">
@@ -32,7 +39,7 @@ async function Setup() {
         </div>
       </header>
       <main id="main-content" tabIndex={-1} className="onboarding-main">
-        <OnboardingChat initial={initial} />
+        <OnboardingChat key={chatKey} initial={initial} resetOnOpen={resetOnOpen} />
       </main>
     </div>
   );

@@ -10,7 +10,9 @@ import { AgentChatError } from "@/lib/server/agent-chat";
 import {
   beginOnboarding,
   completeOnboarding,
+  readOnboarding,
   refreshOnboarding,
+  resetOnboarding,
   skipOnboarding,
   submitOnboardingAnswer,
 } from "@/lib/server/onboarding";
@@ -34,13 +36,19 @@ export async function refreshSetup() {
   return withUser(refreshOnboarding);
 }
 
+export async function resetDevelopmentSetup() {
+  return withUser(process.env.NODE_ENV === "development" ? resetOnboarding : readOnboarding);
+}
+
 export async function answerSetup(id: string, generation: number, answer: string) {
   return withUser((userId) => submitOnboardingAnswer(userId, { id, generation, answer }));
 }
 
 export async function finishSetup() {
   const user = await requireUser();
-  if (!completeOnboarding(user.id)) redirect("/onboarding", "replace");
+  const persistCompletion = process.env.NODE_ENV !== "development";
+  if (!completeOnboarding(user.id, persistCompletion)) redirect("/onboarding", "replace");
+  revalidatePath("/onboarding");
   revalidatePath("/dashboard");
   redirect("/dashboard", "replace");
 }

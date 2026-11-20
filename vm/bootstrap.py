@@ -34,7 +34,7 @@ def read_registry(path):
             or not name.startswith(playbook["id"] + "__") for name in ids
         ):
             raise ValueError("Invalid installed profile ID")
-    return registry["playbooks"]
+    return registry
 
 
 def atomic_write(path, data, mode=0o600):
@@ -53,7 +53,7 @@ def seed_disk(root, seed):
     bundled_registry = seed / ".oma" / "installed.json"
     bundled_bytes = bundled_registry.read_bytes()
     paths = []
-    for playbook in read_registry(bundled_registry):
+    for playbook in read_registry(bundled_registry)["playbooks"]:
         paths.append((".oma", "setups", playbook["id"]))
         paths.extend(("profiles", agent["id"]) for agent in playbook["agents"])
 
@@ -83,6 +83,26 @@ def seed_disk(root, seed):
     return registry
 
 
+def relocate_bundled_sources(registry, installed, soul):
+    # Update saved references without replacing profiles or custom campaign sources.
+    previous_root = Path("/opt/oma/playbooks")
+    campaign_root = Path("/opt/oma/campaigns")
+    changed = False
+    for campaign in installed["playbooks"]:
+        campaign_id = campaign["id"]
+        source = campaign_root / campaign_id
+        if campaign.get("source") == str(previous_root / campaign_id) and (source / "config.yaml").is_file():
+            campaign["source"] = str(source)
+            changed = True
+    if changed:
+        atomic_write(registry, (json.dumps(installed, ensure_ascii=False, indent=2) + "\n").encode())
+
+    original = soul.read_bytes()
+    updated = original.replace(f"`{previous_root}`".encode(), f"`{campaign_root}`".encode())
+    if updated != original:
+        atomic_write(soul, updated)
+
+
 def write_env(path, values):
     path.touch(mode=0o600, exist_ok=True)
     path.chmod(0o600)
@@ -92,7 +112,7 @@ def write_env(path, values):
             set_key(path, name, value)
 
 
-def configure_model(path, provider, model, *, gateway=False):
+def configure_model(path, provider, model, *, gateway=False, clarify_timeout=None):
     config = require_readable_config_before_write(path)
     previous = deepcopy(config)
     config["model"] = model
@@ -100,6 +120,12 @@ def configure_model(path, provider, model, *, gateway=False):
         config.setdefault("providers", {})["oma-inference"] = provider
     if gateway:
         config.setdefault("gateway", {})["multiplex_profiles"] = True
+        if clarify_timeout is not None:
+            config.setdefault("agent", {})["clarify_timeout"] = clarify_timeout
+            # Hermes gives the legacy key precedence over agent.clarify_timeout.
+            legacy_clarify = config.get("clarify")
+            if isinstance(legacy_clarify, dict):
+                legacy_clarify.pop("timeout", None)
         selected = config.get("agent", {}).get("enabled_toolsets")
         if selected is None:
             selected = config.setdefault("platform_toolsets", {}).setdefault("api_server", ["hermes-api-server"])
@@ -112,7 +138,7 @@ def configure_model(path, provider, model, *, gateway=False):
         atomic_config_replace(path, config)
 
 
-def bootstrap(root, seed, model, provider, credentials, gateway_seed):
+def bootstrap(root, seed, model, provider, credentials, gateway_seed, *, clarify_timeout=None):
     registry = seed_disk(root, seed)
     if not gateway_seed:
         seed_path = managed_path(root, ".oma", "gateway-seed")
@@ -127,7 +153,9 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
     if not soul.exists():
         atomic_write(soul, (seed / "SOUL.md").read_bytes())
 
-    for playbook in read_registry(registry):
+    installed = read_registry(registry)
+    relocate_bundled_sources(registry, installed, soul)
+    for playbook in installed["playbooks"]:
         setup = managed_path(root, ".oma", "setups", playbook["id"])
         setup.mkdir(mode=0o700, parents=True, exist_ok=True)
         configure_model(managed_path(setup, "setup.yaml"), provider, model)
@@ -145,7 +173,9 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
                 values = {**credentials, "API_SERVER_KEY": gateway_key(name)}
             write_env(managed_path(profile, ".env"), values)
 
-    configure_model(managed_path(root, "config.yaml"), provider, model, gateway=True)
+    configure_model(
+        managed_path(root, "config.yaml"), provider, model, gateway=True, clarify_timeout=clarify_timeout,
+    )
     write_env(managed_path(root, ".env"), {
         **credentials,
         "API_SERVER_ENABLED": "true",
@@ -162,6 +192,13 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
 if __name__ == "__main__":
     os.umask(0o077)
     model_name = os.environ.get("OMA_HERMES_MODEL")
+    timeout = os.environ.get("OMA_HERMES_CLARIFY_TIMEOUT", "").strip()
+    try:
+        clarify_timeout = int(timeout) if timeout else None
+        if clarify_timeout is not None and clarify_timeout < 0:
+            raise ValueError
+    except ValueError:
+        raise SystemExit("Set OMA_HERMES_CLARIFY_TIMEOUT to a non-negative number of seconds") from None
     if openrouter_key := os.environ.pop("OPENROUTER_API_KEY", ""):
         model = {"provider": "openrouter", "default": model_name or "openai/gpt-4.1-mini"}
         provider = None
@@ -176,4 +213,5 @@ if __name__ == "__main__":
         Path(os.environ["HERMES_HOME"]), Path("/opt/oma/seed"),
         model, provider, credentials,
         os.environ.pop("OMA_HERMES_GATEWAY_SEED", ""),
+        clarify_timeout=clarify_timeout,
     )

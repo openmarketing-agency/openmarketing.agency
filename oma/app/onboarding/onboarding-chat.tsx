@@ -6,12 +6,14 @@ import { ArrowRight, Pencil } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 
-import { answerSetup, finishSetup, refreshSetup, startSetup } from "@/app/actions/onboarding";
-import { maxSetupAnswerLength, setupGreeting, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
+import { answerSetup, finishSetup, refreshSetup, resetDevelopmentSetup, startSetup } from "@/app/actions/onboarding";
+import { maxSetupAnswerLength, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
 
-export function OnboardingChat({ initial }: { initial: OnboardingView }) {
+export function OnboardingChat({ initial, resetOnOpen }: { initial: OnboardingView; resetOnOpen: boolean }) {
   const router = useRouter();
   const [view, setView] = useState(initial);
+  const [opening, setOpening] = useState<"checking" | "ready" | { error: string }>(resetOnOpen ? "checking" : "ready");
+  const reloadRequest = useRef<ReturnType<typeof resetDevelopmentSetup>>(undefined);
   const [connectionError, setConnectionError] = useState("");
   const [writeError, setWriteError] = useState<{ message: string; turn: number }>();
   const [retry, setRetry] = useState(0);
@@ -19,24 +21,43 @@ export function OnboardingChat({ initial }: { initial: OnboardingView }) {
   const active = useRef<HTMLDivElement>(null);
   const reply = useRef<HTMLParagraphElement>(null);
   const { history, step } = view;
-  const running = step.status === "running";
+  const shouldPoll = step.status === "intro" || step.status === "running";
   const question = step.status === "running" ? step.question : undefined;
   const questionKey = question ? `${question.id}:${question.generation}` : undefined;
 
   useEffect(() => {
-    if (step.status === "closed") router.replace("/dashboard");
-  }, [router, step.status]);
+    if (opening !== "checking") return;
+    // Both effect passes in development share the same reset request.
+    reloadRequest.current ??= resetDevelopmentSetup();
+    let cancelled = false;
+    void reloadRequest.current.then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setOpening({ error: result.message });
+        return;
+      }
+      setView(result.data);
+      setOpening("ready");
+    }, () => {
+      if (!cancelled) setOpening({ error: "Couldn’t reset setup. Refresh the page to try again." });
+    });
+    return () => { cancelled = true; };
+  }, [opening]);
 
   useEffect(() => {
-    if (history.length) active.current?.scrollIntoView({ block: "start" });
-  }, [history.length]);
+    if (opening === "ready" && step.status === "closed") router.replace("/dashboard");
+  }, [opening, router, step.status]);
 
   useEffect(() => {
-    if (questionKey || step.status === "ready") reply.current?.focus({ preventScroll: true });
-  }, [questionKey, step.status]);
+    if (opening === "ready" && history.length) active.current?.scrollIntoView({ block: "start" });
+  }, [opening, history.length]);
 
   useEffect(() => {
-    if (!running || pending) return;
+    if (opening === "ready" && (questionKey || step.status === "ready")) reply.current?.focus({ preventScroll: true });
+  }, [opening, questionKey, step.status]);
+
+  useEffect(() => {
+    if (opening !== "ready" || !shouldPoll || pending) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
 
@@ -58,7 +79,7 @@ export function OnboardingChat({ initial }: { initial: OnboardingView }) {
 
     void poll();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [running, pending, retry]);
+  }, [opening, shouldPoll, pending, retry]);
 
   function update(operation: () => ReturnType<typeof startSetup>) {
     if (pending) return;
@@ -75,18 +96,20 @@ export function OnboardingChat({ initial }: { initial: OnboardingView }) {
     });
   }
 
+  if (opening === "checking") return <p className="onboarding-loading-page sr-only" role="status">Loading your setup…</p>;
+  if (opening !== "ready") return <p className="onboarding-loading-page" role="alert">{opening.error}</p>;
   if (step.status === "closed") return null;
 
-  const intro = step.status === "intro";
   const message = step.status === "ready" || step.status === "failed" ? step.message : question?.question;
-  const typing = running && !question && !connectionError;
+  const typing = shouldPoll && !question && !connectionError;
   const error = writeError?.turn === history.length ? writeError.message : connectionError;
 
   return (
     <section className="onboarding-conversation" aria-label="Workspace setup conversation">
+      <h1 className="sr-only">Set up your workspace</h1>
       {history.map(({ question }, index) => (
         <div className="onboarding-turn" key={index}>
-          <UserMessage text={index === 0 ? setupGreeting : (history[index - 1].answer || "Skipped")} />
+          {index > 0 && <UserMessage text={history[index - 1].answer || "Skipped"} />}
           <div className="onboarding-transcript-reply">
             <span className="sr-only">Assistant</span>
             <p className="onboarding-reply-text">{question}</p>
@@ -94,17 +117,8 @@ export function OnboardingChat({ initial }: { initial: OnboardingView }) {
         </div>
       ))}
       <div className="onboarding-turn onboarding-active-turn" ref={active}>
-        {!intro && <UserMessage text={history.length ? (history.at(-1)?.answer || "Skipped") : setupGreeting} />}
+        {history.length > 0 && <UserMessage text={history.at(-1)?.answer || "Skipped"} />}
         <div className="onboarding-answer-panel">
-          {intro && (
-            <>
-              <h1 className="onboarding-title">Set up your workspace</h1>
-              <p className="onboarding-reply-text">Share a little about your project and what you want to improve. The agent will suggest a campaign to start with.</p>
-              <button type="button" className="onboarding-enter" onClick={() => update(startSetup)} disabled={pending}>
-                {pending ? "Starting…" : "Start setup"} <ArrowRight size={18} aria-hidden="true" />
-              </button>
-            </>
-          )}
           {(message || typing) && (
             <div className="onboarding-reply">
               {message ? (
@@ -135,7 +149,7 @@ export function OnboardingChat({ initial }: { initial: OnboardingView }) {
           {error && (
             <div className="onboarding-reply-error">
               <span role="alert">{error}</span>
-              {running && <button type="button" disabled={pending} onClick={() => {
+              {shouldPoll && <button type="button" disabled={pending} onClick={() => {
                 setWriteError(undefined);
                 setConnectionError("");
                 setRetry((attempt) => attempt + 1);

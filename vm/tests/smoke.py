@@ -12,7 +12,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from cron.jobs import load_jobs, use_cron_store
+from hermes_cli.oma_playbooks.source import resolve as resolve_campaign
 from hermes_yaml import safe_load
+from tools.clarify_gateway import resolve_clarify_timeout
 
 
 def check_seed_recovery(playbook):
@@ -75,19 +77,28 @@ def check_routes(coordinators):
 root = Path("/opt/data")
 registry = root / ".oma" / "installed.json"
 gateway_seed = root / ".oma" / "gateway-seed"
-manifests = [safe_load(path.read_text()) for path in Path("/opt/oma/playbooks").glob("*/config.yaml")]
+campaigns_dir = Path("/opt/oma/campaigns")
+assert not Path("/opt/oma/playbooks").exists()
+manifests = [safe_load(path.read_text()) for path in campaigns_dir.glob("*/config.yaml")]
+for manifest in manifests:
+    resolved = resolve_campaign(campaigns_dir, Path("/opt/oma/skills"), manifest["id"])
+    assert resolved.orchestrator == manifest["orchestrator"]
 check_routes([manifest["orchestrator"] for manifest in manifests])
-playbooks = json.loads(registry.read_bytes())["playbooks"]
+installed = json.loads(registry.read_bytes())
+playbooks = installed["playbooks"]
+assert all(playbook["source"] == str(campaigns_dir / playbook["id"]) for playbook in playbooks)
 assert manifests and {playbook["id"] for playbook in playbooks} == {manifest["id"] for manifest in manifests}
 
 assert gateway_seed.stat().st_mode & 0o777 == 0o600
 docker_state = {
-    str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
-    for path in (registry, gateway_seed)
+    str(registry.relative_to(root)): hashlib.sha256(json.dumps(installed, sort_keys=True).encode()).hexdigest(),
+    str(gateway_seed.relative_to(root)): hashlib.sha256(gateway_seed.read_bytes()).hexdigest(),
 }
-model = safe_load((root / "config.yaml").read_text())["model"]
+config = safe_load((root / "config.yaml").read_text())
+model = config["model"]
 assert model["default"] == "oma-image-smoke"
 assert model["provider"] == "custom:oma-inference"
+assert resolve_clarify_timeout(config) == 0
 if os.environ["OMA_INIT_CATALOG"] == "1":
     assert (root / ".oma" / "omactl.yml").is_file()
     try:
@@ -120,5 +131,7 @@ if sys.argv[1] == "fresh":
     state_file.write_text(json.dumps(docker_state))
 else:
     assert "Member edit from image smoke test." in soul.read_text()
+    assert "`/opt/oma/campaigns`" in soul.read_text()
+    assert "`/opt/oma/playbooks`" not in soul.read_text()
     assert member_skill.read_text() == "Member-created skill\n"
     assert json.loads(state_file.read_text()) == docker_state
