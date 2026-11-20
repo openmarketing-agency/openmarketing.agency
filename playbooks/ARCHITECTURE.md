@@ -1,8 +1,8 @@
 # OMA Playbooks: Deployment and Orchestration Architecture
 
-> **Status: design for playbook orchestration.** The current [account instance setup](../oma/runtime/README.md) covers hosting, model access, and coordinator chat. The mission control and integration bindings in this document describe the intended design.
+> **Status: design for playbook orchestration.** The [OMA setup guide](../README.md) covers hosting, model access, and coordinator chat. The mission control and integration bindings in this document describe the intended design.
 
-**Profile installation:** The hosted runtime installs the bundled profiles and leaves new scheduled jobs paused. See [account instance setup](../oma/runtime/README.md).
+**Profile installation:** The VM runtime installs the bundled profiles and leaves new scheduled jobs paused.
 
 ## 1. Overview
 

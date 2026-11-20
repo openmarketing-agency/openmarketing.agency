@@ -4,7 +4,7 @@ This directory contains the Next.js console and API, the SQLite database schema,
 
 ## Develop
 
-From the repository root, run `make dev` with Docker Compose 2.23 or later to build the development container and watch source changes. Open [http://localhost:3000](http://localhost:3000).
+From the repository root, run `make dev` for the full local stack or `make dev-console` to work on the console alone. Both commands watch console source changes. Open [http://localhost:3000](http://localhost:3000).
 
 For native development, use Node.js 24 and npm. Run these commands from `oma/`.
 
