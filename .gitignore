@@ -1,0 +1,33 @@
+# Local secrets (keep shareable configuration templates)
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Dependencies and generated files
+node_modules/
+.venv/
+venv/
+.next/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.tsbuildinfo
+coverage/
+
+# Local data and OS files
+/.oma-data/
+/data/
+/oma/data/
+*.sqlite*
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store
+*.log
+*.pem
+*.key
+
+**/.DS_Store

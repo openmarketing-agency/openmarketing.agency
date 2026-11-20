@@ -1,0 +1,21 @@
+# Limit the build context to application files and exclude local data and credentials.
+**
+!oma
+!oma/**
+
+**/.git
+**/.gitignore
+**/.env
+**/.env.*
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/.npm
+**/*.tsbuildinfo
+**/*.db
+**/*.sqlite*
+oma/data
+oma/tests
+oma/README.md
+oma/AGENTS.md

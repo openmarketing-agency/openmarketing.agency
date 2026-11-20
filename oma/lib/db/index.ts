@@ -1,0 +1,88 @@
+/** Opens the installation's SQLite database and applies schema changes before serving requests. */
+
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+
+const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync };
+
+export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
+  // Acquire the write lock before reading anything that influences the update.
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = write();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function migrate(db: DatabaseSync): void {
+  writeTransaction(db, () => {
+    const version = db.prepare("PRAGMA user_version").get()?.user_version;
+    if (version === 1) return;
+    if (version !== 0) throw new Error("This SQLite database requires a newer version of OMA.");
+
+    db.exec(`
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY NOT NULL,
+        slot INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK (slot = 1),
+        email TEXT NOT NULL,
+        hashed_password TEXT NOT NULL,
+        session_version INTEGER NOT NULL DEFAULT 0
+      ) STRICT;
+
+      CREATE TABLE refresh_tokens (
+        jti TEXT PRIMARY KEY NOT NULL,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        replaced_by_jti TEXT
+      ) STRICT;
+      CREATE INDEX refresh_tokens_expiry ON refresh_tokens(expires_at);
+
+      CREATE TABLE mcp_integrations (
+        id TEXT PRIMARY KEY NOT NULL,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        transport TEXT NOT NULL,
+        is_enabled INTEGER NOT NULL CHECK (is_enabled IN (0, 1)),
+        auth_type TEXT NOT NULL,
+        auth_credentials_encrypted TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE (user_id, url)
+      ) STRICT;
+
+      CREATE TABLE tool_assignments (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        playbook_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        toolkit_slug TEXT NOT NULL,
+        PRIMARY KEY (user_id, playbook_id, agent_id, toolkit_slug)
+      ) STRICT;
+
+      PRAGMA user_version = 1;
+    `);
+  });
+}
+
+export function getDb(): DatabaseSync {
+  if (processScope.omaDatabase) return processScope.omaDatabase;
+
+  const directory = process.env.OMA_DATA_DIR || "data";
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const db = new DatabaseSync(join(directory, "oma.sqlite"), { timeout: 5000, enableForeignKeyConstraints: true });
+
+  try {
+    db.exec("PRAGMA journal_mode = WAL");
+    migrate(db);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+  return processScope.omaDatabase = db;
+}

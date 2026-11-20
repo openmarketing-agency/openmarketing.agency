@@ -1,0 +1,19 @@
+# Rebuild dependencies and sync source changes into the Next.js dev container.
+services:
+  app:
+    build:
+      target: oma-tooling
+    command: ["node", "--require", "./scripts/compose-startup.cjs", "node_modules/next/dist/bin/next", "dev", "--hostname", "0.0.0.0"]
+    develop:
+      watch:
+        - action: sync
+          path: ./oma
+          target: /app
+          ignore:
+            - package.json
+            - package-lock.json
+            - data/
+        - action: rebuild
+          path: ./oma/package.json
+        - action: rebuild
+          path: ./oma/package-lock.json
