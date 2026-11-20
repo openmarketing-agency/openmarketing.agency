@@ -3,6 +3,7 @@ services:
     image: ghcr.io/openmarketing-agency/openmarketing.agency:${OMA_RELEASE_TAG:?Missing package version}
     volumes: !override
       - console-data:/app/data
+      - console-gateway-key:/run/oma-console:ro
   vm:
     image: ghcr.io/openmarketing-agency/openmarketing.agency/oma-vm:${OMA_RELEASE_TAG:?Missing package version}
 

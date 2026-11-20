@@ -9,6 +9,10 @@ fi
 mkdir -p "$HERMES_HOME" "$XDG_RUNTIME_DIR"
 chown -h hermes:hermes "$HERMES_HOME" "$XDG_RUNTIME_DIR"
 chmod 0700 "$XDG_RUNTIME_DIR"
+# Share the default gateway key with the console's Hermes group on an isolated volume.
+if [[ "${OMA_EXPORT_CONSOLE_GATEWAY_KEY:-0}" == 1 ]]; then
+    install -d -m 0750 -o hermes -g hermes /run/oma-console
+fi
 cd "$HERMES_HOME"
 /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python /opt/oma/bootstrap.py
 unset OPENROUTER_API_KEY OMA_LITELLM_URL OMA_LITELLM_KEY OMA_HERMES_GATEWAY_SEED

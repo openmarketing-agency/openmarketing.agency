@@ -37,10 +37,11 @@ def read_registry(path):
     return registry["playbooks"]
 
 
-def atomic_write(path, data):
+def atomic_write(path, data, mode=0o600):
     with TemporaryDirectory(dir=path.parent) as staging:
         temporary = Path(staging) / path.name
         temporary.write_bytes(data)
+        temporary.chmod(mode)
         temporary.replace(path)
 
 
@@ -152,6 +153,8 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
         "API_SERVER_PORT": "8642",
         "API_SERVER_KEY": gateway_key("default"),
     })
+    if os.environ.get("OMA_EXPORT_CONSOLE_GATEWAY_KEY") == "1":
+        atomic_write(Path("/run/oma-console/gateway.key"), gateway_key("default").encode(), mode=0o640)
     dashboard = managed_path(root, ".oma-dashboard-token")
     atomic_write(dashboard, (gateway_key("dashboard") + "\n").encode())
 
