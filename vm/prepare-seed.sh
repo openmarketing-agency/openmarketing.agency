@@ -13,9 +13,10 @@ printf '{}\n' > "$scratch/setup.yaml"
 touch "$scratch/setup.env"
 
 manifests=(playbooks/*/config.yaml)
-(( ${#manifests[@]} > 0 )) || { echo 'No playbooks found' >&2; exit 1; }
+(( ${#manifests[@]} > 0 )) || { echo 'No campaigns found' >&2; exit 1; }
 for manifest in "${manifests[@]}"; do
-    bun installer/src/cli.ts install "/opt/oma/${manifest%/config.yaml}" \
+    campaign=${manifest%/config.yaml}
+    bun installer/src/cli.ts install "${campaign##*/}" \
         --setup "$scratch/setup.yaml" --setup-env "$scratch/setup.env" --skills-dir /opt/oma/skills
 done
 cp oma-soul.md "$HERMES_HOME/SOUL.md"

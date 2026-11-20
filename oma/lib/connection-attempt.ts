@@ -1,15 +1,15 @@
 import { connectionScope } from "./agent-connections.ts";
-import { findPlaybook } from "./playbooks.ts";
+import { findCampaign } from "./campaigns.ts";
 import { validToolkitSlug } from "./tool-catalog.ts";
 import type { ConnectionAttempt } from "./tool-connection-service.ts";
 export const CONNECTION_COOKIE = "oma_tool_connection";
 export const CONNECTION_CALLBACK_PATH = "/api/connections/callback";
 export const CONNECTION_ATTEMPT_MAX_AGE = 600;
 
-export function connectionReturnTo(playbookId?: string): string {
-  if (!playbookId) return "/connections";
-  if (!findPlaybook(playbookId)) throw new Error("Unknown playbook.");
-  return `/playbooks/${playbookId}`;
+export function connectionReturnTo(campaignId?: string): string {
+  if (!campaignId) return "/connections";
+  if (!findCampaign(campaignId)) throw new Error("Unknown campaign.");
+  return `/campaigns/${campaignId}`;
 }
 export function readConnectionAttempt(
   raw: string | undefined,
@@ -41,11 +41,14 @@ export function readConnectionAttempt(
         playbookId: attempt.playbookId ?? "",
         agentId: attempt.agentId ?? "",
       });
+      // A connection started before the rename can still have the old path in its cookie.
+      const legacyReturnTo = context.returnTo.replace(/^\/campaigns\//, "/playbooks/");
       if (
         attempt.userId !== context.connectionUserId ||
-        attempt.returnTo !== context.returnTo
+        (attempt.returnTo !== context.returnTo && attempt.returnTo !== legacyReturnTo)
       )
         return null;
+      return { ...attempt, returnTo: context.returnTo };
     } else if (attempt.userId !== userId || attempt.returnTo !== "/connections")
       return null;
     return attempt;

@@ -1,4 +1,4 @@
-import { findPlaybook, findPlaybookAgent } from "./playbooks.ts";
+import { findCampaign, findCampaignAgent } from "./campaigns.ts";
 import { toolkitSlug, validToolkitSlug } from "./tool-catalog.ts";
 export type AgentConnectionScope = { playbookId: string; agentId: string };
 export type ToolAssignment = {
@@ -14,13 +14,13 @@ export function agentConnectionContext(
   ownerId: string,
   scope: AgentConnectionScope,
 ) {
-  const agent = findPlaybookAgent(scope.playbookId, scope.agentId);
+  const agent = findCampaignAgent(scope.playbookId, scope.agentId);
   if (!agent || agent.id === "default")
     throw new Error("Choose a specialist with tool connections.");
   return {
     agent,
     connectionUserId: ownerId,
-    returnTo: `/playbooks/${scope.playbookId}?agent=${agent.id}`,
+    returnTo: `/campaigns/${scope.playbookId}?agent=${agent.id}`,
     suggestedTools: agent.tools.map((tool) => toolkitSlug(tool.id)),
   };
 }
@@ -56,13 +56,13 @@ export function assignedToolSlugs(
     ),
   ];
 }
-export function playbookToolSlugs(
+export function campaignToolSlugs(
   playbookId: string,
   assignments: ToolAssignment[],
 ) {
-  const playbook = findPlaybook(playbookId);
-  if (!playbook) throw new Error("Playbook not found.");
-  const specialists = playbook.agents
+  const campaign = findCampaign(playbookId);
+  if (!campaign) throw new Error("Campaign not found.");
+  const specialists = campaign.agents
     .filter((agent) => agent.id !== "default")
     .map((agent) => agent.id);
   return [

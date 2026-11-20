@@ -40,8 +40,9 @@ function ConsoleFrame({
 }: ConsoleProps & { pathname: string }) {
   const [open, setOpen] = useState(false);
   const home = demo ? "/demo" : "/dashboard";
+  const isCampaignDetail = pathname.startsWith(demo ? "/demo/campaigns/" : "/campaigns/");
   const nav = [
-    { href: home, label: "Playbooks", icon: BookOpen },
+    { href: home, label: "Campaigns", icon: BookOpen },
     {
       href: demo ? "/demo/connections" : "/connections",
       label: "Connections",
@@ -73,7 +74,7 @@ function ConsoleFrame({
         <nav className="sidebar-navigation" aria-label="Workspace">
           <div className="nav-label">Workspace</div>
           {nav.map(({ href, label: name, icon: Icon }) => {
-            const active = pathname === href || (href === home && pathname.startsWith("/playbooks/"));
+            const active = pathname === href || (href === home && isCampaignDetail);
             return (
               <Link key={href} href={href} onClick={() => setOpen(false)}
                 className={`nav-link${active ? " active" : ""}`}
@@ -113,9 +114,9 @@ function ConsoleFrame({
           <div>
             Workspace <ChevronRight size={13} aria-hidden="true" />
             <span>
-              {pathname.includes("playbooks/")
-                ? "Playbook details"
-                : nav.find(({ href }) => href === pathname)?.label ?? "Playbooks"}
+              {isCampaignDetail
+                ? "Campaign details"
+                : nav.find(({ href }) => href === pathname)?.label ?? "Campaigns"}
             </span>
           </div>
         </header>

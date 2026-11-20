@@ -1,5 +1,5 @@
 import type { Composio } from "@composio/core";
-import { tools } from "./playbooks.ts";
+import { tools } from "./campaigns.ts";
 
 export type Toolkit = {
   slug: string;

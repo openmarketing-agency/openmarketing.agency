@@ -2,13 +2,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight, BookOpen, Search, Users, Workflow } from "lucide-react";
-import { playbooks, playbookTools, tools } from "@/lib/playbooks";
+import { campaigns, campaignTools, tools } from "@/lib/campaigns";
 import { AgentIcon } from "@/components/agent-icon";
 
-export function PlaybookLibrary({ demo = false }: { demo?: boolean }) {
+export function CampaignLibrary({ demo = false }: { demo?: boolean }) {
   const [query, setQuery] = useState("");
-  const filtered = playbooks.filter((p) =>
-    `${p.title} ${p.description} ${p.agents.map((agent) => agent.role).join(" ")} ${playbookTools(
+  const filtered = campaigns.filter((p) =>
+    `${p.title} ${p.description} ${p.agents.map((agent) => agent.role).join(" ")} ${campaignTools(
       p,
     )
       .map((id) => tools[id].name)
@@ -20,21 +20,21 @@ export function PlaybookLibrary({ demo = false }: { demo?: boolean }) {
     <div className="agent-library-page">
       <header className="agent-library-heading">
         <div>
-          <h1>Playbooks</h1>
+          <h1>Campaigns</h1>
           <p>A focused team of agents, with the right tools for every role.</p>
         </div>
         <span className="subtle-tag">
           <BookOpen size={14} />
-          {playbooks.length} {playbooks.length === 1 ? "playbook" : "playbooks"}
+          {campaigns.length} {campaigns.length === 1 ? "campaign" : "campaigns"}
         </span>
       </header>
       <div className="agent-library-toolbar">
-        <h2>Your playbooks</h2>
+        <h2>Your campaigns</h2>
         <label className="search-box">
           <Search size={15} />
           <input
-            aria-label="Search playbooks"
-            placeholder="Search playbooks…"
+            aria-label="Search campaigns"
+            placeholder="Search campaigns…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -59,7 +59,7 @@ export function PlaybookLibrary({ demo = false }: { demo?: boolean }) {
             </div>
             <Link
               className="btn primary"
-              href={`${demo ? "/demo" : ""}/playbooks/${p.id}`}
+              href={`${demo ? "/demo" : ""}/campaigns/${p.id}`}
             >
               Configure team
               <ArrowRight size={15} />
@@ -90,8 +90,8 @@ export function PlaybookLibrary({ demo = false }: { demo?: boolean }) {
               Suggested tools for each role. Explore the full catalog in
               Connections.
             </span>
-            <Link href={`${demo ? "/demo" : ""}/playbooks/${p.id}`}>
-              View playbook
+            <Link href={`${demo ? "/demo" : ""}/campaigns/${p.id}`}>
+              View campaign
               <ArrowRight size={14} />
             </Link>
           </footer>
@@ -100,8 +100,8 @@ export function PlaybookLibrary({ demo = false }: { demo?: boolean }) {
       {!filtered.length && (
         <div className="empty-state">
           <Search size={22} />
-          <h2>No playbooks found</h2>
-          <p>Try a playbook name, agent role, or tool.</p>
+          <h2>No campaigns found</h2>
+          <p>Try a campaign name, agent role, or tool.</p>
           <button className="btn secondary" onClick={() => setQuery("")}>
             Clear search
           </button>

@@ -8,23 +8,23 @@ function publicInstallation(pb: Installation) {
   return { ...metadata, agents: agents.map(({ id, version, description, active }) => ({ id, version, description, active })) };
 }
 
-const help = `oma-scripts — manage OMA playbooks in an existing Hermes installation
+const help = `oma-scripts — manage OMA campaigns in an existing Hermes installation
 
 Usage:
-  oma-scripts validate <playbook-id|directory>[:version] [--setup-env <env-file>] [--skills-dir <directory>] [--json]
-  oma-scripts install  <playbook-id|directory>[:version] --setup <yaml-file> --setup-env <env-file> [--skills-dir <directory>] [--json]
-  oma-scripts upgrade  <playbook-id|directory>[:version] --setup <yaml-file> --setup-env <env-file> [--skills-dir <directory>] [--json]
+  oma-scripts validate <campaign-id|directory>[:version] [--setup-env <env-file>] [--skills-dir <directory>] [--json]
+  oma-scripts install  <campaign-id|directory>[:version] --setup <yaml-file> --setup-env <env-file> [--skills-dir <directory>] [--json]
+  oma-scripts upgrade  <campaign-id|directory>[:version] --setup <yaml-file> --setup-env <env-file> [--skills-dir <directory>] [--json]
   oma-scripts update   Alias for upgrade
-  oma-scripts uninstall <installed-playbook-id> [--setup-env <env-file>] [--json]
+  oma-scripts uninstall <installed-campaign-id> [--setup-env <env-file>] [--json]
   oma-scripts list [--setup-env <env-file>] [--json]
-  oma-scripts agents <installed-playbook-id> [--setup-env <env-file>] [--json]
+  oma-scripts agents <installed-campaign-id> [--setup-env <env-file>] [--json]
 
 Environment:
   HERMES_DIR          Set in --setup-env: the Hermes home directory (.hermes)
   HERMES_HOME         Optional: target Hermes data home (resolved by Hermes)
   HERMES_PYTHON       Optional: installed Hermes managed Python interpreter
 
-Bare IDs resolve to playbooks/<id> in this checkout; prefix local directories with
+Bare IDs resolve to campaigns/<id> in this checkout; prefix local directories with
 ./ or use an absolute path. Shared skills resolve from the checkout's sibling
 skills/ directory; --skills-dir overrides that directory.
 Versions assert the source manifest version, not the Git branch or tag.
@@ -86,14 +86,14 @@ export async function main(args = Bun.argv.slice(2)): Promise<void> {
     const installations = await listInstalled(await getRuntime(setupEnv));
     if (command === "list") {
       if (json) console.log(JSON.stringify(installations.map(publicInstallation), null, 2));
-      else if (!installations.length) console.log("No OMA playbooks installed.");
+      else if (!installations.length) console.log("No OMA campaigns installed.");
       else {
-        console.log("PLAYBOOK\tVERSION\tAGENTS");
+        console.log("CAMPAIGN\tVERSION\tAGENTS");
         for (const pb of installations) console.log(`${pb.id}\t${pb.version}\t${pb.agents.filter(a => a.active).length}`);
       }
     } else {
       const pb = installations.find(p => p.id === positional[0]);
-      if (!pb) throw new Error(`Playbook is not installed: ${positional[0]}`);
+      if (!pb) throw new Error(`Campaign is not installed: ${positional[0]}`);
       const agents = pb.agents.map(({ id, version, description, active }) => ({ id, version, description, active }));
       if (json) console.log(JSON.stringify({ playbook: pb.id, version: pb.version, agents }, null, 2));
       else {

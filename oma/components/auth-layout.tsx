@@ -20,7 +20,7 @@ export function AuthLayout({
           <p>
             {register
               ? "Connect your tools. Give your AI a running start."
-              : "Sign in to your tools, playbooks, and possibilities."}
+              : "Sign in to your tools, campaigns, and possibilities."}
           </p>
           {children}
           <p className="auth-switch">
@@ -47,7 +47,7 @@ export function AuthLayout({
             Working together.
           </h2>
           <p>
-            Bring your marketing data, a proven playbook, and your favorite AI
+            Bring your marketing data, a proven campaign, and your favorite AI
             into the same conversation.
           </p>
           <div className="connection-blueprint">
@@ -59,7 +59,7 @@ export function AuthLayout({
             <ArrowDown className="blueprint-arrow" size={22} />
             <div className="blueprint-center">
               <Brand href="/login" />
-              <span>Tools + playbooks + your context</span>
+              <span>Tools + campaigns + your context</span>
             </div>
             <ArrowDown className="blueprint-arrow" size={22} />
             <div className="blueprint-output">

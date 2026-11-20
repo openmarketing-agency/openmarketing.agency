@@ -60,7 +60,7 @@ with contextlib.redirect_stdout(io.StringIO()):
                 for platform in platforms:
                     extra = _get_platform_tools(config, platform) - set(selected)
                     if extra:
-                        raise ValueError('Hermes widened the playbook toolset allowlist: ' + ', '.join(sorted(extra)))
+                        raise ValueError('Hermes widened the campaign toolset allowlist: ' + ', '.join(sorted(extra)))
         disclosure = (config.get('tools') or {}).get('tool_search')
         if isinstance(disclosure, dict) and 'eager_toolsets' in disclosure and 'eager_toolsets' not in ToolSearchConfig.__dataclass_fields__:
             if disclosure.pop('eager_toolsets') != []:
@@ -74,7 +74,7 @@ with contextlib.redirect_stdout(io.StringIO()):
         from gateway.status import live_gateway_pid_for_home
         for path in request['paths']:
             if live_gateway_pid_for_home(Path(path)):
-                raise ValueError('Stop the Hermes gateway before changing installed playbooks: ' + path)
+                raise ValueError('Stop the Hermes gateway before changing installed campaigns: ' + path)
         if request.get('uninstalling'):
             from hermes_cli.profiles import get_active_profile
             if get_active_profile() in request['uninstalling']:

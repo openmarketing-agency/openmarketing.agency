@@ -43,7 +43,7 @@ export const tools = {
   },
 } as const;
 export type ToolId = keyof typeof tools;
-export type PlaybookAgent = {
+export type CampaignAgent = {
   id: string;
   role: string;
   description: string;
@@ -51,26 +51,26 @@ export type PlaybookAgent = {
   responsibility: string;
   tools: { id: ToolId; purpose: string }[];
 };
-export type Playbook = {
+export type Campaign = {
   id: string;
   title: string;
   version: string;
   sourceDirectory: string;
   description: string;
   outcome: string;
-  agents: PlaybookAgent[];
+  agents: CampaignAgent[];
   capabilities: { title: string; description: string }[];
   outputs: string[];
   prompt: string;
 };
 
-// Console descriptions of the bundled playbooks and their agent teams.
-export const playbooks: Playbook[] = [
+// Console descriptions of the bundled campaigns and their agent teams.
+export const campaigns: Campaign[] = [
   {
     id: "seo",
     title: "SEO",
     version: "0.1.0",
-    sourceDirectory: "playbooks/seo",
+    sourceDirectory: "campaigns/seo",
     description:
       "Find search opportunities, improve site content, and measure organic performance.",
     outcome:
@@ -213,7 +213,7 @@ export const playbooks: Playbook[] = [
     id: "social-media",
     title: "Social Media",
     version: "0.1.0",
-    sourceDirectory: "playbooks/social-media",
+    sourceDirectory: "campaigns/social-media",
     description: "Research your audience, plan social content, and manage community engagement.",
     outcome: "A social media coordinator and four specialists help grow reach, audience trust, and meaningful engagement across your connected accounts.",
     agents: [
@@ -268,17 +268,17 @@ export const playbooks: Playbook[] = [
   },
 ];
 
-export function findPlaybook(id: string) {
-  return playbooks.find((p) => p.id === id);
+export function findCampaign(id: string) {
+  return campaigns.find((p) => p.id === id);
 }
 
-export function findPlaybookAgent(playbookId: string, agentId: string) {
-  return findPlaybook(playbookId)?.agents.find((agent) => agent.id === agentId);
+export function findCampaignAgent(campaignId: string, agentId: string) {
+  return findCampaign(campaignId)?.agents.find((agent) => agent.id === agentId);
 }
-export function playbookTools(playbook: Playbook): ToolId[] {
+export function campaignTools(campaign: Campaign): ToolId[] {
   return [
     ...new Set(
-      playbook.agents.flatMap((agent) => agent.tools.map((tool) => tool.id)),
+      campaign.agents.flatMap((agent) => agent.tools.map((tool) => tool.id)),
     ),
   ];
 }
