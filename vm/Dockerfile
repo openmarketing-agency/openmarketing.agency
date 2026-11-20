@@ -39,7 +39,7 @@ COPY --from=omactl-package /tmp/omactl/LICENSE /opt/omactl/LICENSE
 COPY --from=campaign-build /opt/oma/campaigns /opt/oma/campaigns
 COPY --from=campaign-build /opt/oma/skills /opt/oma/skills
 COPY --from=campaign-build --chown=hermes:hermes /opt/oma/seed /opt/oma/seed
-COPY vm/bootstrap.py vm/start.sh /opt/oma/
+COPY vm/bootstrap.py vm/start.sh vm/workspace.py /opt/oma/
 
 ARG OMA_AGENT_IMAGE
 ARG OMACTL_TAG=v0.1.0

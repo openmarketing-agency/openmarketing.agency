@@ -7,6 +7,7 @@ services:
     environment:
       OMA_AGENT_URL: ${OMA_AGENT_URL:-http://vm:8642}
       OMA_AGENT_API_KEY_FILE: /run/oma-console/gateway.key
+      OMA_WORKSPACE_SOCKET: /run/oma-console/workspace.sock
 
   vm:
     platform: linux/amd64
