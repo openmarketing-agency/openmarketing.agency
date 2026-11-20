@@ -13,7 +13,7 @@ make production  # Production console build and the same full runtime
 
 The default OpenRouter model is [GPT-4.1 Mini](https://openrouter.ai/openai/gpt-4.1-mini). Set `OMA_HERMES_MODEL` in the environment file to choose a different OpenRouter model. Inference requires network access to OpenRouter. Set `OMA_INIT_CATALOG=0` to start Hermes without initializing the optional app catalog.
 
-Create the installation's single account at [http://localhost:3000/register](http://localhost:3000/register). Sign in again at [http://localhost:3000/login](http://localhost:3000/login). The Hermes dashboard is on port `9119`, its authenticated gateway is on `8642`, and optional catalog apps route through Traefik on `18080`. Compose initializes the catalog. Use these commands to verify it and start a local chat:
+Create the installation's single account at [http://localhost:3000/register](http://localhost:3000/register) to start onboarding. Returning users can [sign in](http://localhost:3000/login). The Hermes dashboard is on port `9119`, its authenticated gateway is on `8642`, and optional catalog apps route through Traefik on `18080`. Compose initializes the catalog. Use these commands to verify it and start a local chat:
 
 ```sh
 docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm omactl doctor
@@ -23,6 +23,14 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes c
 Open [Chat](http://localhost:3000/chat) in the console to talk with the bundled Hermes agent. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available.
 
 Use [Campaigns](http://localhost:3000/dashboard) in the console to configure campaign tool selections and MCP connections. Composio is optional and requires an API key for its hosted tool catalog.
+
+### Onboard and start a campaign
+
+Open **Brand & Campaign** and tell Hermes about your brand, audience, voice, assets, and what you want to accomplish. Choose **Generate playbook** to preview the brand brief, knowledge base, and campaign steps. Hermes can plan work such as a product launch, a newsletter, social content, or a search campaign. Review the plan and choose **Activate campaign** when ready. OMA saves it in SQLite.
+
+Hermes runs each step through a researcher, strategist, creator, or reviewer profile, with roles and tasks tailored to the playbook. A campaign can use the saved brief alone. For connected evidence, approve the resource during activation, set `COMPOSIO_API_KEY`, and connect one account per required source under **Connections**. Campaigns can read search performance from Google Search Console and traffic by channel from Google Analytics 4.
+
+The console schedules the campaign once its required sources are connected and again 24 hours after each successful run. **Brand & Campaign** shows the latest results and lets you pause or resume work. This MVP supports one active playbook per installation, accepts text and links for assets, and produces drafts for owner review. Keep the console running to schedule work and retry failed cycles.
 
 The console serves [API documentation](http://localhost:3000/docs) and a [database readiness endpoint](http://localhost:3000/health/ready).
 

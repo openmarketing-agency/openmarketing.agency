@@ -43,6 +43,7 @@ function ConsoleFrame({
   const home = demo ? "/demo" : "/dashboard";
   const isCampaignDetail = pathname.startsWith(demo ? "/demo/campaigns/" : "/campaigns/");
   const nav = [
+    ...(!demo ? [{ href: "/onboarding", label: "Brand & Campaign", icon: MessageSquare }] : []),
     { href: home, label: "Campaigns", icon: BookOpen },
     {
       href: demo ? "/demo/connections" : "/connections",

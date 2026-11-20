@@ -8,6 +8,7 @@ import {
   toolConnections,
   toolCatalog,
 } from "@/lib/composio";
+import { disconnectCampaign, queueCampaign } from "@/lib/server/marketing/state";
 import {
   connectionScope,
   campaignToolSlugs,
@@ -100,7 +101,10 @@ export async function connectToolAction(
       );
       if (!saved.ok) return { error: saved.error.message };
     }
-    if (result.connected) return { connected: true };
+    if (result.connected) {
+      queueCampaign(user.id, slug);
+      return { connected: true };
+    }
     const attempt = {
       userId: user.id,
       ownerId: user.id,
@@ -154,6 +158,7 @@ export async function disconnectToolAction(slug: string) {
             "We couldn’t remove all selections for this tool. Refresh and try again.",
         };
     } else await (await toolConnections()).disconnect(user.id, slug);
+    disconnectCampaign(user.id, slug);
     return { snapshot: await connectionSnapshot(user.id) };
   } catch {
     return { error: "We couldn’t disconnect this tool. Please try again." };

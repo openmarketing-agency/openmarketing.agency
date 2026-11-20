@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 
 from dotenv import dotenv_values, set_key
 from hermes_cli.config import atomic_config_replace, require_readable_config_before_write
+from hermes_cli.profiles import create_profile
 
 
 def managed_path(root, *parts):
@@ -92,12 +93,15 @@ def write_env(path, values):
             set_key(path, name, value)
 
 
-def configure_model(path, provider, model, *, gateway=False):
+def configure_model(path, provider, model, *, gateway=False, toolsets=None):
     config = require_readable_config_before_write(path)
     previous = deepcopy(config)
     config["model"] = model
     if provider:
         config.setdefault("providers", {})["oma-inference"] = provider
+    if toolsets is not None:
+        config.setdefault("agent", {})["enabled_toolsets"] = toolsets
+        config.setdefault("tools", {}).setdefault("tool_search", {})["enabled"] = False
     if gateway:
         config.setdefault("gateway", {})["multiplex_profiles"] = True
         selected = config.get("agent", {}).get("enabled_toolsets")
@@ -127,6 +131,28 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
     if not soul.exists():
         atomic_write(soul, (seed / "SOUL.md").read_bytes())
 
+    # Console-owned profiles only converse or return drafts. Catalog and existing
+    # playbook profiles retain their own operational toolsets.
+    console_profiles = {
+        "oma-onboarding": (
+            "You help people set up their Open Marketing Agency workspace. Learn about their brand and goals.",
+            ["clarify", "no_mcp"],
+        ),
+        "oma-campaign-researcher": ("Research marketing questions from evidence and flag gaps.", ["no_mcp"]),
+        "oma-campaign-strategist": ("Plan campaigns around the owner's goals, audience, and constraints.", ["no_mcp"]),
+        "oma-campaign-creator": ("Develop campaign materials for owner review in the brand's voice.", ["no_mcp"]),
+        "oma-campaign-reviewer": ("Review materials against the brief and flag unsupported claims.", ["no_mcp"]),
+    }
+    export_console_keys = os.environ.get("OMA_EXPORT_CONSOLE_GATEWAY_KEY") == "1"
+    for name, (persona, toolsets) in console_profiles.items():
+        profile = managed_path(root, "profiles", name)
+        if not profile.exists():
+            create_profile(name, no_alias=True, no_skills=True, seed_model=False, soul=persona)
+        configure_model(managed_path(profile, "config.yaml"), provider, model, toolsets=toolsets)
+        write_env(managed_path(profile, ".env"), {**credentials, "API_SERVER_KEY": gateway_key(name)})
+        if export_console_keys:
+            atomic_write(Path("/run/oma-console") / f"{name}.key", gateway_key(name).encode(), mode=0o640)
+
     for playbook in read_registry(registry):
         setup = managed_path(root, ".oma", "setups", playbook["id"])
         setup.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -153,7 +179,7 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
         "API_SERVER_PORT": "8642",
         "API_SERVER_KEY": gateway_key("default"),
     })
-    if os.environ.get("OMA_EXPORT_CONSOLE_GATEWAY_KEY") == "1":
+    if export_console_keys:
         atomic_write(Path("/run/oma-console/gateway.key"), gateway_key("default").encode(), mode=0o640)
     dashboard = managed_path(root, ".oma-dashboard-token")
     atomic_write(dashboard, (gateway_key("dashboard") + "\n").encode())

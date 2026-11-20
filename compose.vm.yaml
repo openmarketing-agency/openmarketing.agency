@@ -7,6 +7,8 @@ services:
     environment:
       OMA_AGENT_URL: ${OMA_AGENT_URL:-http://vm:8642}
       OMA_AGENT_API_KEY_FILE: /run/oma-console/gateway.key
+      OMA_CAMPAIGN_GATEWAY_URL: http://vm:8642
+      OMA_CAMPAIGN_KEY_DIR: /run/oma-console
 
   vm:
     platform: linux/amd64
