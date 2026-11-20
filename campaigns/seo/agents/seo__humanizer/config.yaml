@@ -31,7 +31,6 @@ skills:
   disabled:
     - computer-use
     - hermes-agent
-    - oma-playbooks
 
 oma_skills:
   - humanizer

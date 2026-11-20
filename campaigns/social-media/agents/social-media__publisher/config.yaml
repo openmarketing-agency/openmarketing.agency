@@ -37,7 +37,6 @@ skills:
   disabled:
     - computer-use
     - hermes-agent
-    - oma-playbooks
 oma_skills: []
 
 # Social APIs/MCP tools, credentials, and account-action scopes are supplied

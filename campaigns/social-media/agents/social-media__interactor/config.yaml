@@ -59,7 +59,6 @@ skills:
   disabled:
     - computer-use
     - hermes-agent
-    - oma-playbooks
 oma_skills: []
 
 # Deployment explicitly binds allowed accounts, interaction types, connector

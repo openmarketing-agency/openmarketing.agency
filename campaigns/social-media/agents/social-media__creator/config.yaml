@@ -37,7 +37,6 @@ skills:
   disabled:
     - computer-use
     - hermes-agent
-    - oma-playbooks
 oma_skills: []
 
 # Media-generation tools, licenses, and spend permissions must be provisioned
