@@ -11,7 +11,7 @@ make dev         # Console hot reload and the full runtime
 make production  # Production console build and the same full runtime
 ```
 
-The default OpenRouter model is [GPT-4.1 Mini](https://openrouter.ai/openai/gpt-4.1-mini). Set `OMA_HERMES_MODEL` in the environment file to choose a different OpenRouter model. Inference requires network access to OpenRouter.
+The default OpenRouter model is [GPT-4.1 Mini](https://openrouter.ai/openai/gpt-4.1-mini). Set `OMA_HERMES_MODEL` in the environment file to choose a different OpenRouter model. Inference requires network access to OpenRouter. Set `OMA_INIT_CATALOG=0` to start Hermes without initializing the optional app catalog.
 
 Create the installation's single account at [http://localhost:3000/register](http://localhost:3000/register). Sign in again at [http://localhost:3000/login](http://localhost:3000/login). The Hermes dashboard is on port `9119`, its authenticated gateway is on `8642`, and optional catalog apps route through Traefik on `18080`. Compose initializes the catalog. Use these commands to verify it and start a local chat:
 
@@ -20,7 +20,7 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm omactl d
 docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes chat
 ```
 
-Use the Hermes dashboard, gateway, or CLI to run agents. The console manages playbook tool selections and MCP connections. Composio is optional and requires an API key for its hosted tool catalog.
+Open [Chat](http://localhost:3000/chat) in the console to talk with the bundled Hermes agent. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available. Composio is optional and requires an API key for its hosted tool catalog.
 
 ### Onboard and start a campaign
 
@@ -42,6 +42,8 @@ docker compose up --build -d --wait
 ```
 
 Use `make dev-console` for hot reload with just the console. See the [application development guide](oma/README.md) for native Node.js development.
+
+To use Chat with an existing Hermes gateway, set `OMA_AGENT_URL` to an address reachable from the console and set `OMA_AGENT_API_KEY` to the gateway’s `API_SERVER_KEY`. On Docker Desktop, for example, use `http://host.docker.internal:8642` for a gateway on your host. For native development on the same machine, use `http://127.0.0.1:8642` in `oma/.env.local`. Keep the gateway private and recreate the console after changing its environment. The gateway needs the [Hermes Runs API](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server#post-v1runs).
 
 ## Self-host on a bare-metal server
 

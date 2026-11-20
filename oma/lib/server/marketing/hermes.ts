@@ -1,5 +1,5 @@
-import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { CampaignProfile } from "@/lib/marketing-playbook";
 import type { Clarification } from "./state";
 
@@ -12,17 +12,16 @@ export class HermesRunError extends Error {
 }
 
 export function hermesConfigured() {
-  return Boolean(process.env.OMA_HERMES_GATEWAY_URL && process.env.OMA_HERMES_SEED_FILE);
+  return Boolean(process.env.OMA_CAMPAIGN_GATEWAY_URL && process.env.OMA_CAMPAIGN_KEY_DIR);
 }
 
 async function request<T>(profile: Profile, path: string, body?: object, idempotencyKey?: string): Promise<T> {
   if (!hermesConfigured()) throw new HermesUnavailable("Start the full OMA stack to use Hermes.");
   let response: Response;
   try {
-    const origin = new URL(process.env.OMA_HERMES_GATEWAY_URL!);
-    const seed = await readFile(process.env.OMA_HERMES_SEED_FILE!, "utf8");
-    if (!seed) throw new Error("The runtime key has not been created.");
-    const key = createHmac("sha256", seed).update(profile).digest("hex");
+    const origin = new URL(process.env.OMA_CAMPAIGN_GATEWAY_URL!);
+    const key = (await readFile(join(process.env.OMA_CAMPAIGN_KEY_DIR!, `${profile}.key`), "utf8")).trim();
+    if (!/^[0-9a-f]{64}$/.test(key)) throw new Error("The runtime key is invalid.");
     response = await fetch(new URL(`/p/${profile}/v1/runs${path}`, origin), {
       method: body ? "POST" : "GET",
       cache: "no-store",
@@ -38,7 +37,10 @@ async function request<T>(profile: Profile, path: string, body?: object, idempot
   } catch {
     throw new HermesUnavailable("Hermes is unavailable. Try again shortly.");
   }
-  if (!response.ok) throw new HermesRunError(response.status);
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new HermesRunError(response.status);
+  }
   return response.json() as Promise<T>;
 }
 

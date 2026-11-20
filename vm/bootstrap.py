@@ -38,10 +38,11 @@ def read_registry(path):
     return registry["playbooks"]
 
 
-def atomic_write(path, data):
+def atomic_write(path, data, mode=0o600):
     with TemporaryDirectory(dir=path.parent) as staging:
         temporary = Path(staging) / path.name
         temporary.write_bytes(data)
+        temporary.chmod(mode)
         temporary.replace(path)
 
 
@@ -142,12 +143,15 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
         "oma-campaign-creator": ("Develop campaign materials for owner review in the brand's voice.", ["no_mcp"]),
         "oma-campaign-reviewer": ("Review materials against the brief and flag unsupported claims.", ["no_mcp"]),
     }
+    export_console_keys = os.environ.get("OMA_EXPORT_CONSOLE_GATEWAY_KEY") == "1"
     for name, (persona, toolsets) in console_profiles.items():
         profile = managed_path(root, "profiles", name)
         if not profile.exists():
             create_profile(name, no_alias=True, no_skills=True, seed_model=False, soul=persona)
         configure_model(managed_path(profile, "config.yaml"), provider, model, toolsets=toolsets)
         write_env(managed_path(profile, ".env"), {**credentials, "API_SERVER_KEY": gateway_key(name)})
+        if export_console_keys:
+            atomic_write(Path("/run/oma-console") / f"{name}.key", gateway_key(name).encode(), mode=0o640)
 
     for playbook in read_registry(registry):
         setup = managed_path(root, ".oma", "setups", playbook["id"])
@@ -175,6 +179,8 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
         "API_SERVER_PORT": "8642",
         "API_SERVER_KEY": gateway_key("default"),
     })
+    if export_console_keys:
+        atomic_write(Path("/run/oma-console/gateway.key"), gateway_key("default").encode(), mode=0o640)
     dashboard = managed_path(root, ".oma-dashboard-token")
     atomic_write(dashboard, (gateway_key("dashboard") + "\n").encode())
 

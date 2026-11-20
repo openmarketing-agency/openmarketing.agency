@@ -49,6 +49,7 @@ function ConsoleFrame({
       label: "Connections",
       icon: Cable,
     },
+    ...(!demo ? [{ href: "/chat", label: "Chat", icon: MessageSquare }] : []),
   ];
   return (
     <div className="console-frame">

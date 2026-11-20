@@ -1,10 +1,15 @@
 services:
   app:
-    environment:
-      OMA_HERMES_GATEWAY_URL: http://vm:8642
-      OMA_HERMES_SEED_FILE: /run/oma-runtime/seed
+    group_add:
+      - "10000"
     volumes:
-      - runtime-key:/run/oma-runtime:ro
+      - console-gateway-key:/run/oma-console:ro
+    environment:
+      OMA_AGENT_URL: ${OMA_AGENT_URL:-http://vm:8642}
+      OMA_AGENT_API_KEY_FILE: /run/oma-console/gateway.key
+      OMA_CAMPAIGN_GATEWAY_URL: http://vm:8642
+      OMA_CAMPAIGN_KEY_DIR: /run/oma-console
+
   vm:
     platform: linux/amd64
     build:
@@ -19,12 +24,13 @@ services:
       - "127.0.0.1:${OMA_CATALOG_PORT:-18080}:9080"
     volumes:
       - vm-data:/opt/data
-      - runtime-key:/run/oma-runtime
+      - console-gateway-key:/run/oma-console
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in your environment file}
       OMA_HERMES_MODEL: ${OMA_HERMES_MODEL:-openai/gpt-4.1-mini}
       OMA_HERMES_GATEWAY_SEED: ${OMA_HERMES_GATEWAY_SEED:-}
-      OMA_INIT_CATALOG: '1'
+      OMA_INIT_CATALOG: ${OMA_INIT_CATALOG:-1}
+      OMA_EXPORT_CONSOLE_GATEWAY_KEY: '1'
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-m", "2", "-o", "/dev/null", "http://127.0.0.1:8642/health"]
       interval: 5s
@@ -34,4 +40,4 @@ services:
 
 volumes:
   vm-data:
-  runtime-key:
+  console-gateway-key:
