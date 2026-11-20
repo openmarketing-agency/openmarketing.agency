@@ -1,5 +1,5 @@
 import { BarChart3, FileText, Hash, Search, Table2 } from "lucide-react";
-import { tools, type ToolId } from "@/lib/playbooks";
+import { tools, type ToolId } from "@/lib/campaigns";
 const icons = {
   search: Search,
   chart: BarChart3,

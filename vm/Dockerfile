@@ -4,14 +4,15 @@ FROM docker.io/oven/bun:1.4.4 AS bun
 FROM ${OMA_AGENT_IMAGE} AS agent
 USER root
 
-FROM agent AS playbook-build
+FROM agent AS campaign-build
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /opt/oma
 COPY vm/installer/package.json vm/installer/bun.lock ./installer/
 RUN cd installer && bun install --frozen-lockfile --production
 COPY vm/installer/src ./installer/src
 COPY vm/installer/schemas ./installer/schemas
-COPY playbooks ./playbooks
+# Keep the installed source path stable for existing VM registries.
+COPY campaigns ./playbooks
 COPY skills ./skills
 COPY vm/prepare-seed.sh vm/oma-soul.md ./
 RUN install -d -o hermes -g hermes -m 0700 /opt/oma/seed
@@ -36,9 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=omactl-package /tmp/omactl/bin/omactl /usr/local/bin/omactl
 COPY --from=omactl-package /tmp/omactl/catalog /opt/omactl/catalog
 COPY --from=omactl-package /tmp/omactl/LICENSE /opt/omactl/LICENSE
-COPY --from=playbook-build /opt/oma/playbooks /opt/oma/playbooks
-COPY --from=playbook-build /opt/oma/skills /opt/oma/skills
-COPY --from=playbook-build --chown=hermes:hermes /opt/oma/seed /opt/oma/seed
+COPY --from=campaign-build /opt/oma/playbooks /opt/oma/playbooks
+COPY --from=campaign-build /opt/oma/skills /opt/oma/skills
+COPY --from=campaign-build --chown=hermes:hermes /opt/oma/seed /opt/oma/seed
 COPY vm/bootstrap.py vm/start.sh /opt/oma/
 
 ARG OMA_AGENT_IMAGE

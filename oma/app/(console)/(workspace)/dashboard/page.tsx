@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { PlaybookLibrary } from "@/components/playbook-library";
+import { CampaignLibrary } from "@/components/campaign-library";
 
-export const metadata: Metadata = { title: "Playbooks" };
+export const metadata: Metadata = { title: "Campaigns" };
 
 export default function DashboardPage() {
-  return <PlaybookLibrary />;
+  return <CampaignLibrary />;
 }

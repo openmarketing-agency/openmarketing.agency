@@ -1,5 +1,5 @@
 import type { Composio } from "@composio/core";
-import { tools } from "./playbooks.ts";
+import { tools } from "./campaigns.ts";
 import { toolkitSlug, validToolkitSlug, type Toolkit } from "./tool-catalog.ts";
 
 export type ConnectionSnapshot = {
@@ -260,7 +260,7 @@ export function createToolConnectionService(
   async function mcpSession(userId: string, toolIds: string[]) {
     const ids = [...new Set(toolIds.map(toolkitSlug))];
     if (!ids.length)
-      throw new Error("Assign at least one tool to this playbook first.");
+      throw new Error("Assign at least one tool to this campaign first.");
     const definitions = await Promise.all(ids.map(definition));
     const items = await accounts(userId);
     const selected = definitions.map((tool) => ({

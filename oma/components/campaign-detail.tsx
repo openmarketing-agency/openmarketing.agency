@@ -13,21 +13,21 @@ import {
   Users,
   Workflow,
 } from "lucide-react";
-import { type Playbook } from "@/lib/playbooks";
+import { type Campaign } from "@/lib/campaigns";
 import {
   assignedToolSlugs,
-  playbookToolSlugs,
+  campaignToolSlugs,
   type ToolAssignment,
 } from "@/lib/agent-connections";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 import { suggestedToolkit, type Toolkit } from "@/lib/tool-catalog";
 import type { HostedMcpConnection } from "@/lib/mcp-client-config";
 import { AgentIcon } from "@/components/agent-icon";
-import { PlaybookMcpSetup } from "@/components/playbook-mcp-setup";
+import { CampaignMcpSetup } from "@/components/campaign-mcp-setup";
 import { ToolkitBrowser } from "@/components/toolkit-browser";
 
-export function PlaybookDetail({
-  playbook: p,
+export function CampaignDetail({
+  campaign: p,
   snapshot: initialSnapshot,
   assignments: initialAssignments,
   metadata: initialMetadata,
@@ -38,7 +38,7 @@ export function PlaybookDetail({
   feedback,
   error,
 }: {
-  playbook: Playbook;
+  campaign: Campaign;
   snapshot: ConnectionSnapshot;
   assignments: ToolAssignment[];
   metadata: Toolkit[];
@@ -72,7 +72,7 @@ export function PlaybookDetail({
   const agent = p.agents.find((item) => item.id === selectedId) ?? p.agents[0];
   const scope = { playbookId: p.id, agentId: agent.id };
   const selected = assignedToolSlugs(assignments, scope);
-  const allSlugs = playbookToolSlugs(p.id, assignments);
+  const allSlugs = campaignToolSlugs(p.id, assignments);
   const noAuth = new Set(
     metadata.filter((tool) => tool.noAuth).map((tool) => tool.slug),
   );
@@ -121,7 +121,7 @@ export function PlaybookDetail({
     <div className="agent-playbook-page">
       <Link className="back-link" href={demo ? "/demo" : "/dashboard"}>
         <ArrowLeft size={14} />
-        Playbooks
+        Campaigns
       </Link>
       <header className="agent-page-heading">
         <div className="agent-page-title">
@@ -137,7 +137,7 @@ export function PlaybookDetail({
           </div>
         </div>
       </header>
-      <div className="agent-page-tabs" aria-label="Playbook sections">
+      <div className="agent-page-tabs" aria-label="Campaign sections">
         <button
           className={view === "team" ? "selected" : ""}
           aria-pressed={view === "team"}
@@ -177,7 +177,7 @@ export function PlaybookDetail({
             </p>
           </div>
           <div className="agent-workspace">
-            <nav className="agent-picker" aria-label="Playbook agents">
+            <nav className="agent-picker" aria-label="Campaign agents">
               <div className="agent-picker-label">Your team</div>
               {p.agents.map((item) => {
                 const slugs = assignedToolSlugs(assignments, {
@@ -218,7 +218,7 @@ export function PlaybookDetail({
               <div className="agent-picker-note">
                 <Terminal size={14} />
                 <p>
-                  All selected tools come together in one playbook MCP
+                  All selected tools come together in one campaign MCP
                   connection.
                 </p>
               </div>
@@ -310,14 +310,14 @@ export function PlaybookDetail({
             <LockKeyhole size={14} />
             <span>
               Accounts connect to your workspace. Agent selections define the
-              tools included in your playbook MCP connection.
+              tools included in your campaign MCP connection.
             </span>
           </footer>
         </>
       ) : view === "mcp" ? (
         <div className="playbook-mcp-view">
           <div className="playbook-mcp-intro">
-            <h2>One connection for the whole playbook</h2>
+            <h2>One connection for the whole campaign</h2>
             <p>
               Use this URL with your AI client to access the tools selected
               across the {p.title} team. The mission owner does not need its own
@@ -375,9 +375,9 @@ export function PlaybookDetail({
               before generating your URL.
             </p>
           )}
-          <PlaybookMcpSetup
-            playbookId={p.id}
-            playbookName={p.title}
+          <CampaignMcpSetup
+            campaignId={p.id}
+            campaignName={p.title}
             ready={ready}
             configured={snapshot.configured}
             connection={mcp}

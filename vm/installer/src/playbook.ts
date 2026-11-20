@@ -103,12 +103,12 @@ async function discoverSkills(root: string, result: Map<string, string[]>): Prom
   }
 }
 export function parseSpec(spec: string): { path: string; version?: string } {
-  if (!spec) throw new Error("Provide a playbook directory[:version]");
+  if (!spec) throw new Error("Provide a campaign directory[:version]");
   const separator = spec.lastIndexOf(":");
   if (separator === -1) return { path: resolve(spec) };
   const path = spec.slice(0, separator), version = spec.slice(separator + 1);
   const validate = ajv.compile({ $ref: `${schema.$id}#/definitions/version` });
-  if (!path || !validate(version)) throw new Error(`Invalid playbook specification: ${spec}; expected path:SemVer`);
+  if (!path || !validate(version)) throw new Error(`Invalid campaign specification: ${spec}; expected path:SemVer`);
   return { path: resolve(path), version };
 }
 export function compareVersions(a: string, b: string): number {
@@ -135,12 +135,12 @@ export async function loadPlaybook(spec: string, skillsRoot?: string): Promise<P
   await assertNoSymlinks(parsed.path);
   const path = await realpath(parsed.path);
   const manifest = await yaml(join(path, "config.yaml")) as Manifest;
-  if (!manifestValidator(manifest)) throw new Error(`Playbook schema: ${ajv.errorsText(manifestValidator.errors)}`);
+  if (!manifestValidator(manifest)) throw new Error(`Campaign schema: ${ajv.errorsText(manifestValidator.errors)}`);
   if (parsed.version !== undefined && parsed.version !== manifest.version) {
     throw new Error(`Requested ${parsed.version}, but source declares ${manifest.version}. Select the correct source checkout.`);
   }
   if (manifest.orchestrator !== `${manifest.id}__orchestrator` || !manifest.agents.includes(manifest.orchestrator)) {
-    throw new Error("orchestrator must be <playbook-id>__orchestrator and appear in agents");
+    throw new Error("orchestrator must be <campaign-id>__orchestrator and appear in agents");
   }
   const dirs = (await readdir(join(path, "agents"), { withFileTypes: true })).filter(e => e.isDirectory()).map(e => e.name).sort();
   if (canonical(dirs) !== canonical([...manifest.agents].sort())) throw new Error("Manifest roster must match agent directories exactly");

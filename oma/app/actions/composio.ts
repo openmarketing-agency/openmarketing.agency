@@ -11,7 +11,7 @@ import {
 import { disconnectCampaign, queueCampaign } from "@/lib/server/marketing/state";
 import {
   connectionScope,
-  playbookToolSlugs,
+  campaignToolSlugs,
   WORKSPACE_SCOPE,
   type AgentConnectionScope,
 } from "@/lib/agent-connections";
@@ -171,7 +171,7 @@ export async function generateMcpAction(
   try {
     const saved = await listToolAssignments(await requireAccessToken());
     if (!saved.ok) return { error: saved.error.message };
-    const slugs = playbookToolSlugs(playbookId, saved.data);
+    const slugs = campaignToolSlugs(playbookId, saved.data);
     const session = await (await toolConnections()).mcpSession(user.id, slugs);
     return { connection: hostedMcpConnection(session.mcp) };
   } catch (error) {
@@ -180,7 +180,7 @@ export async function generateMcpAction(
         error instanceof Error &&
         /^(Assign at least|Connect or remove)/.test(error.message)
           ? error.message
-          : "We couldn’t generate your playbook MCP URL. Check your connections and try again.",
+          : "We couldn’t generate your campaign MCP URL. Check your connections and try again.",
     };
   }
 }

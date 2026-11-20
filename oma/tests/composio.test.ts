@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { connectionScope, playbookToolSlugs } from "../lib/agent-connections";
+import { connectionScope, campaignToolSlugs } from "../lib/agent-connections";
 import { CONNECTION_ATTEMPT_MAX_AGE, readConnectionAttempt } from "../lib/connection-attempt";
 import { hostedMcpConnection, mcpClientConfiguration } from "../lib/mcp-client-config";
 import { createToolCatalog, suggestedToolkit } from "../lib/tool-catalog";
@@ -105,7 +105,12 @@ test("binds OAuth callbacks to the signed-in owner, connection attempt, and prov
     createdAt: now,
   };
   const saved = JSON.stringify(attempt);
+  assert.equal(attempt.returnTo, "/campaigns/seo?agent=writer");
   assert.deepEqual(readConnectionAttempt(saved, accountId, attempt.nonce, false, now), attempt);
+  const legacy = JSON.stringify({ ...attempt, returnTo: "/playbooks/seo?agent=writer" });
+  assert.deepEqual(readConnectionAttempt(legacy, accountId, attempt.nonce, false, now), attempt);
+  const wrongAgent = JSON.stringify({ ...attempt, returnTo: "/playbooks/seo?agent=researcher" });
+  assert.equal(readConnectionAttempt(wrongAgent, accountId, attempt.nonce, false, now), null);
   assert.equal(readConnectionAttempt(saved, "another-user", attempt.nonce, false, now), null);
   assert.equal(readConnectionAttempt(saved, accountId, "another-state", false, now), null);
   assert.equal(readConnectionAttempt(saved, accountId, attempt.nonce, false, now + CONNECTION_ATTEMPT_MAX_AGE * 1000), null);
@@ -199,7 +204,7 @@ test("pins assigned accounts in hosted MCP sessions and exports environment refe
     connectedAccounts: { list }, sessions: { create },
   } as unknown as ConnectionClient, async (slug) => slug === publicTool.slug ? publicTool : toolkit);
   const assignment = (agent_id: string, toolkit_slug: string) => ({ playbook_id: "seo", agent_id, toolkit_slug });
-  const slugs = playbookToolSlugs("seo", [
+  const slugs = campaignToolSlugs("seo", [
     assignment("researcher", toolkit.slug),
     assignment("writer", toolkit.slug),
     assignment("writer", publicTool.slug),

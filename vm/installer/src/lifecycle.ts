@@ -83,7 +83,7 @@ async function acquireLock(runtime: Runtime, operation: string, playbook: string
 }
 
 export async function uninstallPlaybook(id: string, setupEnv?: string) {
-  if (!playbookIdPattern.test(id)) throw new Error(`Invalid installed playbook ID: ${id}`);
+  if (!playbookIdPattern.test(id)) throw new Error(`Invalid installed campaign ID: ${id}`);
   const runtime = await getRuntime(setupEnv);
   const metadata = stateDir(runtime), registryFile = registryPath(runtime);
   const lock = await acquireLock(runtime, "uninstall", id);
@@ -92,7 +92,7 @@ export async function uninstallPlaybook(id: string, setupEnv?: string) {
   try {
     const registry = await readRegistry(runtime);
     const installed = registry.playbooks.find(p => p.id === id);
-    if (!installed) throw new Error(`Playbook is not installed: ${id}`);
+    if (!installed) throw new Error(`Campaign is not installed: ${id}`);
 
     const profileIds = [...new Set(installed.agents.map(a => a.id))];
     const candidates = profileIds.map(id => ({ target: join(runtime.profiles, id), relativePath: join("profiles", id) }));
@@ -231,7 +231,7 @@ export async function deploy(mode: "install" | "upgrade", spec: string, skillsRo
     if (previous) {
       const order = compareVersions(playbook.manifest.version, previous.version);
       if (order < 0) throw new Error(`Downgrades are not supported (${previous.version} -> ${playbook.manifest.version})`);
-      if (order === 0 && previous.digest !== playbook.digest) throw new Error("Same playbook version has different content; bump its version");
+      if (order === 0 && previous.digest !== playbook.digest) throw new Error("Same campaign version has different content; bump its version");
       for (const old of previous.agents.filter(a => a.active)) await verifyArtifacts(runtime, old);
       let envMatches = true;
       if (suppliedEnv) {

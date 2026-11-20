@@ -1,6 +1,6 @@
 **
-!playbooks/
-!playbooks/**
+!campaigns/
+!campaigns/**
 !skills/
 !skills/**
 !vm/

@@ -35,7 +35,7 @@ const mono = localFont({
 export const metadata: Metadata = {
   title: { default: "OMA", template: "%s · OMA" },
   description:
-    "Turn your marketing tools into connected AI workflows with OMA playbooks.",
+    "Turn your marketing tools into connected AI workflows with OMA campaigns.",
 };
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
