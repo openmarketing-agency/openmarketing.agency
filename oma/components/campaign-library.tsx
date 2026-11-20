@@ -1,111 +1,87 @@
 "use client";
+
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, BookOpen, Search, Users, Workflow } from "lucide-react";
-import { campaigns, campaignTools, tools } from "@/lib/campaigns";
-import { AgentIcon } from "@/components/agent-icon";
+import { ArrowRight, Search, Users, Workflow } from "lucide-react";
 
-export function CampaignLibrary({ demo = false, setup }: { demo?: boolean; setup?: ReactNode }) {
+type SavedCampaignSummary = {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  agentCount: number;
+  playbook?: { id: string; name: string };
+  brand?: { id: string; name: string };
+};
+
+export function CampaignLibrary({ setup, saved }: {
+  setup?: ReactNode;
+  saved?: SavedCampaignSummary[];
+}) {
   const [query, setQuery] = useState("");
-  const filtered = campaigns.filter((p) =>
-    `${p.title} ${p.description} ${p.agents.map((agent) => agent.role).join(" ")} ${campaignTools(
-      p,
-    )
-      .map((id) => tools[id].name)
-      .join(" ")}`
-      .toLowerCase()
-      .includes(query.toLowerCase().trim()),
-  );
+  const normalizedQuery = query.toLowerCase().trim();
+  const filtered = saved?.filter(({ name, description, brand, playbook }) =>
+    [name, description, brand?.name, playbook?.name].join(" ").toLowerCase().includes(normalizedQuery),
+  ) ?? [];
+
   return (
     <div className="agent-library-page">
       <header className="agent-library-heading">
-        <div>
-          <h1>Campaigns</h1>
-          <p>A focused team of agents, with the right tools for every role.</p>
-        </div>
-        <span className="subtle-tag">
-          <BookOpen size={14} />
-          {campaigns.length} {campaigns.length === 1 ? "campaign" : "campaigns"}
-        </span>
+        <h1>Campaigns</h1>
       </header>
       {setup}
-      <div className="agent-library-toolbar">
-        <h2>Your campaigns</h2>
-        <label className="search-box">
-          <Search size={15} />
-          <input
-            aria-label="Search campaigns"
-            placeholder="Search campaigns…"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-      </div>
-      {filtered.map((p) => (
-        <article className="agent-library-card" key={p.id}>
+      {saved && saved.length > 0 && (
+        <div className="agent-library-toolbar">
+          <h2>Your campaigns</h2>
+          <label className="search-box">
+            <Search size={15} aria-hidden="true" />
+            <input
+              aria-label="Search campaigns"
+              placeholder="Search campaigns…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+        </div>
+      )}
+      {filtered.map(({ id, name, description, version, brand, playbook, agentCount }) => (
+        <article className="agent-library-card" key={id}>
           <div className="agent-library-card-main">
-            <span className="playbook-mark">
-              <Workflow size={26} strokeWidth={1.5} />
-            </span>
+            <span className="playbook-mark"><Workflow size={26} strokeWidth={1.5} aria-hidden="true" /></span>
             <div>
               <div className="agent-title-line">
-                <h2>{p.title}</h2>
-                <span className="version-label">v{p.version}</span>
+                <h2>{name}</h2>
+                {version && <span className="version-label">v{version}</span>}
               </div>
-              <p>{p.description}</p>
+              {description && <p>{description}</p>}
+              {(brand || playbook) && (
+                <div className="workspace-card-links">
+                  {brand && <Link href={"/workspace/brands/" + brand.id}>{brand.name}</Link>}
+                  {playbook && <Link href={"/workspace/playbooks/" + playbook.id}>{playbook.name}</Link>}
+                </div>
+              )}
               <span className="agent-library-count">
-                <Users size={14} />
-                One mission owner · {p.agents.length - 1} specialists
+                <Users size={14} aria-hidden="true" />
+                {agentCount} {agentCount === 1 ? "agent" : "agents"}
               </span>
             </div>
-            <Link
-              className="btn primary"
-              href={`${demo ? "/demo" : ""}/campaigns/${p.id}`}
-            >
-              Configure team
-              <ArrowRight size={15} />
+            <Link className="btn primary" href={"/campaigns/" + id}>
+              View campaign <ArrowRight size={15} aria-hidden="true" />
             </Link>
           </div>
-          <div className="agent-library-roster">
-            {p.agents.map((agent) => (
-              <div key={agent.id}>
-                <AgentIcon id={agent.id} size={16} />
-                <span>
-                  <strong>
-                    {agent.id === "default" ? "Mission owner" : agent.role}
-                  </strong>
-                  <small>
-                    {agent.tools.length
-                      ? agent.tools
-                          .slice(0, 2)
-                          .map((tool) => tools[tool.id].short)
-                          .join(" + ")
-                      : "No tool connections"}
-                  </small>
-                </span>
-              </div>
-            ))}
-          </div>
-          <footer>
-            <span>
-              Suggested tools for each role. Explore the full catalog in
-              Connections.
-            </span>
-            <Link href={`${demo ? "/demo" : ""}/campaigns/${p.id}`}>
-              View campaign
-              <ArrowRight size={14} />
-            </Link>
-          </footer>
         </article>
       ))}
-      {!filtered.length && (
+      {saved?.length === 0 && (
         <div className="empty-state">
-          <Search size={22} />
-          <h2>No campaigns found</h2>
-          <p>Try a campaign name, agent role, or tool.</p>
-          <button className="btn secondary" onClick={() => setQuery("")}>
-            Clear search
-          </button>
+          <h2>No campaigns yet</h2>
+          <p>Campaigns will appear here when oma-agent saves them.</p>
+        </div>
+      )}
+      {saved && saved.length > 0 && filtered.length === 0 && (
+        <div className="empty-state">
+          <h2>No matching campaigns</h2>
+          <p>Try a campaign, brand, or playbook name.</p>
+          <button className="btn secondary" onClick={() => setQuery("")}>Clear search</button>
         </div>
       )}
     </div>

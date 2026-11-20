@@ -25,6 +25,9 @@ Open [Chat](http://localhost:3000/chat) in the console to talk with the bundled 
 Set `OMA_HERMES_CLARIFY_TIMEOUT=0` in `.env` to let the default profile wait indefinitely for an answer to an onboarding question. A positive value sets the wait in seconds. Leaving the variable unset keeps the profile's saved setting, which defaults to 90 seconds on a fresh installation. Recreate the VM container after changing the value.
 
 Use [Campaigns](http://localhost:3000/dashboard) in the console to configure campaign tool selections and MCP connections. Composio is optional and requires an API key for its hosted tool catalog.
+Campaign details use the saved agent records. To add an integration for an eligible agent, open **Agent tools** and browse **All tools**.
+
+The full stack shows brands, playbooks, campaigns, and agent records from the default oma-agent profile's `/opt/data/oma/` directory. Campaign overviews show their linked brand and playbook, goals, plans, and saved agents. From a brand or playbook page, edit brand details or the playbook strategy. Saves update the existing YAML in the agent volume. The dashboard lists campaigns once oma-agent has saved them.
 
 The console serves [API documentation](http://localhost:3000/docs) and a [database readiness endpoint](http://localhost:3000/health/ready).
 

@@ -2535,7 +2535,6 @@ pre {
   pointer-events: none;
   color: var(--muted);
 }
-.tool-suggestion-note,
 .tool-catalog-message {
   color: var(--muted);
   font-size: 12px;
@@ -3096,3 +3095,209 @@ pre {
   border-radius: 12px;
 }
 .console-loading .loading-panel .loading-line:nth-child(2) { width: min(80%, 15rem); }
+
+/* Agent workspace records share the Campaigns page rhythm and control styles. */
+.workspace-index {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 32px;
+  margin-block: 24px 30px;
+}
+.workspace-index section {
+  min-width: 0;
+  padding-block: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.workspace-index h2,
+.workspace-overview h2 {
+  margin-bottom: 8px;
+  font-size: 16px;
+  font-weight: 650;
+}
+.workspace-index p,
+.workspace-overview p {
+  color: var(--muted);
+}
+.workspace-index > p {
+  grid-column: 1 / -1;
+}
+.workspace-link-list,
+.workspace-file-list,
+.workspace-agent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.workspace-link-list a {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  padding-block: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-link-list svg {
+  flex: 0 0 auto;
+}
+.workspace-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-block: 6px;
+}
+.workspace-card-links a,
+.workspace-facts a,
+.workspace-link-list a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.workspace-card-links a:hover,
+.workspace-facts a:hover,
+.workspace-link-list a:hover {
+  color: var(--accent-hover);
+}
+.workspace-overview {
+  display: grid;
+  gap: 24px;
+  max-width: 78ch;
+  margin-top: 24px;
+  overflow-wrap: anywhere;
+}
+.workspace-overview > section {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.workspace-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin: 0;
+}
+.workspace-facts dt {
+  color: var(--muted);
+  font-size: 13px;
+}
+.workspace-facts dd {
+  margin: 2px 0 0;
+  font-weight: 550;
+}
+.workspace-copy-list {
+  margin: 0;
+  padding-inline-start: 24px;
+  line-height: 1.65;
+}
+ul.workspace-copy-list {
+  list-style: disc;
+}
+ol.workspace-copy-list {
+  list-style: decimal;
+}
+.workspace-copy-list li + li {
+  margin-top: 5px;
+}
+.workspace-agent-list > li {
+  padding-block: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.workspace-agent-list h3 {
+  font-size: 14px;
+  font-weight: 650;
+}
+.workspace-agent-list p,
+.workspace-agent-list ul {
+  margin-top: 4px;
+}
+.workspace-agent-role {
+  margin-inline-start: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.workspace-record-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+.workspace-record-heading h1 {
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.workspace-record-heading p {
+  max-width: 70ch;
+  margin-top: 7px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.workspace-record-heading .btn {
+  flex-shrink: 0;
+}
+.workspace-overview .workspace-record-copy {
+  color: var(--text);
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+.workspace-palette dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.workspace-palette span {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--control);
+  border-radius: 3px;
+}
+.workspace-editor {
+  max-width: 76ch;
+  margin-top: 22px;
+}
+.workspace-editor fieldset {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  padding: 0;
+  border: 0;
+}
+.workspace-editor label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+.workspace-editor :is(input:not([type="hidden"]), textarea) {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.55;
+}
+.workspace-editor textarea {
+  resize: vertical;
+}
+.workspace-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.workspace-save-status {
+  margin-top: 14px;
+  color: var(--positive);
+}
+@media (max-width: 640px) {
+  .workspace-index {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .workspace-record-heading {
+    flex-direction: column;
+    gap: 12px;
+  }
+}

@@ -1,5 +1,5 @@
 import { findCampaign, findCampaignAgent } from "./campaigns.ts";
-import { toolkitSlug, validToolkitSlug } from "./tool-catalog.ts";
+import { validToolkitSlug } from "./tool-catalog.ts";
 export type AgentConnectionScope = { playbookId: string; agentId: string };
 export type ToolAssignment = {
   playbook_id: string;
@@ -21,7 +21,6 @@ export function agentConnectionContext(
     agent,
     connectionUserId: ownerId,
     returnTo: `/campaigns/${scope.playbookId}?agent=${agent.id}`,
-    suggestedTools: agent.tools.map((tool) => toolkitSlug(tool.id)),
   };
 }
 export function requireAgentTool(

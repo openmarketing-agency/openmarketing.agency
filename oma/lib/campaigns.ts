@@ -275,10 +275,3 @@ export function findCampaign(id: string) {
 export function findCampaignAgent(campaignId: string, agentId: string) {
   return findCampaign(campaignId)?.agents.find((agent) => agent.id === agentId);
 }
-export function campaignTools(campaign: Campaign): ToolId[] {
-  return [
-    ...new Set(
-      campaign.agents.flatMap((agent) => agent.tools.map((tool) => tool.id)),
-    ),
-  ];
-}
