@@ -64,7 +64,7 @@ export async function registerAction(
   const signedIn = await api.login(created.data.email, password);
   if (!signedIn.ok) redirect("/login");
   await setTokens(signedIn.data);
-  redirect("/dashboard");
+  redirect("/onboarding");
 }
 
 /** Revokes the current refresh token, then clears the local session. */
