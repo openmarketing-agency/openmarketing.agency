@@ -141,6 +141,10 @@ export function createToolConnectionService(
   const usable = (account: Awaited<ReturnType<typeof accounts>>[number]) =>
     account.status === "ACTIVE" && !account.isDisabled;
 
+  async function activeAccounts(userId: string, toolId: string) {
+    return (await accounts(userId)).filter((account) => matches(account, toolId) && usable(account));
+  }
+
   async function snapshot(userId: string): Promise<ConnectionSnapshot> {
     const items = await accounts(userId);
     const ids = [...new Set(items.map((item) => item.toolkit.slug))];
@@ -291,6 +295,7 @@ export function createToolConnectionService(
 
   return {
     accounts,
+    activeAccounts,
     authConfig,
     snapshot,
     connect,

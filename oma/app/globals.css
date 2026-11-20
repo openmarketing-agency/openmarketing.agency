@@ -3096,3 +3096,66 @@ pre {
   border-radius: 12px;
 }
 .console-loading .loading-panel .loading-line:nth-child(2) { width: min(80%, 15rem); }
+
+.onboarding-workspace {
+  max-width: 52rem;
+}
+
+.onboarding-content {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.onboarding-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.onboarding-card h2,
+.onboarding-card h3,
+.onboarding-card p {
+  margin: 0;
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.onboarding-chat {
+  display: grid;
+  gap: 1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.onboarding-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-question {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.onboarding-question legend {
+  margin-bottom: 0.6rem;
+}
+
+.onboarding-card textarea,
+.onboarding-card input {
+  padding: 0.7rem;
+  border: 1px solid var(--control);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  resize: vertical;
+}

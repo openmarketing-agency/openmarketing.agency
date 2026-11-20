@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 
 import * as api from "@/lib/backend";
+import { hermesConfigured } from "@/lib/server/marketing/hermes";
 import {
   clearTokens,
   getAccessToken,
@@ -64,7 +65,7 @@ export async function registerAction(
   const signedIn = await api.login(created.data.email, password);
   if (!signedIn.ok) redirect("/login");
   await setTokens(signedIn.data);
-  redirect("/dashboard");
+  redirect(hermesConfigured() ? "/onboarding" : "/dashboard");
 }
 
 /** Revokes the current refresh token, then clears the local session. */

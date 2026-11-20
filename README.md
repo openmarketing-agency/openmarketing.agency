@@ -22,6 +22,14 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes c
 
 Use the Hermes dashboard, gateway, or CLI to run agents. The console manages playbook tool selections and MCP connections. Composio is optional and requires an API key for its hosted tool catalog.
 
+### Onboard and start an SEO campaign
+
+Open **Brand & Campaign** in the console. Talk to Hermes about your brand, audience, voice, assets, and goals. Enter the exact Google Search Console property and save. OMA stores the brand brief, knowledge notes, and the tailored SEO plan in SQLite.
+
+Set `COMPOSIO_API_KEY` and connect one Google Search Console account that can read the selected property. The campaign starts automatically and repeats every 24 hours after a successful run. OMA reads Search Console analytics for the chosen property through Composio, then hands the evidence and saved context to the Hermes researcher, writer, and verifier. The latest draft and review appear under **Brand & Campaign**. Pause or resume the campaign from that page.
+
+This first version supports one SEO campaign per installation, text and links for assets, and read-only evidence collection with drafts for review. Keep the console running so it can schedule work and retry failed cycles.
+
 The console serves [API documentation](http://localhost:3000/docs) and a [database readiness endpoint](http://localhost:3000/health/ready).
 
 Stop the full stack with `docker compose -f compose.yaml -f compose.vm.yaml down`. Use the same environment file for Compose commands. The console stores SQLite and its signing key in `.oma-data/`. The VM volume holds Hermes profiles, gateway keys, the nested Docker engine, and catalog app data. Stop the stack before taking filesystem backups. Keep a secure copy of any configured signing or integration encryption keys.

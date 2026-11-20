@@ -22,10 +22,10 @@ export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
 function migrate(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
-    if (version === 1) return;
-    if (version !== 0) throw new Error("This SQLite database requires a newer version of OMA.");
+    if (version === 2) return;
+    if (version !== 0 && version !== 1) throw new Error("This SQLite database requires a newer version of OMA.");
 
-    db.exec(`
+    if (version === 0) db.exec(`
       CREATE TABLE users (
         id TEXT PRIMARY KEY NOT NULL,
         slot INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK (slot = 1),
@@ -65,7 +65,17 @@ function migrate(db: DatabaseSync): void {
         PRIMARY KEY (user_id, playbook_id, agent_id, toolkit_slug)
       ) STRICT;
 
-      PRAGMA user_version = 1;
+    `);
+    db.exec(`
+      CREATE TABLE marketing_workspaces (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        onboarding TEXT NOT NULL,
+        campaign TEXT,
+        next_at INTEGER,
+        lease_until INTEGER NOT NULL DEFAULT 0,
+        lease_token TEXT
+      ) STRICT;
+      PRAGMA user_version = 2;
     `);
   });
 }

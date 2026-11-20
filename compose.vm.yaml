@@ -1,4 +1,10 @@
 services:
+  app:
+    environment:
+      OMA_HERMES_GATEWAY_URL: http://vm:8642
+      OMA_HERMES_SEED_FILE: /run/oma-runtime/seed
+    volumes:
+      - runtime-key:/run/oma-runtime:ro
   vm:
     platform: linux/amd64
     build:
@@ -13,6 +19,7 @@ services:
       - "127.0.0.1:${OMA_CATALOG_PORT:-18080}:9080"
     volumes:
       - vm-data:/opt/data
+      - runtime-key:/run/oma-runtime
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in your environment file}
       OMA_HERMES_MODEL: ${OMA_HERMES_MODEL:-openai/gpt-4.1-mini}
@@ -27,3 +34,4 @@ services:
 
 volumes:
   vm-data:
+  runtime-key:

@@ -10,6 +10,7 @@ import {
   Cable,
   LogOut,
   Menu,
+  MessageSquare,
   X,
 } from "lucide-react";
 import { logoutAction } from "@/app/actions/auth";
@@ -41,6 +42,7 @@ function ConsoleFrame({
   const [open, setOpen] = useState(false);
   const home = demo ? "/demo" : "/dashboard";
   const nav = [
+    ...(!demo ? [{ href: "/onboarding", label: "Brand & Campaign", icon: MessageSquare }] : []),
     { href: home, label: "Playbooks", icon: BookOpen },
     {
       href: demo ? "/demo/connections" : "/connections",

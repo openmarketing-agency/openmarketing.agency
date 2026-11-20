@@ -9,6 +9,7 @@ import {
 export type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 let current: {
   key: string;
+  client: Composio;
   catalog: ReturnType<typeof createToolCatalog>;
   connections: ReturnType<typeof createToolConnectionService>;
 } | undefined;
@@ -24,7 +25,36 @@ function services() {
   const client = new Composio({ apiKey: key, disableVersionCheck: true });
   const catalog = createToolCatalog(client.getClient());
   const connections = createToolConnectionService(client, (slug) => catalog.get(slug));
-  return (current = { key, catalog, connections });
+  return (current = { key, client, catalog, connections });
+}
+
+export const SEARCH_CONSOLE = "google_search_console";
+
+export async function searchConsoleAccount(userId: string) {
+  if (!configuredKey()) return undefined;
+  const accounts = await services().connections.activeAccounts(userId, SEARCH_CONSOLE);
+  if (accounts.length > 1) {
+    throw new ToolConnectionConfigurationError("Keep one active Search Console account for this campaign.");
+  }
+  return accounts[0]?.id;
+}
+
+export async function searchConsoleEvidence(userId: string, account: string, property: string) {
+  const dateAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+  const start = dateAgo(31), end = dateAgo(3);
+  const result = await services().client.tools.execute("GOOGLE_SEARCH_CONSOLE_SEARCH_ANALYTICS_QUERY", {
+    userId,
+    connectedAccountId: account,
+    version: "20261116_00",
+    arguments: {
+      site_url: property, start_date: start, end_date: end,
+      dimensions: ["query"], row_limit: 25,
+    },
+  }, { signal: AbortSignal.timeout(15_000) });
+  if (!result.successful) {
+    throw new ToolConnectionConfigurationError("Search Console could not read this property. Check its exact property ID and the connected account’s access.");
+  }
+  return JSON.stringify({ start, end, analytics: result.data }).slice(0, 18_000);
 }
 
 export async function toolCatalog() {

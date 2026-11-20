@@ -11,6 +11,14 @@ chown -h hermes:hermes "$HERMES_HOME" "$XDG_RUNTIME_DIR"
 chmod 0700 "$XDG_RUNTIME_DIR"
 cd "$HERMES_HOME"
 /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python /opt/oma/bootstrap.py
+if [[ -d /run/oma-runtime ]]; then
+    seed=${OMA_HERMES_GATEWAY_SEED:-$(<"$HERMES_HOME/.oma/gateway-seed")}
+    seed_file=$(mktemp /run/oma-runtime/.seed.XXXXXX)
+    printf '%s' "$seed" > "$seed_file"
+    chown 1000:1000 "$seed_file"
+    mv -fT -- "$seed_file" /run/oma-runtime/seed
+    unset seed seed_file
+fi
 unset OPENROUTER_API_KEY OMA_LITELLM_URL OMA_LITELLM_KEY OMA_HERMES_GATEWAY_SEED
 
 trap 'kill $(jobs -pr) 2>/dev/null || true; wait' EXIT

@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 
 from dotenv import dotenv_values, set_key
 from hermes_cli.config import atomic_config_replace, require_readable_config_before_write
+from hermes_cli.profiles import create_profile
 
 
 def managed_path(root, *parts):
@@ -91,12 +92,15 @@ def write_env(path, values):
             set_key(path, name, value)
 
 
-def configure_model(path, provider, model, *, gateway=False):
+def configure_model(path, provider, model, *, gateway=False, toolsets=None):
     config = require_readable_config_before_write(path)
     previous = deepcopy(config)
     config["model"] = model
     if provider:
         config.setdefault("providers", {})["oma-inference"] = provider
+    if toolsets is not None:
+        config.setdefault("agent", {})["enabled_toolsets"] = toolsets
+        config.setdefault("tools", {}).setdefault("tool_search", {})["enabled"] = False
     if gateway:
         config.setdefault("gateway", {})["multiplex_profiles"] = True
         selected = config.get("agent", {}).get("enabled_toolsets")
@@ -125,6 +129,24 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
     soul = managed_path(root, "SOUL.md")
     if not soul.exists():
         atomic_write(soul, (seed / "SOUL.md").read_bytes())
+
+    # Console-owned profiles only converse or return drafts. Catalog and existing
+    # playbook profiles retain their own operational toolsets.
+    console_profiles = {
+        "oma-onboarding": (
+            "You help people set up their Open Marketing Agency workspace. Learn about their brand and goals.",
+            ["clarify", "no_mcp"],
+        ),
+        "oma-seo-researcher": ("Analyze SEO evidence and prepare a grounded research brief.", ["no_mcp"]),
+        "oma-seo-writer": ("Write an actionable SEO draft for owner review.", ["no_mcp"]),
+        "oma-seo-verifier": ("Review SEO drafts against their evidence and flag unsupported claims.", ["no_mcp"]),
+    }
+    for name, (persona, toolsets) in console_profiles.items():
+        profile = managed_path(root, "profiles", name)
+        if not profile.exists():
+            create_profile(name, no_alias=True, no_skills=True, seed_model=False, soul=persona)
+        configure_model(managed_path(profile, "config.yaml"), provider, model, toolsets=toolsets)
+        write_env(managed_path(profile, ".env"), {**credentials, "API_SERVER_KEY": gateway_key(name)})
 
     for playbook in read_registry(registry):
         setup = managed_path(root, ".oma", "setups", playbook["id"])
