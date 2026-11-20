@@ -3,6 +3,7 @@
 import type { AgentPrompt } from "./agent-chat";
 
 export const maxSetupAnswerLength = 1000;
+export const setupGreeting = "I’m ready to set up my marketing workspace.";
 export type SetupQuestion = Extract<AgentPrompt, { kind: "clarify" }>;
 export type SetupExchange = { question: string; answer: string };
 

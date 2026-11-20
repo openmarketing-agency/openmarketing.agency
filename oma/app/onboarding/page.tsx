@@ -1,4 +1,4 @@
-/** Shows the optional workspace setup to the signed-in account. */
+/** Shows the signed-in owner's setup conversation in the cloud onboarding layout. */
 
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -21,29 +21,31 @@ async function Setup() {
   if (initial.step.status === "closed") redirect("/dashboard");
 
   return (
-    <>
+    <div className="onboarding-page">
       <header className="onboarding-header">
         <div className="onboarding-header-inner">
           <Brand href="/dashboard" />
-          <form action={logoutAction}><button className="onboarding-text-button">Sign out</button></form>
+          <div className="onboarding-header-actions">
+            <form action={skipSetup}><button className="onboarding-sign-out">Skip setup</button></form>
+            <form action={logoutAction}><button className="onboarding-sign-out">Sign out</button></form>
+          </div>
         </div>
       </header>
       <main id="main-content" tabIndex={-1} className="onboarding-main">
-        <header className="onboarding-heading">
-          <div>
-            <h1>Set up your workspace</h1>
-            <p>Tell oma-agent what you’re working on and get a campaign to start with.</p>
-          </div>
-          <form action={skipSetup}>
-            <button className="onboarding-text-button">Skip setup</button>
-          </form>
-        </header>
         <OnboardingChat initial={initial} />
       </main>
-    </>
+    </div>
   );
 }
 
 export default function OnboardingPage() {
-  return <Suspense fallback={<main id="main-content" className="onboarding-main" role="status">Loading setup…</main>}><Setup /></Suspense>;
+  return (
+    <Suspense fallback={
+      <main id="main-content" className="onboarding-page">
+        <p className="onboarding-loading-page" role="status">Loading your setup…</p>
+      </main>
+    }>
+      <Setup />
+    </Suspense>
+  );
 }

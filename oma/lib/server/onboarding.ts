@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { campaigns } from "@/lib/campaigns";
 import { getDb } from "@/lib/db";
-import { maxSetupAnswerLength, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
+import { maxSetupAnswerLength, setupGreeting, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
 import { AgentChatError, answerAgentPrompt, getAgentRun, startAgentRun } from "./agent-chat";
 
 const exchange = z.object({ question: z.string(), answer: z.string() });
@@ -118,7 +118,7 @@ export async function refreshOnboarding(userId: string): Promise<OnboardingView>
       ? "Continue my workspace setup. My saved answers: " + JSON.stringify(state.history.slice(-3).map(({ question, answer }) => ({
           question: question.slice(0, 500), answer,
         })))
-      : "I’m ready to set up my marketing workspace.";
+      : setupGreeting;
     const { handle } = await startAgentRun(userId, {
       sessionId: state.sessionId, turnId: state.turnId, message: input,
     }, setupInstructions);

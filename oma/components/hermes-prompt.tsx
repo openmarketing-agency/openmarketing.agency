@@ -6,14 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { AgentPrompt as Prompt } from "@/lib/agent-chat";
 
-export function HermesPrompt({
-  prompt, onAnswer, maxAnswerLength = 16_384, skipLabel = "Skip",
-}: {
-  prompt: Prompt;
-  onAnswer: (answer: string) => Promise<string | undefined>;
-  maxAnswerLength?: number;
-  skipLabel?: string;
-}) {
+export function HermesPrompt({ prompt, onAnswer }: { prompt: Prompt; onAnswer: (answer: string) => Promise<string | undefined> }) {
   const [otherSelected, setOtherSelected] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -24,7 +17,7 @@ export function HermesPrompt({
 
   async function answer(value: string) {
     if (submitting || submitted) return;
-    if (value.length > maxAnswerLength) {
+    if (value.length > 16_384) {
       setError("This answer is too long. Shorten it and try again.");
       return;
     }
@@ -77,10 +70,10 @@ export function HermesPrompt({
             <label className="runtime-choice"><input name="choice" type="radio" value="other" onChange={() => setOtherSelected(true)} /> Other</label>
           )}
           {(prompt.choices.length === 0 || otherSelected || prompt.multiSelect) && (
-            <label>{prompt.multiSelect ? "Other answer (optional)" : "Your answer"}<textarea name="other" rows={2} maxLength={Math.min(16_000, maxAnswerLength)} /></label>
+            <label>{prompt.multiSelect ? "Other answer (optional)" : "Your answer"}<textarea name="other" rows={2} maxLength={16_000} /></label>
           )}
           <div className="runtime-actions">
-            <button type="button" className="btn secondary" onClick={() => void answer("")}>{skipLabel}</button>
+            <button type="button" className="btn secondary" onClick={() => void answer("")}>Skip</button>
             <button type="submit" className="btn primary">Send answer</button>
           </div>
         </>}

@@ -10,10 +10,12 @@ mount="type=volume,source=$volume,target=/opt/data,volume-nocopy"
 if [[ "$engine" == podman ]]; then mount="type=volume,source=$volume,target=/opt/data"; fi
 network=none
 if [[ "${OMA_TEST_CATALOG:-0}" == 1 ]]; then network=bridge; fi
+stale_pid_file=$(mktemp)
 
 cleanup() {
     if (( $? != 0 )); then "$engine" logs "$container" || true; fi
     "$engine" rm -f "$container" >/dev/null 2>&1 || true
+    rm -f -- "$stale_pid_file"
     "$engine" volume rm "$volume" >/dev/null
 }
 trap cleanup EXIT
@@ -39,6 +41,11 @@ guest bash -euo pipefail -c '
     docker volume create oma-smoke-persist
 ' _ "${omactl_tag#v}"
 
-"$engine" restart "$container" >/dev/null
+"$engine" stop "$container" >/dev/null
+# Simulate a previous daemon leaving its PID file behind. PID 1 belongs to
+# the container's init on the next boot, so dockerd must ignore this file.
+printf '1\n' > "$stale_pid_file"
+"$engine" cp "$stale_pid_file" "$container:/run/docker.pid"
+"$engine" start "$container" >/dev/null
 guest /opt/hermes/.venv/bin/python - restart < "$root/tests/smoke.py"
 guest docker volume inspect oma-smoke-persist >/dev/null
