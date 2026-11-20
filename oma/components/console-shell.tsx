@@ -10,6 +10,7 @@ import {
   Cable,
   LogOut,
   Menu,
+  MessageSquare,
   X,
 } from "lucide-react";
 import { logoutAction } from "@/app/actions/auth";
@@ -47,6 +48,7 @@ function ConsoleFrame({
       label: "Connections",
       icon: Cable,
     },
+    ...(!demo ? [{ href: "/chat", label: "Chat", icon: MessageSquare }] : []),
   ];
   return (
     <div className="console-frame">

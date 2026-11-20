@@ -29,6 +29,8 @@ services:
       OMA_CORS_ORIGINS: ${OMA_CORS_ORIGINS:-[]}
       OMA_DOCS_ENABLED: ${OMA_DOCS_ENABLED:-true}
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+      OMA_AGENT_URL: ${OMA_AGENT_URL:-}
+      OMA_AGENT_API_KEY: ${OMA_AGENT_API_KEY:-}
     healthcheck:
       test:
         - CMD-SHELL

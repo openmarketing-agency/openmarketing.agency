@@ -1,0 +1,119 @@
+/* Retains the cloud chat layout and uses the console’s existing colors and spacing. */
+.chat-page .runtime-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 440px;
+  padding: 0;
+}
+.runtime-chat .surface-heading {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.chat-status {
+  padding: 4px 9px;
+  border-radius: 20px;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.chat-status.is-ready { background: #e7f5ed; color: #216344; }
+.runtime-empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  flex: 1;
+  gap: 10px;
+  min-height: 285px;
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.runtime-working svg { animation: spin 1.3s linear infinite; }
+.runtime-empty p { max-width: 43ch; }
+.runtime-empty .btn { margin-top: 7px; }
+
+.runtime-messages {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 13px;
+  min-height: 190px;
+  max-height: 32rem;
+  overflow: auto;
+  padding: 18px 24px;
+}
+.runtime-conversation-empty {
+  margin: auto;
+  text-align: center;
+}
+.runtime-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.runtime-message {
+  align-self: flex-start;
+  max-width: min(86%, 70ch);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--raised);
+}
+.runtime-message.from-user {
+  align-self: flex-end;
+  background: var(--accent-soft);
+}
+.runtime-message strong { font-size: 12px; }
+.runtime-message p {
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.runtime-form { display: grid; gap: 8px; }
+.runtime-form label { font-weight: 500; }
+.runtime-form textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 11px;
+  color: var(--text);
+  border: 1px solid var(--control);
+  border-radius: 8px;
+  background: var(--surface);
+  resize: vertical;
+}
+.runtime-composer {
+  padding: 15px 24px 20px;
+  border-top: 1px solid var(--border);
+}
+.runtime-composer > .btn { justify-self: end; }
+.runtime-prompt fieldset { display: grid; gap: 10px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.runtime-prompt legend { font-weight: 600; overflow-wrap: anywhere; white-space: pre-wrap; margin-bottom: 8px; }
+.runtime-prompt .runtime-choice { display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; }
+.runtime-prompt textarea { margin-top: 5px; }
+.runtime-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.chat-error { margin: 0 24px 12px; }
+.runtime-output {
+  max-height: 24rem;
+  overflow: auto;
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+
+@media (max-width: 520px) {
+  .chat-page { padding: 21px 15px; }
+  .runtime-chat .surface-heading,
+  .runtime-messages,
+  .runtime-composer { padding-inline: 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runtime-working svg { animation: none; }
+}
