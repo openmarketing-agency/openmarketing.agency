@@ -3,7 +3,7 @@
 import { requireUser } from "@/lib/dal";
 import { HermesUnavailable } from "@/lib/server/marketing/hermes";
 import { clarifyOnboarding, refreshOnboarding, submitOnboarding } from "@/lib/server/marketing/onboarding";
-import { changeCampaignProperty, propertySchema, setPaused, workspace, type OnboardingView } from "@/lib/server/marketing/state";
+import { activateCampaign, changeCampaignSources, setPaused, workspace, type OnboardingView } from "@/lib/server/marketing/state";
 
 function fail(userId: string, error: unknown): OnboardingView {
   return {
@@ -30,13 +30,18 @@ export async function sendOnboardingAction(text: string) {
   }
 }
 
-export async function saveOnboardingAction(property: string) {
+export async function generatePlaybookAction() {
   const user = await requireUser();
   try {
-    return await submitOnboarding(user.id, property, true);
+    return await submitOnboarding(user.id);
   } catch (error) {
     return fail(user.id, error);
   }
+}
+
+export async function activateCampaignAction(draftId: string, resources: Record<string, string>) {
+  const user = await requireUser();
+  return activateCampaign(user.id, draftId, resources);
 }
 
 export async function answerOnboardingAction(promptId: string, text: string) {
@@ -54,10 +59,7 @@ export async function pauseCampaignAction(paused: boolean) {
   return workspace(user.id);
 }
 
-export async function changeCampaignPropertyAction(value: string): Promise<OnboardingView> {
+export async function changeCampaignSourcesAction(resources: Record<string, string>) {
   const user = await requireUser();
-  const property = propertySchema.safeParse(value);
-  if (!property.success) return { ...workspace(user.id), requestError: "Enter the exact Search Console property." };
-  changeCampaignProperty(user.id, property.data);
-  return workspace(user.id);
+  return changeCampaignSources(user.id, resources);
 }

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionUser } from "@/lib/dal";
-import { appOrigin, SEARCH_CONSOLE, toolConnections } from "@/lib/composio";
+import { appOrigin, toolConnections } from "@/lib/composio";
 import { queueCampaign } from "@/lib/server/marketing/state";
 import { accessCookieOptions } from "@/lib/cookies";
 import {
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
         attempt,
         sessionUri ?? undefined,
       );
-      if (result === "connected" && attempt.toolId === SEARCH_CONSOLE) queueCampaign(user.id);
+      if (result === "connected") queueCampaign(user.id, attempt.toolId);
     } catch {
       result = "failed";
     }

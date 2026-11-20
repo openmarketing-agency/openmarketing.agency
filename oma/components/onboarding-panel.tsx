@@ -3,17 +3,18 @@
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import Link from "next/link";
 import {
-  answerOnboardingAction, changeCampaignPropertyAction, pauseCampaignAction, refreshOnboardingAction,
-  saveOnboardingAction, sendOnboardingAction,
+  activateCampaignAction, answerOnboardingAction, changeCampaignSourcesAction, generatePlaybookAction,
+  pauseCampaignAction, refreshOnboardingAction, sendOnboardingAction,
 } from "@/app/actions/onboarding";
+import { campaignProfiles, campaignSources, type DraftBrief, type Source } from "@/lib/marketing-playbook";
 import type { OnboardingView as View } from "@/lib/server/marketing/state";
 
 export function OnboardingPanel({ initial, available }: { initial: View; available: boolean }) {
   const [view, setView] = useState(initial);
   const [text, setText] = useState("");
-  const [property, setProperty] = useState(initial.campaign?.brief.playbook.property ?? "");
   const [busy, start] = useTransition();
   const { onboarding, campaign, question, requestError } = view;
+  const draft = onboarding?.draft;
   const pending = Boolean(onboarding?.pending);
   const poll = available && (pending || Boolean(campaign && campaign.status !== "paused"));
 
@@ -62,63 +63,45 @@ export function OnboardingPanel({ initial, available }: { initial: View; availab
     <div className="onboarding-workspace">
       <div className="agent-page-heading">
         <h1>{campaign ? "Brand & Campaign" : "Set up your marketing workspace"}</h1>
-        {!campaign && <p>Tell Hermes about your business. It will prepare your brand brief, knowledge base, and first SEO campaign.</p>}
+        {!campaign && <p>Tell Hermes about your business and what you want to accomplish. It will prepare a brand brief, knowledge base, and campaign playbook.</p>}
       </div>
       {!available && <p className="form-error" role="status">Start the full OMA stack to use Hermes and run campaigns.</p>}
       {requestError && <p className="form-error" role="alert">{requestError}</p>}
       {campaign ? (
         <div className="onboarding-content">
+          <BrandBrief brief={campaign.brief} />
           <section className="onboarding-card">
-            <h2>{campaign.brief.brand.name}</h2>
-            <p><strong>Audience</strong> {campaign.brief.brand.audience}</p>
-            <p><strong>Brand voice</strong> {campaign.brief.brand.voice}</p>
-            {campaign.brief.brand.assets.length > 0 && <>
-              <h3>Brand assets</h3>
-              <ul>{campaign.brief.brand.assets.map((asset, i) => <li key={i}>{asset}</li>)}</ul>
-            </>}
-            <h3>Knowledge base</h3>
-            <ul>{campaign.brief.knowledge.map((note, i) => <li key={i}>{note}</li>)}</ul>
-          </section>
-          <section className="onboarding-card">
-            <h2>{campaign.brief.playbook.title}</h2>
-            <p>{campaign.brief.playbook.goal}</p>
-            <p>{campaign.brief.playbook.approach}</p>
-            <p><strong>Search Console property</strong> {campaign.brief.playbook.property}</p>
+            <Playbook playbook={campaign.brief.playbook} />
+            <SourceList sources={campaign.brief.playbook.sources} />
             <p role="status">
               {campaign.notice ?? {
-                waiting: "Waiting for Google Search Console. The campaign will start automatically after connection.",
-                running: "The SEO team is preparing a draft and review.",
+                waiting: "The campaign will start when its required sources are ready.",
+                running: "Hermes is running the playbook.",
                 active: "Active. The next campaign cycle runs tomorrow.",
                 paused: "Campaign paused.",
                 error: "The campaign will retry automatically.",
               }[campaign.status]}
             </p>
             <div className="onboarding-actions">
-              <Link href="/connections" className="btn secondary">Manage connections</Link>
+              {campaign.brief.playbook.sources.length > 0 && <Link href="/connections" className="btn secondary">Manage connections</Link>}
               <button type="button" className="btn secondary" disabled={busy || !available}
                 onClick={() => run(() => pauseCampaignAction(campaign.status !== "paused"))}>
                 {campaign.status === "paused" ? "Resume campaign" : "Pause campaign"}
               </button>
             </div>
-            <details>
-              <summary>Change Search Console property</summary>
-              <form className="onboarding-content" onSubmit={(event) => {
-                event.preventDefault();
-                if (!busy && property.trim()) run(() => changeCampaignPropertyAction(property));
-              }}>
-                <label htmlFor="campaign-property">New property</label>
-                <input id="campaign-property" value={property} onChange={(event) => setProperty(event.target.value)}
-                  maxLength={500} placeholder="sc-domain:example.com" required />
-                <button className="btn secondary" type="submit" disabled={busy || !property.trim()}>Save property</button>
-              </form>
-            </details>
+            {campaign.brief.playbook.sources.length > 0 && <details>
+              <summary>Change approved source resources</summary>
+              <SourceForm sources={campaign.brief.playbook.sources} label="Save resources" disabled={busy}
+                onSubmit={(resources) => run(() => changeCampaignSourcesAction(resources))} />
+            </details>}
           </section>
           {campaign.report && <section className="onboarding-card">
-            <h2>Latest draft</h2>
-            {campaign.report.property !== campaign.brief.playbook.property && <p>{campaign.report.property}</p>}
-            <div className="onboarding-text">{campaign.report.draft}</div>
-            <h3>Verifier’s review</h3>
-            <div className="onboarding-text">{campaign.report.review}</div>
+            <h2>Latest campaign results</h2>
+            <SourceList sources={campaign.report.sources} />
+            {campaign.report.outputs.map(({ role, text }, i) => <div key={i}>
+              <h3>{role}</h3>
+              <div className="onboarding-text">{text}</div>
+            </div>)}
           </section>}
         </div>
       ) : (
@@ -149,20 +132,85 @@ export function OnboardingPanel({ initial, available }: { initial: View; availab
                 disabled={!available || busy || !text.trim() || (pending && !question)}>Send</button>
             </div>
           </form>
-          {onboarding?.messages.some((message) => message.role === "assistant") && <form className="onboarding-content" onSubmit={(event) => {
-            event.preventDefault();
-            if (available && !busy && !pending) run(() => saveOnboardingAction(property));
-          }}>
-            <label htmlFor="onboarding-property">Search Console property</label>
-            <input id="onboarding-property" type="text" value={property} onChange={(event) => setProperty(event.target.value)}
-              maxLength={500} required placeholder="sc-domain:example.com" disabled={!available || busy || pending} />
-            <div className="onboarding-actions">
-              <button className="btn secondary" type="submit" disabled={!available || busy || pending || !property.trim()}>Save workspace</button>
-            </div>
-            <p>Saving authorizes a recurring SEO draft after you connect Search Console. You can pause it at any time.</p>
-          </form>}
+          {!draft && onboarding?.messages.some((message) => message.role === "assistant") &&
+            <button className="btn secondary" type="button" disabled={!available || busy || pending}
+              onClick={() => run(generatePlaybookAction)}>Generate playbook</button>}
         </div>
       )}
+      {draft && <div className="onboarding-content">
+        <BrandBrief brief={draft.brief} />
+        <section className="onboarding-card">
+          <h2>Review your playbook</h2>
+          <Playbook playbook={draft.brief.playbook} />
+          <p>{draft.brief.playbook.sources.length > 0
+            ? "Approve the resources this campaign may read. Hermes starts producing drafts after you connect the required accounts."
+            : "This campaign uses your saved brand and knowledge to produce drafts."}</p>
+          <p>Send Hermes another message to revise the playbook before activating.</p>
+          <SourceForm key={draft.id} sources={draft.brief.playbook.sources.map((toolkit) => ({ toolkit, resource: "" }))}
+            label="Activate campaign" disabled={busy || !available || pending}
+            onSubmit={(resources) => run(() => activateCampaignAction(draft.id, resources))} />
+        </section>
+      </div>}
     </div>
+  );
+}
+
+function BrandBrief({ brief }: { brief: Pick<DraftBrief, "brand" | "knowledge"> }) {
+  return (
+    <section className="onboarding-card">
+      <h2>{brief.brand.name}</h2>
+      <p><strong>Audience</strong> {brief.brand.audience}</p>
+      <p><strong>Brand voice</strong> {brief.brand.voice}</p>
+      {brief.brand.assets.length > 0 && <>
+        <h3>Brand assets</h3>
+        <ul>{brief.brand.assets.map((asset, i) => <li key={i}>{asset}</li>)}</ul>
+      </>}
+      <h3>Knowledge base</h3>
+      <ul>{brief.knowledge.map((note, i) => <li key={i}>{note}</li>)}</ul>
+    </section>
+  );
+}
+
+function Playbook({ playbook }: { playbook: Omit<DraftBrief["playbook"], "sources"> }) {
+  return (
+    <>
+      <h3>{playbook.title}</h3>
+      <p>{playbook.goal}</p>
+      <p>{playbook.approach}</p>
+      <ol>{playbook.steps.map(({ profile, role, task }, i) => <li key={i}>
+        <strong>{role}</strong> · {campaignProfiles[profile]} profile
+        <p>{task}</p>
+      </li>)}</ol>
+    </>
+  );
+}
+
+function SourceList({ sources }: { sources: Source[] }) {
+  if (!sources.length) return null;
+  return <ul>{sources.map(({ toolkit, resource }) => <li key={toolkit}>
+    <strong>{campaignSources[toolkit].label}</strong> {resource}
+  </li>)}</ul>;
+}
+
+function SourceForm({ sources, label, disabled, onSubmit }: {
+  sources: Source[];
+  label: string;
+  disabled: boolean;
+  onSubmit: (resources: Record<string, string>) => void;
+}) {
+  return (
+    <form className="onboarding-content" onSubmit={(event) => {
+      event.preventDefault();
+      if (!disabled) onSubmit(Object.fromEntries(new FormData(event.currentTarget)) as Record<string, string>);
+    }}>
+      {sources.map(({ toolkit, resource }) => {
+        const spec = campaignSources[toolkit];
+        return <label key={toolkit}>{spec.resourceLabel}
+          <input type="text" name={toolkit} defaultValue={resource} maxLength={500}
+            placeholder={spec.example} required disabled={disabled} />
+        </label>;
+      })}
+      <button className="btn secondary" type="submit" disabled={disabled}>{label}</button>
+    </form>
   );
 }

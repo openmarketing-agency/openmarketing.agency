@@ -22,13 +22,13 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes c
 
 Use the Hermes dashboard, gateway, or CLI to run agents. The console manages playbook tool selections and MCP connections. Composio is optional and requires an API key for its hosted tool catalog.
 
-### Onboard and start an SEO campaign
+### Onboard and start a campaign
 
-Open **Brand & Campaign** in the console. Talk to Hermes about your brand, audience, voice, assets, and goals. Enter the exact Google Search Console property and save. OMA stores the brand brief, knowledge notes, and the tailored SEO plan in SQLite.
+Open **Brand & Campaign** and tell Hermes about your brand, audience, voice, assets, and what you want to accomplish. Choose **Generate playbook** to preview the brand brief, knowledge base, and campaign steps. Hermes can plan work such as a product launch, a newsletter, social content, or a search campaign. Review the plan and choose **Activate campaign** when ready. OMA saves it in SQLite.
 
-Set `COMPOSIO_API_KEY` and connect one Google Search Console account that can read the selected property. The campaign starts automatically and repeats every 24 hours after a successful run. OMA reads Search Console analytics for the chosen property through Composio, then hands the evidence and saved context to the Hermes researcher, writer, and verifier. The latest draft and review appear under **Brand & Campaign**. Pause or resume the campaign from that page.
+Hermes runs each step through a researcher, strategist, creator, or reviewer profile, with roles and tasks tailored to the playbook. A campaign can use the saved brief alone. For connected evidence, approve the resource during activation, set `COMPOSIO_API_KEY`, and connect one account per required source under **Connections**. Campaigns can read search performance from Google Search Console and traffic by channel from Google Analytics 4.
 
-This first version supports one SEO campaign per installation, text and links for assets, and read-only evidence collection with drafts for review. Keep the console running so it can schedule work and retry failed cycles.
+The console schedules the campaign once its required sources are connected and again 24 hours after each successful run. **Brand & Campaign** shows the latest results and lets you pause or resume work. This MVP supports one active playbook per installation, accepts text and links for assets, and produces drafts for owner review. Keep the console running to schedule work and retry failed cycles.
 
 The console serves [API documentation](http://localhost:3000/docs) and a [database readiness endpoint](http://localhost:3000/health/ready).
 

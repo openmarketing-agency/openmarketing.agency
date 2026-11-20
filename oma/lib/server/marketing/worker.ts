@@ -1,5 +1,5 @@
 import "server-only";
-import { searchConsoleAccount, searchConsoleEvidence } from "@/lib/composio";
+import { campaignSourceAccount, campaignSourceEvidence } from "@/lib/composio";
 import { ToolConnectionConfigurationError } from "@/lib/tool-connection-service";
 import { advanceCampaign } from "./campaign";
 import { getRun, HermesUnavailable, hermesConfigured, startRun } from "./hermes";
@@ -17,8 +17,8 @@ async function tick() {
     const { userId, token, campaign } = work;
     try {
       const next = await advanceCampaign(campaign, {
-        account: () => searchConsoleAccount(userId),
-        evidence: (account, property) => searchConsoleEvidence(userId, account, property),
+        account: (toolkit) => campaignSourceAccount(userId, toolkit),
+        evidence: (account, source) => campaignSourceEvidence(userId, account, source),
         start: startRun, get: getRun,
         stillRunning: () => campaignIsClaimed(userId, token),
       });

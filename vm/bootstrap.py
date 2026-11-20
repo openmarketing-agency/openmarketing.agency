@@ -137,9 +137,10 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed):
             "You help people set up their Open Marketing Agency workspace. Learn about their brand and goals.",
             ["clarify", "no_mcp"],
         ),
-        "oma-seo-researcher": ("Analyze SEO evidence and prepare a grounded research brief.", ["no_mcp"]),
-        "oma-seo-writer": ("Write an actionable SEO draft for owner review.", ["no_mcp"]),
-        "oma-seo-verifier": ("Review SEO drafts against their evidence and flag unsupported claims.", ["no_mcp"]),
+        "oma-campaign-researcher": ("Research marketing questions from evidence and flag gaps.", ["no_mcp"]),
+        "oma-campaign-strategist": ("Plan campaigns around the owner's goals, audience, and constraints.", ["no_mcp"]),
+        "oma-campaign-creator": ("Develop campaign materials for owner review in the brand's voice.", ["no_mcp"]),
+        "oma-campaign-reviewer": ("Review materials against the brief and flag unsupported claims.", ["no_mcp"]),
     }
     for name, (persona, toolsets) in console_profiles.items():
         profile = managed_path(root, "profiles", name)

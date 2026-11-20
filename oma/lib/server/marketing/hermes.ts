@@ -1,8 +1,9 @@
 import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import type { Clarification, Stage } from "./state";
+import type { CampaignProfile } from "@/lib/marketing-playbook";
+import type { Clarification } from "./state";
 
-type Profile = "oma-onboarding" | `oma-seo-${Stage}`;
+type Profile = "oma-onboarding" | CampaignProfile;
 export type Run = { run_id: string; status: string; output?: string; pending_controls?: Clarification[] };
 
 export class HermesUnavailable extends Error {}

@@ -22,8 +22,8 @@ export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
 function migrate(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
-    if (version === 2) return;
-    if (version !== 0 && version !== 1) throw new Error("This SQLite database requires a newer version of OMA.");
+    if (version === 3) return;
+    if (version !== 0 && version !== 1 && version !== 2) throw new Error("This SQLite database requires a newer version of OMA.");
 
     if (version === 0) db.exec(`
       CREATE TABLE users (
@@ -66,7 +66,7 @@ function migrate(db: DatabaseSync): void {
       ) STRICT;
 
     `);
-    db.exec(`
+    if (version !== 2) db.exec(`
       CREATE TABLE marketing_workspaces (
         user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
         onboarding TEXT NOT NULL,
@@ -75,8 +75,40 @@ function migrate(db: DatabaseSync): void {
         lease_until INTEGER NOT NULL DEFAULT 0,
         lease_token TEXT
       ) STRICT;
-      PRAGMA user_version = 2;
     `);
+    if (version === 2) {
+      db.exec(`
+        UPDATE marketing_workspaces SET onboarding = json_remove(onboarding, '$.pending')
+        WHERE json_extract(onboarding, '$.pending.kind') = 'finalize';
+
+        UPDATE marketing_workspaces
+        SET campaign = json_set(campaign, '$.report.outputs', json_array(
+              json_object('role', 'Writer', 'text', json_extract(campaign, '$.report.draft')),
+              json_object('role', 'Verifier', 'text', json_extract(campaign, '$.report.review'))
+            ), '$.report.sources', json_array(json_object(
+              'toolkit', 'google_search_console', 'resource', json_extract(campaign, '$.report.property')
+            )))
+        WHERE json_type(campaign, '$.report') = 'object';
+      `);
+      db.prepare(`
+        UPDATE marketing_workspaces
+        SET campaign = json_remove(json_set(campaign,
+            '$.brief.playbook.steps', json(?),
+            '$.brief.playbook.sources', json_array(json_object(
+              'toolkit', 'google_search_console', 'resource', json_extract(campaign, '$.brief.playbook.property')
+            )),
+            '$.status', CASE WHEN json_extract(campaign, '$.status') = 'paused' THEN 'paused' ELSE 'waiting' END
+          ), '$.brief.playbook.property', '$.report.property', '$.report.draft', '$.report.review', '$.work', '$.notice'),
+          next_at = CASE WHEN json_extract(campaign, '$.status') = 'paused' THEN NULL ELSE ? END,
+          lease_until = 0, lease_token = NULL
+        WHERE json_type(campaign, '$.brief.playbook.property') = 'text'
+      `).run(JSON.stringify([
+        { profile: "oma-campaign-researcher", role: "Researcher", task: "Identify SEO opportunities from Search Console evidence." },
+        { profile: "oma-campaign-creator", role: "Writer", task: "Use the research and brand brief to produce an actionable draft." },
+        { profile: "oma-campaign-reviewer", role: "Verifier", task: "Check the draft against the evidence and recommend revisions." },
+      ]), Date.now());
+    }
+    db.exec("PRAGMA user_version = 3");
   });
 }
 

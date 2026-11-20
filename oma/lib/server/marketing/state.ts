@@ -1,45 +1,29 @@
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 import { getDb, writeTransaction } from "@/lib/db";
-
-export const propertySchema = z.string().trim().max(500).refine((value) => {
-  if (/^sc-domain:[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(value)) return true;
-  try {
-    const url = new URL(value);
-    return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password
-      && !url.search && !url.hash && value.endsWith("/");
-  } catch {
-    return false;
-  }
-}, "Use a Search Console property such as sc-domain:example.com or https://example.com/.");
-
-const note = z.string().trim().min(1).max(2000);
-export const briefSchema = z.object({
-  brand: z.object({ name: note, audience: note, voice: note, assets: z.array(note).max(12) }),
-  knowledge: z.array(note).min(1).max(12),
-  playbook: z.object({ title: note, goal: note, property: propertySchema, approach: note }),
-});
-
-export type Brief = z.infer<typeof briefSchema>;
+import { campaignSources, type Brief, type DraftBrief, type Source, type SourceKey } from "@/lib/marketing-playbook";
 export type Message = { role: "user" | "assistant"; text: string };
 export type Clarification = { kind: "clarify"; prompt_id: string; execution_generation: number; question: string; choices: string[] };
-export type PendingTurn = { id: string; text: string; kind: "chat" | "finalize"; runId?: string; property?: string };
-export type Onboarding = { session: string; messages: Message[]; pending?: PendingTurn; error?: string };
-export type Stage = "researcher" | "writer" | "verifier";
+export type PendingTurn = { id: string; text: string; kind: "chat" | "finalize"; runId?: string };
+export type Onboarding = {
+  session: string;
+  messages: Message[];
+  pending?: PendingTurn;
+  draft?: { id: string; brief: DraftBrief };
+  error?: string;
+};
+type StepOutput = { role: string; text: string };
 export type Work = {
   id: string;
-  stage: Stage;
-  account: string;
-  evidence: string;
+  accounts: string[];
+  evidence: string[];
+  outputs: StepOutput[];
   runId?: string;
-  research?: string;
-  draft?: string;
 };
 export type Campaign = {
   brief: Brief;
   status: "waiting" | "running" | "active" | "paused" | "error";
   work?: Work;
-  report?: { draft: string; review: string; property: string; finishedAt: number };
+  report?: { outputs: StepOutput[]; sources: Source[]; finishedAt: number };
   notice?: string;
 };
 export type OnboardingView = {
@@ -63,19 +47,19 @@ export function workspace(userId: string) {
   return decode(row as Row | undefined);
 }
 
-export function beginTurn(userId: string, text: string, kind: PendingTurn["kind"], property?: string) {
+export function beginTurn(userId: string, text: string, kind: PendingTurn["kind"]) {
   const db = getDb();
   return writeTransaction(db, () => {
     const current = workspace(userId);
     if (current.campaign) throw new Error("This workspace is already set up.");
     const onboarding = current.onboarding ?? { session: randomUUID(), messages: [] };
     if (onboarding.pending) throw new Error("Finish the current turn first.");
-    if (onboarding.messages.length >= 60 && kind === "chat") throw new Error("Save your setup to finish this conversation.");
+    if (onboarding.messages.length >= 60 && kind === "chat") throw new Error("Generate your playbook to finish this conversation.");
     if (kind === "finalize" && !onboarding.messages.some((message) => message.role === "user")) {
-      throw new Error("Tell Hermes about your business before saving.");
+      throw new Error("Tell Hermes about your business before generating a playbook.");
     }
     const updated: Onboarding = {
-      ...onboarding, error: undefined, pending: { id: randomUUID(), text, kind, property },
+      ...onboarding, draft: undefined, error: undefined, pending: { id: randomUUID(), text, kind },
       messages: kind === "chat" ? [...onboarding.messages, { role: "user", text }] : onboarding.messages,
     };
     db.prepare(`
@@ -94,39 +78,72 @@ export function storeRunId(userId: string, pendingId: string, runId: string) {
   `).run(runId, userId, pendingId);
 }
 
-export function finishTurn(userId: string, pending: PendingTurn, result: { message?: string; brief?: Brief; error?: string }) {
+export function finishTurn(userId: string, pending: PendingTurn, result: { message?: string; brief?: DraftBrief; error?: string }) {
   const db = getDb();
   writeTransaction(db, () => {
     const { onboarding } = workspace(userId);
     if (onboarding?.pending?.id !== pending.id) return;
     const updated: Onboarding = {
       ...onboarding, pending: undefined, error: result.error,
+      draft: result.brief ? { id: pending.id, brief: result.brief } : onboarding.draft,
       messages: result.message ? [...onboarding.messages, { role: "assistant", text: result.message }] : onboarding.messages,
     };
     db.prepare("UPDATE marketing_workspaces SET onboarding = ? WHERE user_id = ?")
       .run(JSON.stringify(updated), userId);
-    if (result.brief) {
-      db.prepare("UPDATE marketing_workspaces SET campaign = ?, next_at = ? WHERE user_id = ? AND campaign IS NULL")
-        .run(JSON.stringify({ brief: result.brief, status: "waiting" }), Date.now(), userId);
-    }
   });
 }
 
-export function queueCampaign(userId: string) {
+function approvedSources(keys: SourceKey[], resources: unknown): Source[] {
+  if (!resources || typeof resources !== "object" || Array.isArray(resources)) throw new Error("Invalid campaign sources.");
+  return keys.map((toolkit) => {
+    const spec = campaignSources[toolkit];
+    const resource = spec.resource.safeParse(Object.hasOwn(resources, toolkit) ? Reflect.get(resources, toolkit) : undefined);
+    if (!resource.success) throw new Error(`Enter a valid ${spec.resourceLabel}, such as ${spec.example}.`);
+    return { toolkit, resource: resource.data };
+  });
+}
+
+export function activateCampaign(userId: string, draftId: string, resources: unknown): OnboardingView {
+  const db = getDb();
+  return writeTransaction(db, () => {
+    const current = workspace(userId);
+    const draft = current.onboarding?.draft;
+    if (current.campaign || current.onboarding?.pending || !draft || draft.id !== draftId) {
+      return { ...current, requestError: "Review your latest playbook before activating." };
+    }
+    let sources: Source[];
+    try {
+      sources = approvedSources(draft.brief.playbook.sources, resources);
+    } catch (error) {
+      return { ...current, requestError: (error as Error).message };
+    }
+    const campaign: Campaign = { brief: { ...draft.brief, playbook: { ...draft.brief.playbook, sources } }, status: "waiting" };
+    db.prepare(`
+      UPDATE marketing_workspaces SET campaign = ?, next_at = ?, onboarding = json_remove(onboarding, '$.draft')
+      WHERE user_id = ?
+    `).run(JSON.stringify(campaign), Date.now(), userId);
+    return workspace(userId);
+  });
+}
+
+export function queueCampaign(userId: string, toolkit: string) {
   getDb().prepare(`
     UPDATE marketing_workspaces SET next_at = ?, lease_until = 0, lease_token = NULL
     WHERE user_id = ? AND json_extract(campaign, '$.status') IN ('waiting', 'error')
-  `).run(Date.now(), userId);
+      AND EXISTS (SELECT 1 FROM json_each(campaign, '$.brief.playbook.sources')
+        WHERE json_extract(value, '$.toolkit') = ?)
+  `).run(Date.now(), userId, toolkit);
 }
 
-export function disconnectCampaign(userId: string) {
+export function disconnectCampaign(userId: string, toolkit: string) {
   getDb().prepare(`
     UPDATE marketing_workspaces
-    SET campaign = json_remove(json_set(campaign, '$.status', 'waiting', '$.notice',
-      'Connect Google Search Console to resume this campaign.'), '$.work'),
+    SET campaign = json_remove(json_set(campaign, '$.status', 'waiting'), '$.work', '$.notice'),
       next_at = ?, lease_until = 0, lease_token = NULL
     WHERE user_id = ? AND campaign IS NOT NULL AND json_extract(campaign, '$.status') != 'paused'
-  `).run(Date.now(), userId);
+      AND EXISTS (SELECT 1 FROM json_each(campaign, '$.brief.playbook.sources')
+        WHERE json_extract(value, '$.toolkit') = ?)
+  `).run(Date.now(), userId, toolkit);
 }
 
 export function setPaused(userId: string, paused: boolean) {
@@ -144,13 +161,21 @@ export function setPaused(userId: string, paused: boolean) {
   });
 }
 
-export function changeCampaignProperty(userId: string, property: string) {
+export function changeCampaignSources(userId: string, resources: unknown): OnboardingView {
   const db = getDb();
-  writeTransaction(db, () => {
-    const { campaign } = workspace(userId);
-    if (!campaign || campaign.brief.playbook.property === property) return;
+  return writeTransaction(db, () => {
+    const current = workspace(userId);
+    const campaign = current.campaign;
+    if (!campaign) return current;
+    let sources: Source[];
+    try {
+      sources = approvedSources(campaign.brief.playbook.sources.map(({ toolkit }) => toolkit), resources);
+    } catch (error) {
+      return { ...current, requestError: (error as Error).message };
+    }
+    if (sources.every((source, index) => source.resource === campaign.brief.playbook.sources[index].resource)) return current;
     const paused = campaign.status === "paused";
-    campaign.brief.playbook.property = property;
+    campaign.brief.playbook.sources = sources;
     campaign.status = paused ? "paused" : "waiting";
     delete campaign.work;
     delete campaign.notice;
@@ -158,6 +183,7 @@ export function changeCampaignProperty(userId: string, property: string) {
       UPDATE marketing_workspaces SET campaign = ?, next_at = ?, lease_until = 0, lease_token = NULL
       WHERE user_id = ?
     `).run(JSON.stringify(campaign), paused ? null : Date.now(), userId);
+    return workspace(userId);
   });
 }
 
