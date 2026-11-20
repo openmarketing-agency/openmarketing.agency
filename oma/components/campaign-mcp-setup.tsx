@@ -13,17 +13,17 @@ import {
   type HostedMcpConnection,
 } from "@/lib/mcp-client-config";
 
-export function PlaybookMcpSetup({
-  playbookId,
-  playbookName,
+export function CampaignMcpSetup({
+  campaignId,
+  campaignName,
   ready,
   configured,
   connection,
   onGenerate,
   demo = false,
 }: {
-  playbookId: string;
-  playbookName: string;
+  campaignId: string;
+  campaignName: string;
   ready: boolean;
   configured: boolean;
   connection?: HostedMcpConnection;
@@ -47,7 +47,7 @@ export function PlaybookMcpSetup({
     setCopied("");
     if (demo) {
       onGenerate({
-        url: `https://backend.composio.dev/tool_router/v3/trs_preview_${playbookId}/mcp`,
+        url: `https://backend.composio.dev/tool_router/v3/trs_preview_${campaignId}/mcp`,
         headerBindings: [
           { name: "x-api-key", environmentVariable: "COMPOSIO_API_KEY" },
         ],
@@ -56,15 +56,15 @@ export function PlaybookMcpSetup({
     }
     startTransition(async () => {
       try {
-        const result = await generateMcpAction(playbookId);
+        const result = await generateMcpAction(campaignId);
         if (result.connection) onGenerate(result.connection);
         else
           setError(
-            result.error ?? "We couldn’t create the playbook’s MCP connection.",
+            result.error ?? "We couldn’t create the campaign’s MCP connection.",
           );
       } catch {
         setError(
-          "We couldn’t create the playbook’s MCP connection. Try again.",
+          "We couldn’t create the campaign’s MCP connection. Try again.",
         );
       }
     });
@@ -72,16 +72,16 @@ export function PlaybookMcpSetup({
   return (
     <section
       className="agent-mcp-section"
-      aria-label={`${playbookName} playbook MCP connection`}
+      aria-label={`${campaignName} campaign MCP connection`}
     >
       <div className="agent-mcp-heading">
         <div>
           <h3>
             <Terminal size={17} />
-            Playbook MCP connection
+            Campaign MCP connection
           </h3>
           <p>
-            One hosted URL for the tools selected across your {playbookName}{" "}
+            One hosted URL for the tools selected across your {campaignName}{" "}
             team.
           </p>
         </div>
@@ -105,7 +105,7 @@ export function PlaybookMcpSetup({
       </div>
       {!ready && (
         <p className="agent-mcp-locked">
-          Add and connect at least one tool to generate your playbook MCP URL.
+          Add and connect at least one tool to generate your campaign MCP URL.
         </p>
       )}
       {error && (
@@ -120,19 +120,19 @@ export function PlaybookMcpSetup({
               Preview URL only. Tool connections are simulated.
             </p>
           )}
-          <label className="agent-url-label" htmlFor={`mcp-${playbookId}`}>
+          <label className="agent-url-label" htmlFor={`mcp-${campaignId}`}>
             Hosted MCP URL
           </label>
           <div className="copy-field">
             <input
-              id={`mcp-${playbookId}`}
+              id={`mcp-${campaignId}`}
               value={connection.url}
               readOnly
               onFocus={(event) => event.target.select()}
             />
             <button
               onClick={() => copy(connection.url, "url")}
-              aria-label={`Copy ${playbookName} MCP URL`}
+              aria-label={`Copy ${campaignName} MCP URL`}
             >
               {copied === "url" ? <Check size={16} /> : <Copy size={16} />}
             </button>
@@ -152,14 +152,14 @@ export function PlaybookMcpSetup({
               ))}
             </div>
             <pre tabIndex={0}>
-              {mcpClientConfiguration(`oma-${playbookId}`, connection, client)}
+              {mcpClientConfiguration(`oma-${campaignId}`, connection, client)}
             </pre>
             <button
               className="btn secondary"
               onClick={() =>
                 copy(
                   mcpClientConfiguration(
-                    `oma-${playbookId}`,
+                    `oma-${campaignId}`,
                     connection,
                     client,
                   ),

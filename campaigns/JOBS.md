@@ -37,7 +37,7 @@ jobs:
     repeat: null
 ```
 
-The daily cadence above is illustrative; the declared recurring jobs use the requested 10-minute and 5-minute intervals. Every agent may declare its own jobs; the owning config determines the execution profile. Agent directories and declared IDs already use `[playbook id]__[role id]`, such as `social-media__orchestrator`. Use that canonical ID as the Hermes profile name; do not add the playbook prefix again or append an installation-ID segment. No separate runtime-name mapping, `agent`, or `assignee` field is needed on a job.
+The daily cadence above is illustrative; the declared recurring jobs use the requested 10-minute and 5-minute intervals. Every agent may declare its own jobs; the owning config determines the execution profile. Agent directories and declared IDs already use `[campaign id]__[role id]`, such as `social-media__orchestrator`. Use that canonical ID as the Hermes profile name; do not add the campaign prefix again or append an installation-ID segment. No separate runtime-name mapping, `agent`, or `assignee` field is needed on a job.
 
 ## Job fields
 
@@ -59,7 +59,7 @@ The initial contract covers prompt-based jobs, not script jobs, model overrides,
 
 Agent configs list only `computer-use`, `hermes-agent`, and `oma-playbooks` under `skills.disabled`, with no `skills.enabled` allowlist. Hermes treats `hermes-agent` as essential and leaves it available. Optional skills and newly created skills are not blocked by this list, but they must still be installed or discoverable and satisfy runtime restrictions.
 
-`oma_skills` controls which OMA source skills the playbook provisions into each agent. An empty list installs none; a nonempty list installs only its declared skill IDs. For example, `seo__humanizer` provisions `humanizer`, and its `SOUL.md` tells it when to load the skill. Do not list unselected OMA source skills under `skills.disabled`; they are not provisioned for that agent.
+`oma_skills` controls which OMA source skills the campaign provisions into each agent. An empty list installs none; a nonempty list installs only its declared skill IDs. For example, `seo__humanizer` provisions `humanizer`, and its `SOUL.md` tells it when to load the skill. Do not list unselected OMA source skills under `skills.disabled`; they are not provisioned for that agent.
 
 ## Provisioning and activation requirements
 

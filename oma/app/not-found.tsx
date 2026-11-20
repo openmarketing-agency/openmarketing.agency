@@ -5,10 +5,10 @@ export default function NotFound() {
     <main id="main-content" className="page-content">
       <Brand />
       <div className="empty-state" style={{ marginTop: 40 }}>
-        <h1>Playbook not found</h1>
+        <h1>Campaign not found</h1>
         <p>This page may have moved. Find your next workflow in the library.</p>
         <Link className="btn primary" href="/dashboard">
-          Back to playbooks
+          Back to campaigns
         </Link>
       </div>
     </main>

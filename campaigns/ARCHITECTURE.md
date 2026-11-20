@@ -1,14 +1,14 @@
-# OMA Playbooks: Deployment and Orchestration Architecture
+# OMA Campaigns: Deployment and Orchestration Architecture
 
-> **Status: design for playbook orchestration.** The [OMA setup guide](../README.md) covers hosting, model access, and coordinator chat. The mission control and integration bindings in this document describe the intended design.
+> **Status: design for campaign orchestration.** The [OMA setup guide](../README.md) covers hosting, model access, and coordinator chat. The mission control and integration bindings in this document describe the intended design.
 
 **Profile installation:** The VM runtime installs the bundled profiles and leaves new scheduled jobs paused.
 
 ## 1. Overview
 
-An OMA playbook is a deployable, goal-oriented team of agents with platform integrations and operating policies. It is **not a fixed, predefined pipeline**.
+An OMA campaign is a deployable, goal-oriented team of agents with platform integrations and operating policies. It is **not a fixed, predefined pipeline**.
 
-A user selects a playbook in the OMA dashboard and clicks **Use playbook**. The Next.js control plane provisions the account's instance on first use and gives Hermes a quota-controlled inference key. The configured provider runs the VM, and the image installs the bundled coordinators and specialists.
+In the proposed deployment flow, a user selects a campaign in the OMA dashboard. The Next.js control plane provisions the account's instance on first use and gives Hermes a quota-controlled inference key. The configured provider runs the VM, and the image installs the bundled coordinators and specialists.
 
 Within the VM, the coordinator interprets the mission, creates and assigns tasks through Hermes Kanban, evaluates results, and decides what work is justified next. The gateway stays available continuously, but the coordinator does not need to run the model continuously.
 
@@ -21,31 +21,30 @@ The central design principle is:
 | Name or concept | Meaning |
 | --- | --- |
 | `oma-agent/` | The local Hermes-based runtime source checkout. |
-| `oma-skills/` | Shared skill sources, separate from playbooks and referenced by skill ID. |
-| `oma-playbooks/` | Goal-oriented playbooks containing their own agent configurations and personas. |
-| `seo/`, `social-media/` | Current playbook directories; each owns its agents independently. Directory names are distinct from coordinator IDs. |
-| Coordinator definition | Required `agents/<playbook id>__orchestrator/config.yaml` and adjacent `SOUL.md`, with the same canonical `id` and declared orchestration skills. |
+| `skills/` | Shared skill sources, separate from campaigns and referenced by skill ID. |
+| `campaigns/` | Goal-oriented campaigns containing their own agent configurations and personas. |
+| `seo/`, `social-media/` | Current campaign directories; each owns its agents independently. Directory names are distinct from coordinator IDs. |
+| Coordinator definition | Required `agents/<campaign id>__orchestrator/config.yaml` and adjacent `SOUL.md`, with the same canonical `id` and declared orchestration skills. |
 | `seo__researcher`, `seo__writer`, `seo__humanizer`, `seo__verifier`, `seo__publisher` | The current SEO specialist IDs, directory names, and Hermes profile names. |
 | `social-media__researcher`, `social-media__creator`, `social-media__publisher`, `social-media__interactor` | The social-media specialist IDs; its coordinator is `social-media__orchestrator`. |
-| Orchestrator | The coordinator role, identified as `seo__orchestrator` or `social-media__orchestrator` in the owning playbook. |
-| `default` | Hermes's native root profile ID, separate from every playbook's named profiles. |
+| Orchestrator | The coordinator role, identified as `seo__orchestrator` or `social-media__orchestrator` in the owning campaign. |
+| `default` | Hermes's native root profile ID, separate from every campaign's named profiles. |
 | Specialist profile | A named Hermes profile created from a resolved specialist definition. |
-| Deployment | One user's provisioned instance of a playbook, with its own VM, budget allocation, profiles, and board. |
+| Deployment | One user's provisioned instance of a campaign, with its own VM, budget allocation, profiles, and board. |
 | Mission | The standing objective, success criteria, scope, and operating boundaries. |
 | Task | A unit of work dynamically created on the deployment's Hermes Kanban board. |
 | Task attempt | One execution attempt tracked by Hermes for a task. |
 | Integration binding | A deployment-specific external connection with explicitly assigned capabilities. |
 
-Canonical agent IDs use `[playbook id]__[role id]`, such as `seo__researcher`. Agent directory names, the config's declared `id`, manifest roster entries, routing references, and Hermes profile names all use that same canonical ID. Deployment validates and uses the declared ID directly; it must not prefix it again or add an installation-ID segment. Skill IDs, such as `humanizer` or `research-market`, are independent and unchanged.
+Canonical agent IDs use `[campaign id]__[role id]`, such as `seo__researcher`. Agent directory names, the config's declared `id`, manifest roster entries, routing references, and Hermes profile names all use that same canonical ID. Deployment validates and uses the declared ID directly; it must not prefix it again or add an installation-ID segment. Skill IDs, such as `humanizer` or `research-market`, are independent and unchanged.
 
 ## 3. Definition Layout
 
 The current definition layout is:
 
 ```text
-oma/
-  oma-agent/                         # Hermes-based runtime source
-  oma-skills/
+openmarketing.agency/
+  skills/
     research/
       research-market/
         SKILL.md
@@ -54,7 +53,7 @@ oma/
     orchestration/
       playbook-orchestration/
         SKILL.md
-  oma-playbooks/
+  campaigns/
     ARCHITECTURE.md
     seo/
       config.yaml
@@ -100,15 +99,15 @@ oma/
           SOUL.md
 ```
 
-Each playbook owns its agent configurations, SOUL files, and playbook-specific skills under its own `skills/` directory. Reusable cross-playbook skills remain in the sibling `oma-skills/` directory. There is no separate reusable-agent library or cross-playbook agent-override layer.
+Each campaign owns its agent configurations, SOUL files, and campaign-specific skills under its own `skills/` directory. Reusable skills remain in the repository's top-level `skills/` directory. There is no separate reusable-agent library or cross-campaign agent-override layer. For compatibility with existing installations, the VM image still stores the bundled sources at `/opt/oma/playbooks`.
 
-Each playbook's root `config.yaml` declares OMA metadata: `id`, `name`, `version`, `description`, the canonical `orchestrator` agent ID, and an `agents` list of canonical IDs. Resolve each listed ID to `agents/<id>/config.yaml` and the adjacent `SOUL.md`, validating that the directory and declared ID match and have the owning playbook's prefix. The orchestrator must appear in that roster. These manifests describe the team, not a fixed execution order or native Hermes runtime configuration; the files alone do not install agents, schedule jobs, or activate a mission. Agent-level tools, skills, and jobs remain in each agent's config.
+Each campaign's root `config.yaml` declares OMA metadata: `id`, `name`, `version`, `description`, the canonical `orchestrator` agent ID, and an `agents` list of canonical IDs. Resolve each listed ID to `agents/<id>/config.yaml` and the adjacent `SOUL.md`, validating that the directory and declared ID match and have the owning campaign's prefix. The orchestrator must appear in that roster. These manifests describe the team, not a fixed execution order or native Hermes runtime configuration; the files alone do not install agents, schedule jobs, or activate a mission. Agent-level tools, skills, and jobs remain in each agent's config.
 
-Every playbook must contain a coordinator definition at `agents/<playbook id>__orchestrator/`, with that canonical `id`, `config.yaml`, `SOUL.md`, and resolvable orchestration skill declarations. For example, SEO uses `agents/seo__orchestrator/` and `id: seo__orchestrator`. The coordinator lives alongside the specialists, not at the playbook root. Reject a playbook missing this definition before provisioning; do not silently synthesize a coordinator or use a personal default profile.
+Every campaign must contain a coordinator definition at `agents/<campaign id>__orchestrator/`, with that canonical `id`, `config.yaml`, `SOUL.md`, and resolvable orchestration skill declarations. For example, SEO uses `agents/seo__orchestrator/` and `id: seo__orchestrator`. The coordinator lives alongside the specialists, not at the campaign root. Reject a campaign missing this definition before provisioning; do not silently synthesize a coordinator or use a personal default profile.
 
-The SEO coordinator definition and its local/shared skills are present as source scaffolds. Deployment must explicitly provision referenced skills from the playbook's `skills/` tree or shared `oma-skills/` tree; source files do not install themselves into Hermes profiles or start a coordinator session.
+The SEO coordinator definition and its local/shared skills are present as source scaffolds. Deployment must explicitly provision referenced skills from the campaign's `skills/` tree or the shared `skills/` tree; source files do not install themselves into Hermes profiles or start a coordinator session.
 
-The social-media playbook contains five complete config/SOUL source definitions. Its orchestrator dynamically coordinates research, content creation, publication, and community interaction through native Kanban, without a fixed pipeline. It reuses the shared `playbook-orchestration` skill; its researcher declares `research-market` and `research-trends`. No new skills or social integrations are installed by these definitions. `orchestrator_profile` and `dispatch_profiles` already contain canonical Hermes profile names; bootstrap validates and provisions them unchanged. Account bindings, media-generation capabilities, credentials, enforced action policy, and mission activation remain deployment responsibilities.
+The social-media campaign contains five complete config/SOUL source definitions. Its orchestrator dynamically coordinates research, content creation, publication, and community interaction through native Kanban, without a fixed pipeline. It reuses the shared `playbook-orchestration` skill; its researcher declares `research-market` and `research-trends`. No new skills or social integrations are installed by these definitions. `orchestrator_profile` and `dispatch_profiles` already contain canonical Hermes profile names; bootstrap validates and provisions them unchanged. Account bindings, media-generation capabilities, credentials, enforced action policy, and mission activation remain deployment responsibilities.
 
 The SEO coordinator's `SOUL.md` states the standing goal to autonomously research trends and keywords, inspect Search Console/site performance, implement permitted improvements, measure outcomes, and repeat. Its auto-loaded skills define the operating procedure. It does not wait for per-task user instructions or terminate after a completed article. Bootstrap supplies deployment-specific objectives, target site, permissions, and budget to the canonical coordinator session; no separate mission file or custom context-file loader is required.
 
@@ -119,7 +118,7 @@ Deployment grants standing authority for covered routine changes so these do not
 ```text
 User / Website
       |
-      | Deploy playbook
+      | Deploy campaign
       v
 FastAPI control plane
   - Authentication and entitlement
@@ -141,7 +140,7 @@ Dedicated deployment VM
   Hermes gateway
     seo__orchestrator profile        -> SEO coordinator
     seo__researcher profile          -> SEO research specialist
-    other playbook-prefixed profiles -> Selected agents
+    other campaign-prefixed profiles -> Selected agents
   Hermes Kanban board               -> Durable task coordination
   Coordinator session and heartbeat -> Ongoing oversight
       |
@@ -160,9 +159,9 @@ The runtime package and provisioning-worker technology are implementation choice
 
 The FastAPI endpoint should:
 
-1. Authenticate the user and verify playbook access and resource entitlement.
+1. Authenticate the user and verify campaign access and resource entitlement.
 2. Validate an idempotency key for the deployment request.
-3. Create a deployment record tied to that user and playbook revision.
+3. Create a deployment record tied to that user and campaign revision.
 4. Enqueue a durable provisioning job.
 5. Return `202 Accepted` with a deployment ID and a status location.
 
@@ -174,9 +173,9 @@ Do not perform long-running provisioning inside the HTTP request or rely solely 
 
 Before provisioning infrastructure, validate and freeze:
 
-- The selected playbook revision and referenced skill revisions.
+- The selected campaign revision and referenced skill revisions.
 - Coordinator configuration, persona, skills, and mission.
-- The declared specialist roster and playbook-local agent definitions.
+- The declared specialist roster and campaign-local agent definitions.
 - Required integrations and credential references.
 - Allowed models, tool policies, and resource limits.
 
@@ -199,15 +198,15 @@ Read back external resources after creation or update. A successful provisioning
 
 ## 6. Orchestrator Agent and Hermes Profile Mapping
 
-Every playbook agent, including its orchestrator, uses a canonical source ID and named Hermes profile with exactly two components separated by a double underscore:
+Every campaign agent, including its orchestrator, uses a canonical source ID and named Hermes profile with exactly two components separated by a double underscore:
 
 ```text
-[playbook id]__[role id]
+[campaign id]__[role id]
 ```
 
-The source already stores the full canonical ID: `id: seo__researcher` lives in `agents/seo__researcher/`. At deployment time, automatically take the Hermes profile name from that declared ID after validating the owning playbook prefix. Do not concatenate the playbook ID onto it again. There is no separate runtime-name field or manually maintained mapping, and no installation-ID segment.
+The source already stores the full canonical ID: `id: seo__researcher` lives in `agents/seo__researcher/`. At deployment time, automatically take the Hermes profile name from that declared ID after validating the owning campaign prefix. Do not concatenate the campaign ID onto it again. There is no separate runtime-name field or manually maintained mapping, and no installation-ID segment.
 
-| Playbook ID | Role suffix | Canonical agent ID, directory name, and Hermes profile |
+| Campaign ID | Role suffix | Canonical agent ID, directory name, and Hermes profile |
 | --- | --- | --- |
 | `seo` | `orchestrator` | `seo__orchestrator` |
 | `seo` | `researcher` | `seo__researcher` |
@@ -219,31 +218,31 @@ The source already stores the full canonical ID: `id: seo__researcher` lives in 
 
 Apply the same rule to all remaining specialists. Install each agent's config, SOUL, and skills in the named profile matching its declared ID, and use that exact ID in Kanban assignees, dispatcher rosters, delegation routes, and cron ownership. `kanban.orchestrator_profile` and `dispatch_profiles` already use canonical IDs; bootstrap validates their roster membership without adding prefixes or substituting a root-profile mapping.
 
-Hermes's native root profile retains the internal ID `default`. It is not a playbook's orchestrator and must not be overwritten when installing a playbook. Profile names alone do not grant capabilities or make specialists inherit settings; bootstrap must explicitly configure missions, tools, routing, and wake-ups.
+Hermes's native root profile retains the internal ID `default`. It is not a campaign's orchestrator and must not be overwritten when installing a campaign. Profile names alone do not grant capabilities or make specialists inherit settings; bootstrap must explicitly configure missions, tools, routing, and wake-ups.
 
-This convention distinguishes agents across playbooks, but intentionally does not distinguish two installations of the same playbook within one Hermes profile namespace. Reconcile an existing installation without overwriting its state, or use a separate isolated Hermes environment when independent duplicate installations are required. Provisioning should reject resolved-name collisions rather than adding a suffix or adopting unmanaged live profiles.
+This convention distinguishes agents across campaigns, but intentionally does not distinguish two installations of the same campaign within one Hermes profile namespace. Reconcile an existing installation without overwriting its state, or use a separate isolated Hermes environment when independent duplicate installations are required. Provisioning should reject resolved-name collisions rather than adding a suffix or adopting unmanaged live profiles.
 
 Local development must use an isolated test environment rather than modifying an existing personal profile.
 
 ## 7. Agent and Skill Resolution
 
-A playbook explicitly declares its agent roster. Local directories alone do not silently activate agents.
+A campaign explicitly declares its agent roster. Local directories alone do not silently activate agents.
 
 For each selected agent:
 
 1. Validate its declared ID.
-2. Read its complete configuration and SOUL from the playbook's `agents/` directory.
-3. Resolve declared skill IDs against the selected playbook's `skills/` tree and the shared `oma-skills/` tree. Reject ambiguous duplicate IDs rather than silently overriding a source; do not load another playbook's private skills.
+2. Read its complete configuration and SOUL from the campaign's `agents/` directory.
+3. Resolve declared skill IDs against the selected campaign's `skills/` tree and the shared `skills/` tree. Reject ambiguous duplicate IDs rather than silently overriding a source; do not load another campaign's private skills.
 4. Validate the definition and its skill dependencies against supported Hermes settings and deployment policies.
 5. Produce a deployment definition and an explicit ID-to-profile mapping.
 
 Reject duplicate IDs, unresolved references, and incomplete definitions before provisioning.
 
-Require exactly one coordinator with `id: <playbook id>__orchestrator` at `agents/<playbook id>__orchestrator/`, and require the root manifest's `orchestrator` to reference that exact ID. For the SEO playbook, resolve `playbook-orchestration` to `oma-skills/orchestration/playbook-orchestration/SKILL.md` and `seo-coordination` to `oma-playbooks/seo/skills/seo-coordination/SKILL.md`. `oma_skills` lists OMA source dependencies to install from either source tree; native `skills.disabled` excludes only named, non-essential skills. Profiles load provisioned skills on demand. Omit the `skills.enabled` allowlist so newly created skills remain discoverable. None of these fields substitutes for provisioning or mission admission.
+Require exactly one coordinator with `id: <campaign id>__orchestrator` at `agents/<campaign id>__orchestrator/`, and require the root manifest's `orchestrator` to reference that exact ID. For the SEO campaign, resolve `playbook-orchestration` to `skills/orchestration/playbook-orchestration/SKILL.md` and `seo-coordination` to `campaigns/seo/skills/seo-coordination/SKILL.md`. `oma_skills` lists OMA source dependencies to install from either source tree; native `skills.disabled` excludes only named, non-essential skills. Profiles load provisioned skills on demand. Omit the `skills.enabled` allowlist so newly created skills remain discoverable. None of these fields substitutes for provisioning or mission admission.
 
-Agent definitions are playbook-local, subject to native Hermes defaults and enforced deployment policies. Do not infer persona or capability inheritance from another playbook or profile.
+Agent definitions are campaign-local, subject to native Hermes defaults and enforced deployment policies. Do not infer persona or capability inheritance from another campaign or profile.
 
-Skill IDs do not need to change when their source directory moves. For example, `research-market` resolves to `oma-skills/research/research-market/SKILL.md`. Pin the skill source revision and install selected skills into the owning Hermes profile during deployment.
+Skill IDs do not need to change when their source directory moves. For example, `research-market` resolves to `skills/research/research-market/SKILL.md`. Pin the skill source revision and install selected skills into the owning Hermes profile during deployment.
 
 ## 8. Configuration, Persona, and Skills
 
@@ -251,7 +250,7 @@ Keep ownership of configuration explicit:
 
 - **Native Hermes settings:** model, toolsets, delegation, and supported runtime options.
 - **OMA metadata:** IDs, descriptions, versions, and source references.
-- **Playbook policies:** mission, roster, integrations, approvals, resource limits, and oversight cadence.
+- **Campaign policies:** mission, roster, integrations, approvals, resource limits, and oversight cadence.
 
 One proposed format keeps native Hermes settings at the root and places OMA-specific fields under `oma:`. This is a recommendation, not an implemented schema. The deployer must consume OMA fields and write native runtime configuration through supported interfaces.
 
@@ -269,13 +268,13 @@ Specify the desired outcome or standing service objective, evidence of progress,
 
 Prompts alone are not sufficient enforcement for publishing permission, spending limits, or infrastructure administration.
 
-Separate skill provisioning from runtime availability. Shared source lives in `oma-skills/`; playbook-specific source lives in that playbook's `skills/` directory. `oma_skills` selects which OMA source skills to install into each agent: an empty list installs none, and omitted OMA source skills are not installed by the playbook. Do not add those omitted skills to `skills.disabled`; provisioning already determines their inclusion. Freeze the resolved source path and revision for each declared dependency before provisioning.
+Separate skill provisioning from runtime availability. Shared source lives in the repository's top-level `skills/`; campaign-specific source lives in that campaign's `skills/` directory. `oma_skills` selects which OMA source skills to install into each agent: an empty list installs none, and omitted OMA source skills are not installed by the campaign. Do not add those omitted skills to `skills.disabled`; provisioning already determines their inclusion. Freeze the resolved source path and revision for each declared dependency before provisioning.
 
 Agent configs list only `computer-use`, `hermes-agent`, and `oma-playbooks` under `skills.disabled`, without a `skills.enabled` allowlist. Hermes leaves its essential `hermes-agent` skill available. Agents do not use `skills.auto_load`; their `SOUL.md` tells them when to load each provisioned skill. Skill availability does not grant extra tools or permissions.
 
 ## 9. Dynamic Kanban Orchestration
 
-Use **Hermes's built-in Kanban**, not a separate task database or dispatcher. Use one board per playbook deployment, rather than one board per periodic review.
+Use **Hermes's built-in Kanban**, not a separate task database or dispatcher. Use one board per campaign deployment, rather than one board per periodic review.
 
 The coordinator dynamically:
 
@@ -380,7 +379,7 @@ The implementation also needs explicit suspension, resumption, upgrade, and dele
 
 | State | Authority |
 | --- | --- |
-| Reusable definitions and playbook source | Versioned OMA files. |
+| Reusable definitions and campaign source | Versioned OMA files. |
 | User entitlement, deployment ownership, and lifecycle | FastAPI control-plane database. |
 | Frozen resolved specification and resource mappings | Deployment manifest/control-plane records. |
 | Task dependencies, attempts, results, and current status | Hermes Kanban. |

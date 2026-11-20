@@ -1,6 +1,6 @@
 # Open Marketing Agency
 
-OMA is a self-hosted workspace for marketing playbooks and tool connections. The full stack includes the Next.js console, Hermes with the bundled playbooks and skills, and `omactl` with its app catalog and Traefik. Hermes uses OpenRouter for inference.
+OMA is a self-hosted workspace for marketing campaigns and tool connections. The full stack includes the Next.js console, Hermes with the bundled [campaigns](campaigns/) and skills, and `omactl` with its app catalog and Traefik. Hermes uses OpenRouter for inference.
 
 ## Run the full stack locally
 
@@ -20,7 +20,9 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm omactl d
 docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes chat
 ```
 
-Open [Chat](http://localhost:3000/chat) in the console to talk with the bundled Hermes agent. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available. Composio is optional and requires an API key for its hosted tool catalog.
+Open [Chat](http://localhost:3000/chat) in the console to talk with the bundled Hermes agent. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available.
+
+Use [Campaigns](http://localhost:3000/dashboard) in the console to configure campaign tool selections and MCP connections. Composio is optional and requires an API key for its hosted tool catalog.
 
 The console serves [API documentation](http://localhost:3000/docs) and a [database readiness endpoint](http://localhost:3000/health/ready).
 
