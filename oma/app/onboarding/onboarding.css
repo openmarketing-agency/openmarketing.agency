@@ -1,15 +1,10 @@
-/* Lays out a scrollable transcript and keeps the newest turn in view when it opens. */
+/* Uses the console palette for the setup conversation. */
 
 .onboarding-page {
-  --onboarding-ground: color-mix(in srgb, var(--inverse-surface) 85%, black);
-  --onboarding-line: color-mix(in srgb, var(--inverse-border) 68%, var(--onboarding-ground));
-  --onboarding-header-size: 71px;
-  --onboarding-inset: clamp(24px, 5vh, 52px);
-  --onboarding-bottom: max(28px, env(safe-area-inset-bottom));
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: 100dvh;
-  overflow: clip;
+  --onboarding-ground: color-mix(in srgb, var(--inverse-surface) 76%, black);
+  --onboarding-line: color-mix(in srgb, var(--inverse-border) 58%, var(--onboarding-ground));
+  --onboarding-field: color-mix(in srgb, var(--inverse-surface) 85%, black);
+  min-block-size: 100dvh;
   background: var(--onboarding-ground);
   color: var(--inverse-text);
   color-scheme: dark;
@@ -20,17 +15,22 @@
 }
 
 .onboarding-header {
-  border-bottom: 1px solid var(--onboarding-line);
+  border-block-end: 1px solid var(--onboarding-line);
+}
+
+.onboarding-header-inner,
+.onboarding-shell {
+  max-inline-size: 1120px;
+  margin-inline: auto;
+  padding-inline: clamp(16px, 4vw, 48px);
 }
 
 .onboarding-header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  max-inline-size: 1152px;
-  min-block-size: 70px;
-  margin-inline: auto;
-  padding-inline: clamp(20px, 5vw, 48px);
+  gap: 8px;
+  min-block-size: 64px;
 }
 
 .onboarding-header-inner a {
@@ -43,12 +43,12 @@
 
 .onboarding-header-actions {
   display: flex;
-  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .onboarding-sign-out {
   min-block-size: 44px;
-  padding-inline: 12px;
+  padding-inline: 10px;
   border-radius: var(--radius);
   color: var(--inverse-muted);
   font-size: 0.875rem;
@@ -59,73 +59,50 @@
   color: var(--inverse-text);
 }
 
-.onboarding-main {
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  overflow-anchor: none;
-  scrollbar-color: var(--inverse-border) transparent;
-  scroll-padding-block-start: var(--onboarding-inset);
-  padding: var(--onboarding-inset) clamp(20px, 5vw, 48px) var(--onboarding-bottom);
-}
-
-.onboarding-loading-page,
-.onboarding-conversation {
-  max-inline-size: 656px;
-  margin-inline: auto;
+.onboarding-shell {
+  max-inline-size: 820px;
+  padding-block: clamp(28px, 6vh, 68px) max(36px, env(safe-area-inset-bottom));
 }
 
 .onboarding-loading-page {
-  padding-block-start: var(--onboarding-inset);
+  padding: 32px;
+  color: var(--inverse-muted);
+}
+
+.onboarding-chat-empty {
   color: var(--inverse-muted);
 }
 
 .onboarding-turn + .onboarding-turn {
-  margin-block-start: clamp(30px, 6vh, 56px);
+  margin-block-start: 18px;
 }
 
-.onboarding-active-turn {
-  min-block-size: calc(100dvh - var(--onboarding-header-size) - var(--onboarding-inset) - var(--onboarding-bottom));
+.onboarding-transcript-reply {
+  color: var(--inverse-muted);
 }
 
 .onboarding-user-message {
   display: flex;
   justify-content: flex-end;
-  margin-block-end: clamp(18px, 3.5vh, 32px);
+  margin-block-end: 16px;
 }
 
 .onboarding-user-message p {
-  max-inline-size: min(85%, 44ch);
-  padding: 10px 16px;
-  border: 1px solid color-mix(in srgb, var(--palette-aqua) 30%, var(--inverse-active));
-  border-radius: 16px 16px 4px 16px;
+  max-inline-size: min(88%, 56ch);
+  padding: 9px 13px;
+  border-radius: 12px 12px 3px 12px;
   background: var(--inverse-active);
   color: var(--inverse-text);
-  font-size: 1rem;
-  line-height: 1.45;
+  font-size: 0.9375rem;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-.onboarding-transcript-reply,
-.onboarding-answer-panel {
-  padding-inline: clamp(14px, 3vw, 20px);
-}
-
-.onboarding-answer-panel {
-  padding-block: clamp(14px, 3vw, 20px);
-  border: 1px solid var(--onboarding-line);
-  border-radius: 14px;
-  background: var(--inverse-surface);
-}
-
-.onboarding-reply {
-  min-block-size: 1.5rem;
-}
-
 .onboarding-reply-text {
-  max-inline-size: 60ch;
-  color: var(--inverse-text);
+  max-inline-size: 68ch;
+  color: inherit;
   font-size: 1.0625rem;
-  line-height: 1.5;
+  line-height: 1.65;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -133,8 +110,14 @@
 .onboarding-typing {
   display: flex;
   align-items: center;
+  gap: 10px;
+  font-size: 0.9375rem;
+  color: var(--inverse-muted);
+}
+
+.onboarding-typing span {
+  display: flex;
   gap: 4px;
-  min-block-size: 26px;
 }
 
 .onboarding-typing i {
@@ -145,90 +128,53 @@
   animation: onboarding-typing 1.2s ease-in-out infinite alternate;
 }
 
-.onboarding-typing i:nth-child(2) {
-  animation-delay: 130ms;
-}
-
-.onboarding-typing i:nth-child(3) {
-  animation-delay: 260ms;
-}
+.onboarding-typing i:nth-child(2) { animation-delay: 130ms; }
+.onboarding-typing i:nth-child(3) { animation-delay: 260ms; }
 
 @keyframes onboarding-typing {
   from { opacity: 0.42; }
   to { opacity: 1; }
 }
 
-.onboarding-reply-error {
-  display: flex;
-  margin-block-start: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 12px;
-  color: var(--inverse-muted);
-}
-
-.onboarding-reply-error button {
-  min-block-size: 44px;
-  color: var(--palette-aqua);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 .onboarding-options {
   display: grid;
-  gap: 2px;
-  min-inline-size: 0;
-  margin-block-start: 12px;
-  padding: 0;
+  gap: 8px;
+  margin-block-start: 16px;
   list-style: none;
 }
 
 .onboarding-options button,
 .onboarding-options label {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 10px;
-  min-inline-size: 0;
+  gap: 12px;
   inline-size: 100%;
   min-block-size: 44px;
-  padding: 7px 8px 7px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--inverse-border);
   border-radius: var(--radius);
-  background: transparent;
-  color: var(--inverse-text);
   text-align: start;
-  font-size: 1rem;
-  line-height: 1.4;
+  font-size: 0.9375rem;
   overflow-wrap: anywhere;
+}
+
+.onboarding-options button {
+  justify-content: space-between;
+}
+
+.onboarding-options button svg {
+  color: var(--inverse-muted);
 }
 
 .onboarding-options input {
   accent-color: var(--palette-aqua);
 }
 
-.onboarding-option-number {
-  display: grid;
-  place-items: center;
-  inline-size: 22px;
-  block-size: 22px;
-  border: 1px solid var(--inverse-border);
-  border-radius: 6px;
-  background: var(--inverse-raised);
-  color: var(--inverse-muted);
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
 .onboarding-options button:hover:not(:disabled),
-.onboarding-options button:focus-visible,
 .onboarding-options label:hover,
-.onboarding-options label:focus-within {
+.onboarding-options label:has(:checked) {
   background: var(--inverse-raised);
-}
-
-.onboarding-options button:active:not(:disabled) {
-  background: var(--inverse-active);
+  border-color: var(--palette-aqua);
 }
 
 .onboarding-composer {
@@ -236,31 +182,16 @@
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
-  margin-block-start: 12px;
-  padding-block-start: 10px;
-  border-block-start: 1px solid var(--onboarding-line);
-}
-
-.onboarding-custom-answer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-inline-size: 0;
-}
-
-.onboarding-custom-answer svg {
-  flex: none;
-  color: var(--inverse-muted);
+  margin-block-start: 18px;
 }
 
 .onboarding-custom-answer input {
-  flex: 1;
-  min-inline-size: 0;
+  inline-size: 100%;
   min-block-size: 44px;
-  padding-inline: 4px;
+  padding-inline: 12px;
+  border: 1px solid var(--inverse-border);
   border-radius: var(--radius);
-  background: transparent;
-  color: var(--inverse-text);
+  background: var(--onboarding-field);
   font-size: 1rem;
   caret-color: var(--palette-aqua);
 }
@@ -270,20 +201,24 @@
 }
 
 .onboarding-skip,
-.onboarding-send {
+.onboarding-send,
+.onboarding-enter {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
   min-block-size: 44px;
-  min-inline-size: 44px;
   padding-inline: 13px;
-  border-radius: 999px;
+  border-radius: var(--radius);
 }
 
 .onboarding-skip {
-  border: 1px solid var(--inverse-border);
-  color: var(--inverse-text);
+  color: var(--inverse-muted);
 }
 
 .onboarding-skip:hover:not(:disabled) {
   background: var(--inverse-raised);
+  color: var(--inverse-text);
 }
 
 .onboarding-send,
@@ -305,14 +240,23 @@
 }
 
 .onboarding-enter {
-  display: inline-flex;
-  justify-content: center;
+  margin-block-start: 16px;
+}
+
+.onboarding-reply-error {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  min-block-size: 48px;
-  margin-block-start: 12px;
-  padding-inline: 16px;
-  border-radius: var(--radius);
+  gap: 0 12px;
+  margin-block-start: 10px;
+  color: var(--negative-border);
+}
+
+.onboarding-reply-error button {
+  min-block-size: 44px;
+  color: var(--palette-aqua);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .onboarding-write-status {
@@ -320,21 +264,7 @@
   color: var(--inverse-muted);
 }
 
-.onboarding-write-status[role="alert"] {
-  color: var(--negative-border);
-}
-
 @media (max-width: 540px) {
-  .onboarding-page {
-    --onboarding-header-size: 61px;
-  }
-
-  .onboarding-header-inner {
-    min-block-size: 60px;
-  }
-}
-
-@media (max-width: 480px) {
   .onboarding-custom-answer {
     grid-column: 1 / -1;
   }

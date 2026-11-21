@@ -2,7 +2,7 @@
 
 "use client";
 
-import { ArrowRight, Pencil } from "lucide-react";
+import { ArrowRight, ChevronRight, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 
@@ -20,6 +20,7 @@ export function OnboardingChat({ initial, resetOnOpen }: { initial: OnboardingVi
   const [pending, startTransition] = useTransition();
   const active = useRef<HTMLDivElement>(null);
   const reply = useRef<HTMLParagraphElement>(null);
+  const focusNextReply = useRef(false);
   const { history, step } = view;
   const shouldPoll = step.status === "intro" || step.status === "running";
   const question = step.status === "running" ? step.question : undefined;
@@ -49,11 +50,13 @@ export function OnboardingChat({ initial, resetOnOpen }: { initial: OnboardingVi
   }, [opening, router, step.status]);
 
   useEffect(() => {
-    if (opening === "ready" && history.length) active.current?.scrollIntoView({ block: "start" });
+    if (opening === "ready" && history.length) active.current?.scrollIntoView({ block: "nearest" });
   }, [opening, history.length]);
 
   useEffect(() => {
-    if (opening === "ready" && (questionKey || step.status === "ready")) reply.current?.focus({ preventScroll: true });
+    if (!focusNextReply.current || opening !== "ready" || (!questionKey && step.status !== "ready")) return;
+    focusNextReply.current = false;
+    reply.current?.focus({ preventScroll: true });
   }, [opening, questionKey, step.status]);
 
   useEffect(() => {
@@ -88,77 +91,86 @@ export function OnboardingChat({ initial, resetOnOpen }: { initial: OnboardingVi
     startTransition(async () => {
       try {
         const result = await operation();
-        if (result.ok) setView(result.data);
-        else setWriteError({ message: result.message, turn: history.length });
+        if (result.ok) {
+          // Move focus after an answer or resume action, so Tab continues from the new reply.
+          focusNextReply.current = true;
+          setView(result.data);
+        } else {
+          setWriteError({ message: result.message, turn: history.length });
+        }
       } catch {
         setWriteError({ message: "Couldn’t update your setup. Try again.", turn: history.length });
       }
     });
   }
 
-  if (opening === "checking") return <p className="onboarding-loading-page sr-only" role="status">Loading your setup…</p>;
-  if (opening !== "ready") return <p className="onboarding-loading-page" role="alert">{opening.error}</p>;
-  if (step.status === "closed") return null;
+  if (step.status === "closed" && opening === "ready") return null;
 
   const message = step.status === "ready" || step.status === "failed" ? step.message : question?.question;
   const typing = shouldPoll && !question && !connectionError;
   const error = writeError?.turn === history.length ? writeError.message : connectionError;
 
   return (
-    <section className="onboarding-conversation" aria-label="Workspace setup conversation">
-      <h1 className="sr-only">Set up your workspace</h1>
-      {history.map(({ question }, index) => (
-        <div className="onboarding-turn" key={index}>
-          {index > 0 && <UserMessage text={history[index - 1].answer || "Skipped"} />}
-          <div className="onboarding-transcript-reply">
-            <span className="sr-only">Assistant</span>
-            <p className="onboarding-reply-text">{question}</p>
-          </div>
-        </div>
-      ))}
-      <div className="onboarding-turn onboarding-active-turn" ref={active}>
-        {history.length > 0 && <UserMessage text={history.at(-1)?.answer || "Skipped"} />}
-        <div className="onboarding-answer-panel">
-          {(message || typing) && (
-            <div className="onboarding-reply">
-              {message ? (
-                <p id={question ? "onboarding-question" : undefined} className="onboarding-reply-text"
-                  ref={reply} tabIndex={-1} role="status">{message}</p>
-              ) : (
-                <>
-                  <span className="sr-only" role="status">oma-agent is working.</span>
-                  <div className="onboarding-typing" aria-hidden="true"><i /><i /><i /></div>
-                </>
+    <section aria-labelledby="onboarding-conversation-title">
+      <h1 id="onboarding-conversation-title" className="sr-only">Workspace setup conversation</h1>
+      {opening === "checking" && <p className="onboarding-chat-empty" role="status">Loading your setup…</p>}
+      {typeof opening === "object" && <p className="onboarding-chat-empty" role="alert">{opening.error}</p>}
+      {opening === "ready" && (
+        <>
+          {history.map(({ question }, index) => (
+            <div className="onboarding-turn" key={index}>
+              {index > 0 && <UserMessage text={history[index - 1].answer || "Skipped"} />}
+              <div className="onboarding-transcript-reply">
+                <span className="sr-only">Assistant</span>
+                <p className="onboarding-reply-text">{question}</p>
+              </div>
+            </div>
+          ))}
+          <div className="onboarding-turn onboarding-active-turn" ref={active}>
+            {history.length > 0 && <UserMessage text={history.at(-1)?.answer || "Skipped"} />}
+            <div className="onboarding-answer-panel">
+              {(message || typing) && (
+                <div className="onboarding-reply">
+                  {message ? (
+                    <p id={question ? "onboarding-question" : undefined} className="onboarding-reply-text"
+                      ref={reply} tabIndex={-1} role="status">{message}</p>
+                  ) : (
+                    <p className="onboarding-typing" role="status">
+                      <span aria-hidden="true"><i /><i /><i /></span>
+                      {step.status === "intro" ? "Starting setup…" : "oma-agent is working…"}
+                    </p>
+                  )}
+                </div>
               )}
+              {question && (
+                <QuestionAnswer key={questionKey} question={question} pending={pending}
+                  onAnswer={(answer) => update(() => answerSetup(question.id, question.generation, answer))} />
+              )}
+              {step.status === "failed" && (
+                <button type="button" className="onboarding-enter" disabled={pending} onClick={() => update(startSetup)}>
+                  {pending ? "Resuming…" : "Resume setup"}
+                </button>
+              )}
+              {step.status === "ready" && (
+                <form action={finishSetup}>
+                  <button className="onboarding-enter">Open workspace <ArrowRight size={18} aria-hidden="true" /></button>
+                </form>
+              )}
+              {error && (
+                <div className="onboarding-reply-error">
+                  <span role="alert">{error}</span>
+                  {shouldPoll && <button type="button" disabled={pending} onClick={() => {
+                    setWriteError(undefined);
+                    setConnectionError("");
+                    setRetry((attempt) => attempt + 1);
+                  }}>Refresh status</button>}
+                </div>
+              )}
+              {question && pending && <p className="onboarding-write-status" role="status">Sending your answer…</p>}
             </div>
-          )}
-          {question && (
-            <QuestionAnswer key={questionKey} question={question} pending={pending}
-              onAnswer={(answer) => update(() => answerSetup(question.id, question.generation, answer))} />
-          )}
-          {step.status === "failed" && (
-            <button type="button" className="onboarding-enter" disabled={pending} onClick={() => update(startSetup)}>
-              {pending ? "Resuming…" : "Resume setup"}
-            </button>
-          )}
-          {step.status === "ready" && (
-            <form action={finishSetup}>
-              <button className="onboarding-enter">Open workspace <ArrowRight size={18} aria-hidden="true" /></button>
-            </form>
-          )}
-          {error && (
-            <div className="onboarding-reply-error">
-              <span role="alert">{error}</span>
-              {shouldPoll && <button type="button" disabled={pending} onClick={() => {
-                setWriteError(undefined);
-                setConnectionError("");
-                setRetry((attempt) => attempt + 1);
-              }}>Refresh status</button>}
-            </div>
-          )}
-          {question && pending && <p className="onboarding-write-status" role="status">Sending your answer…</p>}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </section>
   );
 }
@@ -192,7 +204,7 @@ function QuestionAnswer({ question, pending, onAnswer }: {
   return (
     <form aria-labelledby="onboarding-question" onSubmit={submit}>
       {question.choices.length > 0 && (
-        <ol className="onboarding-options" role="list" aria-label="Answer choices">
+        <ul className="onboarding-options" role="list" aria-label="Answer choices">
           {question.choices.map((choice, index) => (
             <li key={index}>
               {question.multiSelect ? (
@@ -205,26 +217,27 @@ function QuestionAnswer({ question, pending, onAnswer }: {
                 </label>
               ) : (
                 <button type="button" disabled={pending} onClick={() => onAnswer(choice)}>
-                  <span className="onboarding-option-number" aria-hidden="true">{index + 1}</span>
                   <span>{choice}</span>
+                  <ChevronRight size={16} aria-hidden="true" />
                 </button>
               )}
             </li>
           ))}
-        </ol>
+        </ul>
       )}
       <div className="onboarding-composer">
         <div className="onboarding-custom-answer">
-          <Pencil size={17} aria-hidden="true" />
-          <label className="sr-only" htmlFor="onboarding-answer">Or write your own response</label>
+          <label className="sr-only" htmlFor="onboarding-answer">Your response</label>
           <input id="onboarding-answer" autoComplete="off" maxLength={maxSetupAnswerLength}
-            placeholder="Or write your own response" readOnly={pending} value={custom}
+            placeholder={question.choices.length ? "Write your own response" : "Write a response"} readOnly={pending} value={custom}
             onChange={(event) => setCustom(event.target.value)} />
         </div>
         <button type="button" className="onboarding-skip" disabled={pending} onClick={() => onAnswer("")}>
-          Skip<span className="sr-only"> this step</span>
+          Skip question
         </button>
-        <button className="onboarding-send" disabled={pending || (!input && checked.length === 0)}>Send</button>
+        <button className="onboarding-send" disabled={pending || (!input && checked.length === 0)}>
+          Send <Send size={15} aria-hidden="true" />
+        </button>
       </div>
     </form>
   );

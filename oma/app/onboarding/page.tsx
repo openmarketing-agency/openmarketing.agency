@@ -1,4 +1,4 @@
-/** Shows the signed-in owner's setup conversation in the cloud onboarding layout. */
+/** Shows the signed-in owner's setup conversation. */
 
 import { randomUUID } from "node:crypto";
 import type { Metadata } from "next";
@@ -39,7 +39,9 @@ async function Setup() {
         </div>
       </header>
       <main id="main-content" tabIndex={-1} className="onboarding-main">
-        <OnboardingChat key={chatKey} initial={initial} resetOnOpen={resetOnOpen} />
+        <div className="onboarding-shell">
+          <OnboardingChat key={chatKey} initial={initial} resetOnOpen={resetOnOpen} />
+        </div>
       </main>
     </div>
   );
