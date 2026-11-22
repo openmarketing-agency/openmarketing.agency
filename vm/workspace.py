@@ -18,6 +18,7 @@ from secrets import token_hex
 from signal import SIGKILL
 from socketserver import ThreadingUnixStreamServer
 from threading import Lock
+import sqlite3
 import stat
 import subprocess
 from urllib.parse import urlsplit
@@ -600,6 +601,98 @@ def update_campaign_configuration(root, campaign_id, update):
         return campaign_configuration(updated)
 
 
+def ensure_bundled_campaign_routing(root, campaign_id, record, source, mode):
+    """Link legacy bundled profiles to their native campaign board before the first sync."""
+    from bootstrap import managed_path, read_registry
+    from hermes_cli import kanban_db
+    from hermes_cli.oma_campaigns.install import _install_lock
+    from hermes_cli.oma_campaigns.schema import validate_record
+    from hermes_cli.oma_campaigns.settings import read_agent_record
+    from hermes_cli.profiles import profile_exists
+
+    data = parse_record(source, campaign_id)
+    board = f"campaign-{campaign_id}"
+    marker = data.get("installation_state")
+    if marker == "installed" or (marker is None and data.get("kanban_board") == board):
+        return
+
+    home = root.parent
+    unavailable_routing = WorkspaceError(412, "Install the campaign and link its agent profiles before syncing.")
+    allowed_sources = {f"/opt/oma/campaigns/{campaign_id}", f"/opt/oma/playbooks/{campaign_id}"}
+    try:
+        registry = read_registry(managed_path(home, ".oma", "installed.json"))
+        matches = [item for item in registry["playbooks"] if item["id"] == campaign_id and item["source"] in allowed_sources]
+        if len(matches) != 1:
+            raise unavailable_routing
+        bundled = matches[0]
+        agents = data.get("agents", [])
+        expected = sorted(item["id"] for item in bundled["agents"] if item["active"])
+        if (not isinstance(agents, list) or not all(isinstance(agent, str) for agent in agents)
+            or not expected or sorted(agents) != expected or data.get("orchestrator") != bundled["orchestrator"]
+            or marker not in (None, "installing") or data.get("kanban_board") not in (None, board)
+            or (marker == "installing" and data.get("kanban_board") != board)):
+            raise unavailable_routing
+        campaign_path = managed_path(home, "oma", "campaigns", campaign_id, "config.yaml")
+        validate_record("campaign", data, campaign_path)
+    except (OSError, ValueError, KeyError, TypeError):
+        raise unavailable_routing from None
+
+    def replace_yaml(directory, previous, file_mode, yaml, document):
+        content = StringIO()
+        yaml.dump(document, content)
+        updated = content.getvalue().encode()
+        replace_file(directory, "config.yaml", file_mode, updated, lambda: read_file(directory)[0] == previous)
+        return updated
+
+    try:
+        with _install_lock(campaign_path), ExitStack() as handles:
+            if read_file(record)[0] != source:
+                raise WorkspaceError(409, "This campaign changed before sync. Reload its settings and try again.")
+            profiles = handles.enter_context(open_directory(home / "profiles"))
+            updates = []
+            expected_routing = {"profile_board": board, "orchestrator_profile": bundled["orchestrator"]}
+            for agent in agents:
+                read_agent_record(home, campaign_id, agent)
+                if not profile_exists(agent):
+                    raise unavailable_routing
+                profile = handles.enter_context(open_directory(agent, profiles))
+                profile_source, profile_mode = read_file(profile)
+                yaml = roundtrip_yaml()
+                native = yaml.load(profile_source)
+                if not isinstance(native, dict) or not isinstance(routing := native.setdefault("kanban", {}), dict):
+                    raise unavailable_routing
+                if any(routing.get(key) not in (None, "", value) for key, value in expected_routing.items()):
+                    raise WorkspaceError(412, "An existing agent is routed to another campaign board.")
+                if any(routing.get(key) != value for key, value in expected_routing.items()):
+                    routing.update(expected_routing)
+                    updates.append((profile, profile_source, profile_mode, yaml, native))
+
+            board_path = kanban_db.board_dir(board)
+            if board_path.is_symlink() or any((board_path / name).is_symlink() for name in ("board.json", "kanban.db")):
+                raise unavailable_routing
+            board_exists = kanban_db.board_exists(board)
+            metadata = kanban_db.read_board_metadata(board)
+            if metadata.get("archived") or (marker is None and (board_exists or board_path.exists())):
+                raise WorkspaceError(412, "A campaign board already exists and could not be linked safely.")
+
+            yaml = roundtrip_yaml()
+            campaign = yaml.load(source)
+            if marker is None:
+                # Mark ownership before writing the board so an interrupted repair can resume.
+                campaign["kanban_board"] = board
+                campaign["installation_state"] = "installing"
+                source = replace_yaml(record, source, mode, yaml, campaign)
+            if not board_exists:
+                metadata = kanban_db.create_board(board, name=data["name"], description=data["description"])
+            for update in updates:
+                replace_yaml(*update)
+            campaign.setdefault("kanban_board_name", metadata["name"])
+            campaign["installation_state"] = "installed"
+            replace_yaml(record, source, mode, yaml, campaign)
+    except (OSError, ValueError, KeyError, TypeError, sqlite3.Error):
+        raise unavailable_routing from None
+
+
 def valid_sync_key(value):
     return (isinstance(value, str) and 0 < len(value) <= 4096 and bool(value.strip())
             and value.isascii() and all(32 <= ord(char) <= 126 for char in value))
@@ -611,7 +704,7 @@ def sync_campaign_configuration(root, campaign_id, request):
     env = request["env"]
     if not set(env) <= {MODEL_KEY, ENV_MODEL_KEY, COMPOSIO_KEY} or not all(valid_sync_key(value) for value in env.values()):
         raise WorkspaceError(422, "Invalid campaign API keys.")
-    with editable_record(root, "campaigns", campaign_id) as (record, source, _):
+    with editable_record(root, "campaigns", campaign_id) as (record, source, mode):
         if request["revision"] != sha256(source).hexdigest():
             raise WorkspaceError(409, "This campaign changed before sync. Reload its settings and try again.")
         data = parse_record(source, campaign_id)
@@ -624,6 +717,7 @@ def sync_campaign_configuration(root, campaign_id, request):
             composio_url(server.get("url")) and mapping(server.get("headers")).get("x-api-key") == "${" + COMPOSIO_KEY + "}"
         ):
             raise WorkspaceError(422, "Save a Composio MCP URL before syncing its API key.")
+        ensure_bundled_campaign_routing(root, campaign_id, record, source, mode)
         try:
             # Kill the launcher and its worker together before releasing the edit lock on timeout.
             with subprocess.Popen(

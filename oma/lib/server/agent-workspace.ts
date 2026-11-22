@@ -269,10 +269,13 @@ export async function saveCampaignConfiguration(
       },
     }, "POST"));
     return { configuration: updated, synced: true };
-  } catch {
-    return {
-      configuration: saved,
-      error: "Settings were saved, but sync could not be confirmed. Re-enter any new model API key and try again.",
-    };
+  } catch (error) {
+    let recovery = "Reload campaign settings and try again.";
+    if (error instanceof WorkspaceRequestError && error.status === 412) {
+      recovery = "Check that the campaign has a board and its profiles are linked to it.";
+    } else if (modelKey) {
+      recovery = "Reload campaign settings and re-enter the new model API key before retrying.";
+    }
+    return { configuration: saved, error: "Settings were saved, but oma-agent could not sync the campaign. " + recovery };
   }
 }

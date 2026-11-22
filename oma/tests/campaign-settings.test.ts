@@ -28,7 +28,7 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     baseUrl: "https://proxy.example.test", hasModelKey: true,
   };
   const generateMcp = t.mock.fn(async () => ({ url }));
-  let failSync = false;
+  let syncFailureStatus = 0;
   const requests: Array<{ method?: string; path?: string; body: unknown }> = [];
   const server = createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/workspace") {
@@ -45,8 +45,8 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     let body = "";
     for await (const chunk of request) body += chunk;
     requests.push({ method: request.method, path: request.url, body: JSON.parse(body) });
-    if (request.method === "POST" && failSync) {
-      response.writeHead(502).end(JSON.stringify({ message: "fixture-model fixture-composio" }));
+    if (request.method === "POST" && syncFailureStatus) {
+      response.writeHead(syncFailureStatus).end(JSON.stringify({ message: "fixture-model fixture-composio" }));
     } else {
       response.end(JSON.stringify({
         ...configuration, composioUrl: url,
@@ -121,10 +121,14 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     } },
   ]);
   process.env.COMPOSIO_API_KEY = environment.COMPOSIO_API_KEY;
-  failSync = true;
+  syncFailureStatus = 502;
   const result = await saveCampaignConfiguration("seo", input, generateMcp);
   assert.deepEqual(result.configuration, configuration);
   assert.match(result.error ?? "", /Settings were saved/);
   assert.ok(!JSON.stringify(result).includes(url));
   assert.doesNotMatch(JSON.stringify(result), /fixture-model|fixture-composio|fixture-environment/);
+  syncFailureStatus = 412;
+  const unrouted = await saveCampaignConfiguration("seo", input, generateMcp);
+  assert.match(unrouted.error ?? "", /campaign has a board and its profiles are linked/);
+  assert.doesNotMatch(unrouted.error ?? "", /fixture-model|fixture-composio/);
 });

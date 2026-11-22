@@ -1,0 +1,102 @@
+"""Exercise first sync for an older bundled campaign against disposable native profiles."""
+
+from hashlib import sha256
+import json
+import os
+from pathlib import Path
+import sys
+from tempfile import TemporaryDirectory
+
+
+def verify_sync(home):
+    sys.path.insert(0, "/opt/oma")
+    from agent.secret_scope import load_env_file
+    from hermes_cli import kanban_db
+    from hermes_cli.config import atomic_config_replace
+    from hermes_cli.oma_campaigns.install import _status
+    from hermes_yaml import safe_load
+    from workspace import WorkspaceError, sync_campaign_configuration
+
+    root = home / "oma"
+    campaign_id = "fixture"
+    board = "campaign-fixture"
+    coordinator = "fixture__orchestrator"
+    specialist = "fixture__researcher"
+    agents = [coordinator, specialist]
+    record = root / "campaigns" / campaign_id / "config.yaml"
+    record.parent.mkdir(parents=True)
+    data = {
+        "id": campaign_id, "name": "Bundled campaign", "description": "Legacy fixture.",
+        "orchestrator": coordinator, "agents": agents,
+        "model": {"default": "fixture-model", "provider": "openai-api",
+                  "base_url": "https://provider.example.test/v1", "key_env": "HERMES_MODEL_API_KEY",
+                  "api_key": "${HERMES_MODEL_API_KEY}"},
+        "mcp_servers": {"composio": {"url": "https://backend.composio.dev/tool_router/trs_fixture/mcp",
+                        "headers": {"x-api-key": "${COMPOSIO_API_KEY}"}}},
+    }
+    atomic_config_replace(record, data)
+    registry = home / ".oma" / "installed.json"
+    registry.parent.mkdir()
+    registry.write_text(json.dumps({"schemaVersion": 1, "playbooks": [{
+        "id": campaign_id, "source": "/opt/oma/campaigns/fixture", "orchestrator": coordinator,
+        "agents": [{"id": name, "active": True} for name in agents],
+    }]}))
+    profiles = home / "profiles"
+    for name in agents:
+        agent = root / "agents" / name / "config.yaml"
+        agent.parent.mkdir(parents=True)
+        atomic_config_replace(agent, {
+            "id": name, "name": name, "description": "Fixture profile.", "campaign_id": campaign_id,
+        })
+        profile = profiles / name
+        (profile / "cron").mkdir(parents=True)
+        (profile / "cron" / "jobs.json").write_text('{"jobs":[]}')
+        (profile / ".env").write_text("EXISTING_FIXTURE_KEY=keep\n")
+        atomic_config_replace(profile / "config.yaml", {"agent": {"enabled_toolsets": ["file"]}})
+    owner_config = profiles / coordinator / "config.yaml"
+    atomic_config_replace(owner_config, {
+        "agent": {"enabled_toolsets": ["file"]},
+        "kanban": {"orchestrator_profile": coordinator, "profile_board": "campaign-unrelated"},
+    })
+    assert _status(home, campaign_id, data)["state"] == "draft"
+    request = {"revision": sha256(record.read_bytes()).hexdigest(), "env": {
+        "HERMES_MODEL_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key",
+    }}
+    try:
+        sync_campaign_configuration(root, campaign_id, request)
+    except WorkspaceError as error:
+        assert error.status == 412
+    else:
+        raise AssertionError("Should refuse to change an existing profile’s board")
+    assert not kanban_db.board_exists(board)
+    assert sha256(record.read_bytes()).hexdigest() == request["revision"]
+
+    atomic_config_replace(owner_config, {
+        "agent": {"enabled_toolsets": ["file"]},
+        "kanban": {"orchestrator_profile": coordinator, "dispatch_profiles": [specialist]},
+    })
+    result = sync_campaign_configuration(root, campaign_id, request)
+    updated = safe_load(record.read_bytes())
+    assert _status(home, campaign_id, updated)["state"] == "installed"
+    assert updated["available-keys"] == sorted(request["env"])
+    assert result["revision"] != request["revision"]
+    for name in agents:
+        profile = profiles / name
+        native = safe_load((profile / "config.yaml").read_bytes())
+        assert native["kanban"]["profile_board"] == board
+        assert native["kanban"]["orchestrator_profile"] == coordinator
+        assert native["agent"]["enabled_toolsets"] == ["file"]
+        assert native["model"] == data["model"] and native["mcp_servers"] == data["mcp_servers"]
+        assert (profile / "cron" / "jobs.json").read_text() == '{"jobs":[]}'
+        env = load_env_file(profile / ".env")
+        assert env["EXISTING_FIXTURE_KEY"] == "keep"
+        assert all(env[key] == value for key, value in request["env"].items())
+    assert safe_load(owner_config.read_bytes())["kanban"]["dispatch_profiles"] == [specialist]
+    assert sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}}) == result
+
+
+with TemporaryDirectory(prefix="oma-bundled-sync-") as directory:
+    os.environ.update(HERMES_HOME=directory, HOME=directory)
+    verify_sync(Path(directory))
+
+print("Legacy bundled profiles linked and synced successfully")

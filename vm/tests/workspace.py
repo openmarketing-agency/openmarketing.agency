@@ -221,7 +221,7 @@ with TemporaryDirectory() as temporary:
         **update, "revision": configuration["revision"], "baseUrl": "https://next.example.test", "setModelKey": False,
     })
     keys = {"HERMES_MODEL_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key"}
-    with patch.dict(os.environ, {"UNRELATED_TOKEN": "fixture-unrelated"}), patch("workspace.subprocess.Popen") as native:
+    with patch.dict(os.environ, {"UNRELATED_TOKEN": "fixture-unrelated"}), patch("workspace.ensure_bundled_campaign_routing"), patch("workspace.subprocess.Popen") as native:
         native.return_value.__enter__.return_value.wait.return_value = 0
         reject_call(422, sync_campaign_configuration, root, "seo", {
             "revision": configuration["revision"], "env": {"UNRELATED_TOKEN": "fixture-unrelated"},
@@ -246,7 +246,7 @@ with TemporaryDirectory() as temporary:
     reject_call(422, update_campaign_configuration, root, "seo", {
         **update, "revision": environment["revision"], "provider": "custom:other", "setModelKey": False,
     })
-    with patch("workspace.subprocess.Popen") as native:
+    with patch("workspace.ensure_bundled_campaign_routing"), patch("workspace.subprocess.Popen") as native:
         native.return_value.__enter__.return_value.wait.return_value = 0
         reject_call(422, sync_campaign_configuration, root, "seo", {
             "revision": environment["revision"], "env": {"HERMES_MODEL_API_KEY": "fixture-wrong-key"},
