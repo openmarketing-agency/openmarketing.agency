@@ -9,7 +9,7 @@ import { suggestCampaignTools } from "@/lib/campaign-tool-suggestions";
 import { loadToolWorkspace } from "@/lib/tool-workspace";
 import { connectionFeedback } from "@/lib/connection-attempt";
 import { requireUser } from "@/lib/dal";
-import { loadAgentWorkspace, workspaceId } from "@/lib/server/agent-workspace";
+import { loadAgentWorkspace, loadCampaignModelDefaults, workspaceId } from "@/lib/server/agent-workspace";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -39,13 +39,14 @@ async function Detail({ params, searchParams }: Props) {
   const linkedPlaybook = records.playbooks.find((item) => item.id === saved.playbookId);
   const brand = records.brands.find((item) => item.id === linkedPlaybook?.brandId);
   const [workspace, query] = await Promise.all([loadToolWorkspace(suggestCampaignTools(saved, brand)), searchParams]);
-  const initialView = query.view === "mcp" || query.view === "settings" ? query.view
+  const initialView = query.view === "mcp" || query.view === "settings" ? "settings"
     : query.view === "tools" || query.view === "team" || (query.view !== "overview" && typeof query.agent === "string")
       ? "tools" : "overview";
 
   return (
     <CampaignDetail
       campaign={saved}
+      modelDefaults={loadCampaignModelDefaults()}
       overview={<CampaignOverview workspace={records} campaign={saved} />}
       {...workspace}
       initialView={initialView}

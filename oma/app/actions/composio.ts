@@ -12,15 +12,10 @@ import {
   CAMPAIGN_SCOPE,
   connectionScope,
   isWorkspaceScope,
-  campaignToolSlugs,
   WORKSPACE_SCOPE,
   type ToolConnectionScope,
 } from "@/lib/agent-connections";
 import { listToolAssignments, saveToolAssignment } from "@/lib/backend";
-import {
-  hostedMcpConnection,
-  type HostedMcpConnection,
-} from "@/lib/mcp-client-config";
 import { accessCookieOptions } from "@/lib/cookies";
 import {
   CONNECTION_COOKIE,
@@ -165,28 +160,5 @@ export async function disconnectToolAction(slug: string) {
     return { snapshot: await connectionSnapshot(user.id) };
   } catch {
     return { error: "We couldn’t disconnect this tool. Please try again." };
-  }
-}
-export async function generateMcpAction(
-  campaignId: string,
-): Promise<{ connection?: HostedMcpConnection; error?: string }> {
-  const user = await requireUser();
-  try {
-    const { records, error } = await loadAgentWorkspace();
-    if (error) return { error };
-    if (!records?.campaigns.some((item) => item.id === campaignId)) return { error: "Campaign not found." };
-    const saved = await listToolAssignments(await requireAccessToken());
-    if (!saved.ok) return { error: saved.error.message };
-    const slugs = campaignToolSlugs(campaignId, saved.data);
-    const session = await (await toolConnections()).mcpSession(user.id, slugs);
-    return { connection: hostedMcpConnection(session.mcp) };
-  } catch (error) {
-    return {
-      error:
-        error instanceof Error &&
-        /^(Assign at least|Connect or remove)/.test(error.message)
-          ? error.message
-          : "We couldn’t generate your campaign MCP URL. Check your connections and try again.",
-    };
   }
 }

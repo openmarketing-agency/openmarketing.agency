@@ -34,7 +34,9 @@ EDITABLE = {"brands": ("name", "description", "knowledge_base"), "playbooks": ("
 SLUG = re.compile(r"[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*")
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 MAX_FILE_SIZE = 256 * 1024
-MODEL_KEY = "LITELLM_API_KEY"
+MODEL_KEY = "HERMES_MODEL_API_KEY"
+ENV_MODEL_KEY = "OMA_HERMES_API_KEY"
+ENV_MODEL_REFERENCES = {"${" + ENV_MODEL_KEY + "}", "${OMA_LITELLM_KEY}"}
 COMPOSIO_KEY = "COMPOSIO_API_KEY"
 RUNTIME_ENV = ("PATH", "HOME", "USER", "LOGNAME", "HERMES_HOME", "HERMES_DIR", "PYTHONPATH", "LANG",
                "LC_ALL", "XDG_RUNTIME_DIR", "VIRTUAL_ENV")
@@ -514,13 +516,15 @@ def composio_url(value):
 def campaign_configuration(source):
     data = parse_record(source)
     model = mapping(data.get("model"))
+    key_env = string(model.get("key_env")) or string(model.get("api_key_env"))
     server = mapping(mapping(data.get("mcp_servers")).get("composio"))
     return {
         "revision": sha256(source).hexdigest(),
         "provider": string(model.get("provider")),
         "modelId": model_name(data.get("model")),
         "baseUrl": configuration_url(model.get("base_url")),
-        "hasModelKey": bool(model.get("api_key")),
+        "hasModelKey": bool(model.get("api_key") or key_env),
+        "usesEnvironmentKey": key_env == ENV_MODEL_KEY or string(model.get("api_key")) in ENV_MODEL_REFERENCES,
         "composioUrl": composio_url(server.get("url")),
     }
 
@@ -528,10 +532,12 @@ def campaign_configuration(source):
 def validate_campaign_settings(update):
     fields = {"revision", "provider", "modelId", "baseUrl", "composioUrl", "setModelKey"}
     if (
-        not isinstance(update, dict) or set(update) != fields or type(update["setModelKey"]) is not bool
+        not isinstance(update, dict) or set(update) - {"useEnvironmentKey"} != fields or type(update["setModelKey"]) is not bool
+        or type(update.get("useEnvironmentKey", False)) is not bool
+        or (update.get("useEnvironmentKey") and not update["setModelKey"])
         or any(not isinstance(update[key], str) for key in fields - {"setModelKey"})
         or len(update["modelId"]) > 200 or re.search(r"[\s$]", update["modelId"])
-        or not re.fullmatch(r"[A-Za-z0-9_.-]{0,80}", update["provider"])
+        or len(update["provider"]) > 80 or not re.fullmatch(r"(?:[A-Za-z0-9_.-]+(?:[:@][A-Za-z0-9_.-]+)?)?", update["provider"])
         or (update["baseUrl"] and not configuration_url(update["baseUrl"]))
         or (update["composioUrl"] and not composio_url(update["composioUrl"]))
         or (any(update[key] for key in ("provider", "baseUrl", "setModelKey")) and not update["modelId"])
@@ -557,15 +563,19 @@ def update_campaign_configuration(root, campaign_id, update):
                 document.pop("model", None)
             else:
                 model = mapping(document.get("model"))
-                if update["baseUrl"] != current["baseUrl"] and current["hasModelKey"] and not update["setModelKey"]:
-                    raise WorkspaceError(422, "Enter a model API key when changing the URL of an authenticated model.")
+                changed_endpoint = any(update[key] != current[key] for key in ("provider", "baseUrl"))
+                if changed_endpoint and current["hasModelKey"] and not update["setModelKey"]:
+                    raise WorkspaceError(422, "Enter a model API key when changing the provider or base URL.")
                 for key, yaml_key in fields.items():
                     if update[key]:
                         model[yaml_key] = update[key]
                     else:
                         model.pop(yaml_key, None)
                 if update["setModelKey"]:
-                    model["api_key"] = "${" + MODEL_KEY + "}"
+                    key = ENV_MODEL_KEY if update.get("useEnvironmentKey") else MODEL_KEY
+                    # The reference is imported by sync-campaign. Registry providers resolve the key by name.
+                    model["api_key"] = "${" + key + "}"
+                    model["key_env"] = key
                 document["model"] = model
         servers = mapping(document.get("mcp_servers"))
         if update["composioUrl"]:
@@ -599,7 +609,7 @@ def sync_campaign_configuration(root, campaign_id, request):
     if not isinstance(request, dict) or set(request) != {"revision", "env"} or not isinstance(request["env"], dict):
         raise WorkspaceError(422, "Invalid campaign sync request.")
     env = request["env"]
-    if not set(env) <= {MODEL_KEY, COMPOSIO_KEY} or not all(valid_sync_key(value) for value in env.values()):
+    if not set(env) <= {MODEL_KEY, ENV_MODEL_KEY, COMPOSIO_KEY} or not all(valid_sync_key(value) for value in env.values()):
         raise WorkspaceError(422, "Invalid campaign API keys.")
     with editable_record(root, "campaigns", campaign_id) as (record, source, _):
         if request["revision"] != sha256(source).hexdigest():
@@ -607,10 +617,9 @@ def sync_campaign_configuration(root, campaign_id, request):
         data = parse_record(source, campaign_id)
         model = mapping(data.get("model"))
         server = mapping(mapping(data.get("mcp_servers")).get("composio"))
-        if MODEL_KEY in env and not (
-            model.get("api_key") == "${" + MODEL_KEY + "}" and configuration_url(model.get("base_url"))
-        ):
-            raise WorkspaceError(422, "Save a model URL with the API key before syncing.")
+        for key in env.keys() & {MODEL_KEY, ENV_MODEL_KEY}:
+            if model.get("api_key") != "${" + key + "}" or not configuration_url(model.get("base_url")):
+                raise WorkspaceError(422, "Save a model URL with the API key before syncing.")
         if COMPOSIO_KEY in env and not (
             composio_url(server.get("url")) and mapping(server.get("headers")).get("x-api-key") == "${" + COMPOSIO_KEY + "}"
         ):

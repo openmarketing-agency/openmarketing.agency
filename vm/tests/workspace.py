@@ -210,7 +210,7 @@ with TemporaryDirectory() as temporary:
     saved = safe_load(updated_text)
     assert saved["model"] == {
         "default": "proxy-model", "context_length": 2000, "provider": "custom",
-        "base_url": update["baseUrl"], "api_key": "${LITELLM_API_KEY}",
+        "base_url": update["baseUrl"], "api_key": "${HERMES_MODEL_API_KEY}", "key_env": "HERMES_MODEL_API_KEY",
     }
     assert saved["mcp_servers"] == {
         "other": {"url": "https://other.example.test/mcp"},
@@ -220,7 +220,7 @@ with TemporaryDirectory() as temporary:
     reject_call(422, update_campaign_configuration, root, "seo", {
         **update, "revision": configuration["revision"], "baseUrl": "https://next.example.test", "setModelKey": False,
     })
-    keys = {"LITELLM_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key"}
+    keys = {"HERMES_MODEL_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key"}
     with patch.dict(os.environ, {"UNRELATED_TOKEN": "fixture-unrelated"}), patch("workspace.subprocess.Popen") as native:
         native.return_value.__enter__.return_value.wait.return_value = 0
         reject_call(422, sync_campaign_configuration, root, "seo", {
@@ -236,8 +236,29 @@ with TemporaryDirectory() as temporary:
         native.return_value.__enter__.return_value.wait.return_value = 1
         reject_call(502, sync_campaign_configuration, root, "seo", {"revision": configuration["revision"], "env": keys})
     assert all(value not in campaign.read_text() for value in keys.values())
+    environment = update_campaign_configuration(root, "seo", {
+        **update, "revision": configuration["revision"], "provider": "openai-api", "useEnvironmentKey": True,
+    })
+    assert environment["provider"] == "openai-api" and environment["usesEnvironmentKey"] is True
+    saved_model = safe_load(campaign.read_text())["model"]
+    assert saved_model["api_key"] == "${OMA_HERMES_API_KEY}"
+    assert saved_model["key_env"] == "OMA_HERMES_API_KEY"
+    reject_call(422, update_campaign_configuration, root, "seo", {
+        **update, "revision": environment["revision"], "provider": "custom:other", "setModelKey": False,
+    })
+    with patch("workspace.subprocess.Popen") as native:
+        native.return_value.__enter__.return_value.wait.return_value = 0
+        reject_call(422, sync_campaign_configuration, root, "seo", {
+            "revision": environment["revision"], "env": {"HERMES_MODEL_API_KEY": "fixture-wrong-key"},
+        })
+        native.assert_not_called()
+        assert sync_campaign_configuration(root, "seo", {
+            "revision": environment["revision"], "env": {"OMA_HERMES_API_KEY": "fixture-environment-key"},
+        }) == environment
+        assert native.call_args.kwargs["env"]["OMA_HERMES_API_KEY"] == "fixture-environment-key"
+    assert "fixture-environment-key" not in campaign.read_text()
     cleared = update_campaign_configuration(root, "seo", {
-        **update, "revision": configuration["revision"], "provider": "", "modelId": "",
+        **update, "revision": environment["revision"], "provider": "", "modelId": "",
         "baseUrl": "", "setModelKey": False, "composioUrl": "",
     })
     assert cleared["modelId"] == "" and cleared["composioUrl"] == ""

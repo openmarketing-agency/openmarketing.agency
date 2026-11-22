@@ -1,34 +1,52 @@
-/** Edits the model override and hosted Composio connection for a saved campaign. */
+/** Edits the campaign model and submits the settings for agent sync. */
 
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { saveCampaignSettingsAction } from "@/app/actions/workspace";
-import type { CampaignConfiguration } from "@/lib/server/agent-workspace";
+import type { CampaignConfiguration, CampaignModelDefaults } from "@/lib/server/agent-workspace";
 
 export function CampaignSettings({
-  campaignId, configuration, generatedMcpUrl, openMcp,
+  campaignId, configuration, modelDefaults,
 }: {
   campaignId: string;
   configuration: CampaignConfiguration;
-  generatedMcpUrl?: string;
-  openMcp: () => void;
+  modelDefaults: CampaignModelDefaults;
 }) {
-  const [provider, setProvider] = useState(configuration.provider);
-  const [modelId, setModelId] = useState(configuration.modelId);
-  const [baseUrl, setBaseUrl] = useState(configuration.baseUrl);
-  const [composioUrl, setComposioUrl] = useState(configuration.composioUrl);
+  const hasModel = Boolean(configuration.provider || configuration.modelId || configuration.baseUrl || configuration.hasModelKey);
+  const initialModel = hasModel ? configuration : modelDefaults;
+  const [provider, setProvider] = useState(initialModel.provider);
+  const [modelId, setModelId] = useState(initialModel.modelId);
+  const [baseUrl, setBaseUrl] = useState(initialModel.baseUrl);
+  const [environmentKey, setEnvironmentKey] = useState(!hasModel || Boolean(configuration.usesEnvironmentKey));
+  const modelKey = useRef<HTMLInputElement>(null);
   const [result, action, pending] = useActionState(saveCampaignSettingsAction.bind(null, campaignId), {});
   const saved = result.configuration ?? configuration;
+  const modelMatches = provider.trim() === saved.provider
+    && modelId === saved.modelId && baseUrl === saved.baseUrl;
+  const hasDefaults = Boolean(modelDefaults.modelId || modelDefaults.baseUrl || modelDefaults.provider);
+  const canUseEnvironmentKey = modelDefaults.hasApiKey && baseUrl === modelDefaults.baseUrl
+    && provider.trim() === modelDefaults.provider;
+
+  function useModelDefaults() {
+    setProvider(modelDefaults.provider);
+    setModelId(modelDefaults.modelId);
+    setBaseUrl(modelDefaults.baseUrl);
+    setEnvironmentKey(true);
+    if (modelKey.current) modelKey.current.value = "";
+  }
 
   return (
-    <section className="campaign-settings" aria-labelledby="campaign-settings-title">
-      <h2 id="campaign-settings-title">Campaign settings</h2>
+    <section className="campaign-settings" aria-label="Campaign settings">
       <form action={action} className="workspace-editor">
         <input type="hidden" name="revision" value={saved.revision} />
         <fieldset disabled={pending}>
           <legend>Model</legend>
-          <p>Use <code>custom</code> for a LiteLLM proxy. Leave the model fields blank to use the agent’s default.</p>
+          <div className="campaign-settings-intro">
+            <p>{hasDefaults ? <>Settings start from <code>.env</code>. Edit the fields to override the model for this campaign.</>
+              : "Leave the model fields blank to use the agent’s default model."}</p>
+            {hasDefaults && <button type="button" className="btn secondary" onClick={useModelDefaults}>Use .env defaults</button>}
+          </div>
           <div className="campaign-model-fields">
             <label>Provider
               <input name="provider" value={provider} onChange={(event) => setProvider(event.target.value)}
@@ -41,34 +59,31 @@ export function CampaignSettings({
           </div>
           <label>Base URL
             <input name="baseUrl" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder="https://proxy.example.com" maxLength={2048} />
+              placeholder="https://provider.example.com/v1" maxLength={2048} />
           </label>
+          {canUseEnvironmentKey && (
+            <label className="campaign-env-key">
+              <input type="checkbox" name="useEnvironmentKey" value="true" checked={environmentKey}
+                onChange={(event) => {
+                  setEnvironmentKey(event.target.checked);
+                  if (event.target.checked && modelKey.current) modelKey.current.value = "";
+                }} />
+              Sync the provider API key from .env
+            </label>
+          )}
           <label>Model API key
-            <input name="modelKey" type="password" autoComplete="new-password" maxLength={4096}
-              aria-describedby="model-api-key-hint" />
+            <input name="modelKey" type="password" ref={modelKey} autoComplete="new-password" maxLength={4096}
+              aria-describedby="model-api-key-hint"
+              onChange={(event) => { if (event.target.value) setEnvironmentKey(false); }} />
           </label>
           <p id="model-api-key-hint">
-            {saved.hasModelKey ? "Leave blank to keep the existing key reference. " : "Enter a key if your provider requires one. "}
-            Keys entered here are sent to oma-agent. The campaign YAML stores the variable reference.
+            {canUseEnvironmentKey && environmentKey ? "Enter a key to override the .env key for this campaign."
+              : saved.hasModelKey ? "Leave blank to keep the existing key reference."
+              : "Enter a key if your provider requires one."}
           </p>
         </fieldset>
-        <fieldset disabled={pending}>
-          <legend>Composio MCP</legend>
-          <label>Hosted MCP URL
-            <input name="composioUrl" type="url" value={composioUrl} onChange={(event) => setComposioUrl(event.target.value)}
-              placeholder="https://backend.composio.dev/tool_router/…/mcp" maxLength={2048} />
-          </label>
-          <p>Uses <code>COMPOSIO_API_KEY</code> from the console environment.</p>
-          <div className="workspace-editor-actions">
-            {generatedMcpUrl ? (
-              <button type="button" className="btn secondary" onClick={() => setComposioUrl(generatedMcpUrl)}>Use generated URL</button>
-            ) : (
-              <button type="button" className="btn secondary" onClick={openMcp}>Open MCP connection</button>
-            )}
-          </div>
-        </fieldset>
         {result.error && <p className="form-error" role="alert">{result.error}</p>}
-        {result.synced && <p className="workspace-save-status" role="status">Settings saved and synced to oma-agent.</p>}
+        {result.synced && modelMatches && <p className="workspace-save-status" role="status">Settings saved and synced to oma-agent.</p>}
         <button className="btn primary" type="submit" disabled={pending}>
           {pending ? "Saving and syncing…" : "Save and sync"}
         </button>

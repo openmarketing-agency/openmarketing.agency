@@ -1,32 +1,30 @@
-/** Shows a saved campaign and manages its shared tools, hosted MCP connection, and agent settings. */
+/** Shows a saved campaign and manages its shared tools and agent settings. */
 
 "use client";
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Plug, Settings, Terminal, Workflow } from "lucide-react";
+import { ArrowLeft, Plug, Settings, Workflow } from "lucide-react";
 
-import { CampaignMcpSetup } from "@/components/campaign-mcp-setup";
 import { CampaignSettings } from "@/components/campaign-settings";
 import { ToolkitBrowser } from "@/components/toolkit-browser";
 import { campaignConnectionScope, campaignToolSlugs, type ToolAssignment } from "@/lib/agent-connections";
 import type { CampaignToolRecommendation } from "@/lib/campaign-tool-suggestions";
-import type { HostedMcpConnection } from "@/lib/mcp-client-config";
-import type { SavedCampaign } from "@/lib/server/agent-workspace";
+import type { CampaignModelDefaults, SavedCampaign } from "@/lib/server/agent-workspace";
 import type { Toolkit } from "@/lib/tool-catalog";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 
-type View = "overview" | "tools" | "mcp" | "settings";
+type View = "overview" | "tools" | "settings";
 
 const views = [
   { id: "overview", label: "Overview", icon: null },
   { id: "tools", label: "Tools", icon: Plug },
-  { id: "mcp", label: "MCP connection", icon: Terminal },
   { id: "settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function CampaignDetail({
   campaign,
+  modelDefaults,
   snapshot: initialSnapshot,
   assignments,
   metadata: initialMetadata,
@@ -37,6 +35,7 @@ export function CampaignDetail({
   overview,
 }: {
   campaign: SavedCampaign;
+  modelDefaults: CampaignModelDefaults;
   snapshot: ConnectionSnapshot;
   assignments: ToolAssignment[];
   metadata: Toolkit[];
@@ -50,12 +49,6 @@ export function CampaignDetail({
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [selected, setSelected] = useState(() => campaignToolSlugs(campaign.id, assignments));
   const [metadata, setMetadata] = useState(initialMetadata);
-  const [mcp, setMcp] = useState<{ selection: string; connection: HostedMcpConnection }>();
-
-  const selection = [...selected].sort().join(",");
-  const toolBySlug = new Map(metadata.map((tool) => [tool.slug, tool]));
-  const available = (slug: string) => toolBySlug.get(slug)?.noAuth || snapshot.connected.includes(slug);
-  const missing = selected.some((slug) => !available(slug));
 
   function selectView(nextView: View) {
     setView(nextView);
@@ -69,7 +62,6 @@ export function CampaignDetail({
     setSnapshot(nextSnapshot);
     setSelected(slugs);
     setMetadata(items);
-    setMcp(undefined);
   }
 
   return (
@@ -97,7 +89,7 @@ export function CampaignDetail({
           </button>
         ))}
       </div>
-      {error && (view === "tools" || view === "mcp") && <p role="alert" className="form-error">{error}</p>}
+      {error && view === "tools" && <p role="alert" className="form-error">{error}</p>}
 
       {view === "overview" && overview}
       {view === "tools" && (
@@ -108,39 +100,10 @@ export function CampaignDetail({
         </div>
       )}
       {view === "settings" && (campaign.configuration ? (
-        <CampaignSettings campaignId={campaign.id} configuration={campaign.configuration}
-          generatedMcpUrl={mcp?.selection === selection ? mcp.connection.url : undefined}
-          openMcp={() => selectView("mcp")} />
+        <CampaignSettings campaignId={campaign.id} configuration={campaign.configuration} modelDefaults={modelDefaults} />
       ) : (
-        <p className="notice">Campaign settings are unavailable. Check that the agent workspace is up to date.</p>
+        <p className="notice">Campaign settings are unavailable. Rebuild the oma-agent workspace service to enable them.</p>
       ))}
-      {view === "mcp" && (
-        <div className="playbook-mcp-view">
-          {selected.length > 0 && (
-            <div className="playbook-tool-summary">
-              <h3>Included tools</h3>
-              <ul>
-                {selected.map((slug) => (
-                  <li key={slug}>
-                    <strong>{toolBySlug.get(slug)?.name ?? slug}</strong>
-                    {available(slug) ? (
-                      <span className="connection-status">
-                        <Check size={14} aria-hidden="true" />
-                        {toolBySlug.get(slug)?.noAuth ? "No sign-in needed" : "Connected"}
-                      </span>
-                    ) : <span className="tool-needs-connection">Needs connection</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {missing && <p className="notice">Connect or remove tools marked “Needs connection” before generating your URL.</p>}
-          <CampaignMcpSetup campaignId={campaign.id} campaignName={campaign.name}
-            ready={selected.length > 0 && !missing && !error} configured={snapshot.configured}
-            connection={mcp?.selection === selection ? mcp.connection : undefined}
-            onGenerate={(connection) => setMcp({ selection, connection })} />
-        </div>
-      )}
     </div>
   );
 }

@@ -2071,57 +2071,6 @@ pre {
 .agent-requirements-note > span:first-child {
   color: var(--text);
 }
-.agent-mcp-section {
-  padding: 24px 28px;
-  border-top: 1px solid var(--border);
-}
-.agent-mcp-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-.agent-mcp-heading h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-.agent-mcp-heading p {
-  font-size: 12px;
-  margin-top: 7px;
-  max-width: 360px;
-}
-.agent-mcp-heading .btn {
-  font-size: 12px;
-  min-height: 36px;
-}
-.agent-mcp-locked {
-  font-size: 11px;
-  margin-top: 16px;
-}
-.agent-mcp-result {
-  margin-top: 20px;
-}
-.agent-url-label {
-  font-size: 12px;
-  font-weight: 500;
-}
-.agent-mcp-result .copy-field {
-  margin-top: 8px;
-}
-.agent-client-config {
-  margin-top: 18px;
-}
-.agent-client-config summary {
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--muted);
-  padding: 5px 0;
-}
-.agent-client-config pre {
-  font-size: 11px;
-}
 .agent-responsibility {
   padding: 20px 28px 24px;
   background: var(--raised);
@@ -2314,17 +2263,11 @@ pre {
     padding: 23px;
   }
   .agent-connection-area,
-  .agent-mcp-section,
   .agent-responsibility {
     padding: 22px 23px;
   }
   .agent-identity p {
     max-width: 360px;
-  }
-  .agent-mcp-heading {
-    align-items: start;
-    flex-direction: column;
-    gap: 16px;
   }
   .agent-requirements-note {
     align-items: start;
@@ -2397,7 +2340,6 @@ pre {
     padding: 22px 20px;
   }
   .agent-connection-area,
-  .agent-mcp-section,
   .agent-responsibility {
     padding: 22px 20px;
   }
@@ -2406,9 +2348,6 @@ pre {
   }
   .agent-configuration .connection-row > .tool-identity {
     min-width: 170px;
-  }
-  .agent-mcp-heading .btn {
-    min-height: 40px;
   }
   .agent-state {
     font-size: 11px;
@@ -2696,83 +2635,6 @@ pre {
   font-size: 12px;
   line-height: 1.7;
 }
-.playbook-mcp-shortcut {
-  font-size: 12px;
-  white-space: nowrap;
-}
-.playbook-mcp-view {
-  max-width: 900px;
-  padding: 30px 0 12px;
-}
-.playbook-mcp-intro h2 {
-  font-size: 20px;
-  letter-spacing: -0.3px;
-}
-.playbook-mcp-intro p {
-  margin-top: 12px;
-  font-size: 14px;
-  max-width: 65ch;
-}
-.playbook-tool-summary {
-  margin: 30px 0;
-}
-.playbook-tool-summary h3 {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 14px;
-  margin-bottom: 18px;
-}
-.playbook-tool-summary h3 > span {
-  font-size: 11px;
-  background: var(--raised);
-  color: var(--muted);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.playbook-tool-summary > p {
-  font-size: 13px;
-}
-.playbook-tool-summary ul {
-  padding: 0;
-  margin: 0;
-  list-style: none;
-  border-top: 1px solid var(--border);
-}
-.playbook-tool-summary li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  border-bottom: 1px solid var(--border);
-  padding: 18px 0;
-}
-.playbook-tool-summary li strong {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-}
-.playbook-tool-summary li small {
-  display: block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.tool-needs-connection {
-  font-size: 12px;
-  color: var(--warning);
-  white-space: nowrap;
-}
-.playbook-mcp-view .agent-mcp-section {
-  padding: 26px 0;
-}
-.playbook-mcp-view .agent-mcp-heading {
-  align-items: start;
-}
-.playbook-mcp-view .copy-field input {
-  min-width: 0;
-  width: 100%;
-}
 @media (max-width: 1150px) {
   .tool-browser-filters {
     grid-template-columns: minmax(0, 1fr) 155px;
@@ -2834,17 +2696,6 @@ pre {
   .tool-load-more {
     flex-direction: column;
     gap: 12px;
-  }
-  .playbook-mcp-intro h2 {
-    font-size: 18px;
-  }
-  .playbook-tool-summary li {
-    align-items: start;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .playbook-mcp-shortcut {
-    min-height: 42px;
   }
 }
 
@@ -3268,7 +3119,7 @@ ol.workspace-copy-list {
   gap: 6px;
   font-weight: 600;
 }
-.workspace-editor :is(input:not([type="hidden"]), textarea) {
+.workspace-editor :is(input:not([type="hidden"], [type="checkbox"]), textarea) {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--control);
@@ -3323,6 +3174,27 @@ ol.workspace-copy-list {
 }
 .campaign-settings p {
   margin: 0;
+}
+.campaign-settings-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.campaign-settings-intro p {
+  flex: 1 1 24ch;
+}
+.campaign-settings .campaign-env-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+.campaign-env-key input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 .campaign-model-fields {
   display: grid;

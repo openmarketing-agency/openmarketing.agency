@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
+import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
 import { brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
@@ -45,8 +46,8 @@ export async function saveCampaignSettingsAction(
   _previous: CampaignConfigurationResult,
   form: FormData,
 ): Promise<CampaignConfigurationResult> {
-  await requireUser();
-  const result = await saveCampaignConfiguration(id, Object.fromEntries(form));
+  const user = await requireUser();
+  const result = await saveCampaignConfiguration(id, Object.fromEntries(form), () => generateCampaignMcpUrl(id, user.id));
   if (result.configuration) revalidatePath("/campaigns/" + id);
   return result;
 }

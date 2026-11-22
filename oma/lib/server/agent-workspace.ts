@@ -31,7 +31,7 @@ const brand = record.extend({
 const playbook = record.extend({ revision, brandId: z.string(), strategy: z.string(), strategyHtml: z.string().optional() });
 const campaignConfiguration = z.object({
   revision, provider: z.string(), modelId: z.string(), baseUrl: z.string(),
-  hasModelKey: z.boolean(), composioUrl: z.string(),
+  hasModelKey: z.boolean(), usesEnvironmentKey: z.boolean().optional(),
 });
 const campaign = record.extend({
   playbookId: z.string(), version: z.string(), orchestrator: z.string(), agentIds: strings,
@@ -182,13 +182,28 @@ const modelBaseUrl = z.union([z.literal(""), z.string().max(2048).refine((value)
 })]);
 const hostedComposioUrl = z.string().max(2048).regex(/^(?:https:\/\/backend\.composio\.dev\/tool_router\/(?:v3\/)?[A-Za-z0-9_-]+\/mcp\/?)?$/);
 const keyValue = z.string().max(4096).regex(/^[\x20-\x7e]*$/);
+const modelProvider = z.string().trim().max(80).regex(/^(?:[A-Za-z0-9_.-]+(?:[:@][A-Za-z0-9_.-]+)?)?$/);
+const modelIdentifier = z.string().trim().max(200).regex(/^[^\s$]*$/);
+
+export type CampaignModelDefaults = { provider: string; modelId: string; baseUrl: string; hasApiKey: boolean };
+
+/** Read defaults from the server environment. The model key stays on the server. */
+export function loadCampaignModelDefaults(): CampaignModelDefaults {
+  const baseUrl = modelBaseUrl.safeParse(process.env.OMA_HERMES_BASE_URL?.trim() ?? "").data ?? "";
+  const modelId = modelIdentifier.safeParse(process.env.OMA_HERMES_MODEL ?? "").data ?? "";
+  const provider = modelProvider.safeParse(process.env.OMA_HERMES_PROVIDER ?? "").data
+    || (baseUrl ? "custom" : modelId ? "openrouter" : "");
+  const key = process.env.OMA_HERMES_API_KEY?.trim();
+  return { provider, modelId, baseUrl, hasApiKey: Boolean(baseUrl && key && keyValue.safeParse(key).success) };
+}
+
 const campaignUpdate = z.object({
   revision,
-  provider: z.string().trim().regex(/^[A-Za-z0-9_.-]{0,80}$/),
-  modelId: z.string().trim().max(200).regex(/^[^\s$]*$/),
+  provider: modelProvider,
+  modelId: modelIdentifier,
   baseUrl: modelBaseUrl,
   modelKey: keyValue.transform((value) => value.trim()),
-  composioUrl: hostedComposioUrl,
+  useEnvironmentKey: z.literal("true").optional(),
 }).refine((input) =>
   (!(input.provider || input.baseUrl || input.modelKey) || input.modelId) && (!input.modelKey || input.baseUrl),
 );
@@ -199,21 +214,47 @@ export type CampaignConfigurationResult = {
   synced?: boolean;
 };
 
-/** Save the non-secret YAML fields first, then deliver only the campaign’s keys to the private sync route. */
-export async function saveCampaignConfiguration(id: string, input: unknown): Promise<CampaignConfigurationResult> {
+/** Generate the MCP URL after validating the edit, then save the YAML and sync the campaign’s keys. */
+export async function saveCampaignConfiguration(
+  id: string,
+  input: unknown,
+  generateMcpUrl: () => Promise<{ url: string } | { error: string }>,
+): Promise<CampaignConfigurationResult> {
   const parsed = campaignUpdate.safeParse(input);
   if (!workspaceId.safeParse(id).success || !parsed.success) {
-    return { error: "Check the model fields. Use HTTPS for the model URL and a hosted Composio MCP URL." };
+    return { error: "Check the model fields and use HTTPS for the model base URL." };
   }
-  const { modelKey, ...settings } = parsed.data;
-  const composioKey = settings.composioUrl ? process.env.COMPOSIO_API_KEY?.trim() : undefined;
-  if (settings.composioUrl && (!composioKey || !keyValue.safeParse(composioKey).success)) {
+  const { modelKey, useEnvironmentKey, ...settings } = parsed.data;
+  let environmentKey: string | undefined;
+  if (useEnvironmentKey && !modelKey) {
+    const defaults = loadCampaignModelDefaults();
+    if (!defaults.hasApiKey || settings.baseUrl !== defaults.baseUrl || settings.provider !== defaults.provider) {
+      return { error: "Use the configured provider and base URL to sync the .env key, or enter a campaign key." };
+    }
+    environmentKey = process.env.OMA_HERMES_API_KEY?.trim();
+  }
+  const workspace = await loadAgentWorkspace();
+  if (workspace.error) return { error: workspace.error };
+  const current = workspace.records?.campaigns.find((item) => item.id === id)?.configuration;
+  if (!current) return { error: "Couldn’t load this campaign’s settings. Check that oma-agent is running." };
+  if (current.revision !== settings.revision) return { error: "This campaign changed. Reload its settings and try again." };
+
+  const mcp = await generateMcpUrl();
+  if ("error" in mcp) return { error: mcp.error };
+  const url = hostedComposioUrl.safeParse(mcp.url);
+  if (!url.success) return { error: "Composio returned a URL that can’t be synced to this campaign." };
+  const composioUrl = url.data;
+  const composioKey = composioUrl ? process.env.COMPOSIO_API_KEY?.trim() : undefined;
+  if (composioUrl && (!composioKey || !keyValue.safeParse(composioKey).success)) {
     return { error: "Set COMPOSIO_API_KEY in OMA’s environment to sync a Composio MCP connection." };
   }
   const path = "/workspace/campaigns/" + id;
   let saved: CampaignConfiguration;
   try {
-    saved = campaignConfiguration.parse(await workspaceRequest(path + "/config", { ...settings, setModelKey: Boolean(modelKey) }));
+    saved = campaignConfiguration.parse(await workspaceRequest(path + "/config", {
+      ...settings, composioUrl, setModelKey: Boolean(modelKey || environmentKey),
+      ...(environmentKey ? { useEnvironmentKey: true } : {}),
+    }));
   } catch (error) {
     if (error instanceof WorkspaceRequestError && [404, 409, 422].includes(error.status)) return { error: error.message };
     return { error: "Couldn’t save the campaign settings. Check that oma-agent is running." };
@@ -222,7 +263,8 @@ export async function saveCampaignConfiguration(id: string, input: unknown): Pro
     const updated = campaignConfiguration.parse(await workspaceRequest(path + "/sync", {
       revision: saved.revision,
       env: {
-        ...(modelKey ? { LITELLM_API_KEY: modelKey } : {}),
+        ...(modelKey ? { HERMES_MODEL_API_KEY: modelKey } : {}),
+        ...(environmentKey ? { OMA_HERMES_API_KEY: environmentKey } : {}),
         ...(composioKey ? { COMPOSIO_API_KEY: composioKey } : {}),
       },
     }, "POST"));

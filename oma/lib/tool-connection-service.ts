@@ -270,7 +270,7 @@ export function createToolConnectionService(
     );
     if (missing.length)
       throw new Error(
-        `Connect or remove these assigned tools before generating the URL: ${missing.map((item) => item.tool.name).join(", ")}.`,
+        `Connect or remove these assigned tools before syncing the campaign: ${missing.map((item) => item.tool.name).join(", ")}.`,
       );
     const authenticated = selected.filter((item) => item.account);
     return client.sessions.create(userId, {
