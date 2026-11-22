@@ -1,4 +1,4 @@
-ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.9@sha256:a926a02c4bc4a09e1e58e96e9a562e042d27643c50c39faa011cffa2edfe5d2c
+ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.14@sha256:2a46de99c1d38a15d097465f590df21b713875e74e327fd0476bac2f9a275b3e
 FROM docker.io/oven/bun:1.4.4 AS bun
 
 FROM ${OMA_AGENT_IMAGE} AS agent

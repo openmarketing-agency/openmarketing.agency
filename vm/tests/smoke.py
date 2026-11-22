@@ -12,7 +12,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from cron.jobs import load_jobs, use_cron_store
-from hermes_cli.oma_playbooks.source import resolve as resolve_campaign
 from hermes_yaml import safe_load
 from tools.clarify_gateway import resolve_clarify_timeout
 
@@ -79,15 +78,17 @@ registry = root / ".oma" / "installed.json"
 gateway_seed = root / ".oma" / "gateway-seed"
 campaigns_dir = Path("/opt/oma/campaigns")
 assert not Path("/opt/oma/playbooks").exists()
-manifests = [safe_load(path.read_text()) for path in campaigns_dir.glob("*/config.yaml")]
-for manifest in manifests:
-    resolved = resolve_campaign(campaigns_dir, Path("/opt/oma/skills"), manifest["id"])
-    assert resolved.orchestrator == manifest["orchestrator"]
-check_routes([manifest["orchestrator"] for manifest in manifests])
+manifests = {path.parent.name: safe_load(path.read_text()) for path in campaigns_dir.glob("*/config.yaml")}
+check_routes([manifest["orchestrator"] for manifest in manifests.values()])
 installed = json.loads(registry.read_bytes())
 playbooks = installed["playbooks"]
-assert all(playbook["source"] == str(campaigns_dir / playbook["id"]) for playbook in playbooks)
-assert manifests and {playbook["id"] for playbook in playbooks} == {manifest["id"] for manifest in manifests}
+assert manifests and {playbook["id"] for playbook in playbooks} == set(manifests)
+for playbook in playbooks:
+    manifest = manifests[playbook["id"]]
+    assert playbook["id"] == manifest["id"]
+    assert playbook["source"] == str(campaigns_dir / playbook["id"])
+    assert playbook["orchestrator"] == manifest["orchestrator"]
+    assert {agent["id"] for agent in playbook["agents"]} == set(manifest["agents"])
 
 assert gateway_seed.stat().st_mode & 0o777 == 0o600
 docker_state = {
