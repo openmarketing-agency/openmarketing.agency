@@ -468,7 +468,7 @@ def validate_edit(request, fields):
 
 @contextmanager
 def editable_record(root, collection, record_id):
-    if collection not in {*EDITABLE, "campaigns"} or not valid_id(record_id):
+    if collection not in COLLECTIONS or not valid_id(record_id):
         raise WorkspaceError(404, "This workspace record was not found.")
     try:
         with open_directory(root) as workspace, open_editable_record(workspace, collection, record_id) as entry:
@@ -818,6 +818,31 @@ def valid_sync_key(value):
             and value.isascii() and all(32 <= ord(char) <= 126 for char in value))
 
 
+def sync_agent_configuration(root, agent_id, request):
+    if agent_id not in {"default", "maintenance"}:
+        raise WorkspaceError(404, "This agent does not support standalone sync.")
+    if not isinstance(request, dict) or request.keys() - {"revision"} or (
+        "revision" in request and (not isinstance(request["revision"], str) or not re.fullmatch(r"[a-f0-9]{64}", request["revision"]))
+    ):
+        raise WorkspaceError(422, "Invalid agent sync request.")
+    with editable_record(root, "agents", agent_id) as (_, source, _):
+        revision = sha256(source).hexdigest()
+        if request.get("revision", revision) != revision:
+            raise WorkspaceError(409, "This agent changed before sync. Reload its settings and try again.")
+        command = [sys.executable, "-m", "hermes_cli.oma_campaigns.standalone", "sync", agent_id, "--revision", revision]
+        try:
+            run_campaign_command(root, command, {"HERMES_HOME": str(root.parent)})
+        except subprocess.CalledProcessError as error:
+            status, message = {
+                3: (409, "This agent changed during sync. Reload its settings and try again."),
+                4: (404, "The saved agent record or native profile was not found."),
+            }.get(error.returncode, (422, "Could not sync the agent. Check the saved configuration, profile, and bundle skills."))
+            raise WorkspaceError(status, message) from None
+        except (OSError, subprocess.TimeoutExpired):
+            raise WorkspaceError(503, "Standalone agent sync is unavailable.") from None
+    return {"id": agent_id, "revision": revision}
+
+
 def sync_campaign_configuration(root, campaign_id, request, *, deploy=False):
     if not isinstance(request, dict) or set(request) != {"revision", "env"} or not isinstance(request["env"], dict):
         raise WorkspaceError(422, "Invalid campaign sync request.")
@@ -949,24 +974,27 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(length))
 
     def do_POST(self):
-        path = re.fullmatch(r"/workspace/campaigns/([^/]+)/(sync|deploy|plan-chat)", self.path)
-        if not path:
+        path = re.fullmatch(r"/workspace/(campaigns|agents)/([^/]+)/(sync|deploy|plan-chat)", self.path)
+        if not path or (path[1] == "agents" and path[3] != "sync"):
             self.reply(404, {"message": "Unknown workspace request."})
             return
         try:
             request = self.read_update()
-            if path[2] == "plan-chat":
+            if path[1] == "agents":
+                with self.server.edit_lock:
+                    result = sync_agent_configuration(self.server.root, path[2], request)
+            elif path[3] == "plan-chat":
                 if not self.server.plan_chat_lock.acquire(blocking=False):
                     raise WorkspaceError(429, "A campaign suggestion is already running. Try again in a moment.")
                 try:
-                    result = ask_campaign_plan(self.server.root, path[1], request)
+                    result = ask_campaign_plan(self.server.root, path[2], request)
                 finally:
                     self.server.plan_chat_lock.release()
             else:
                 with self.server.edit_lock:
-                    result = sync_campaign_configuration(self.server.root, path[1], request, deploy=path[2] == "deploy")
+                    result = sync_campaign_configuration(self.server.root, path[2], request, deploy=path[3] == "deploy")
         except (ValueError, RecursionError):
-            self.reply(400, {"message": "Invalid campaign request."})
+            self.reply(400, {"message": "Invalid workspace request."})
         except WorkspaceError as error:
             self.reply(error.status, {"message": str(error)})
         except OSError:

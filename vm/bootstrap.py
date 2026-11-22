@@ -113,11 +113,11 @@ def write_env(path, values):
             set_key(path, name, value)
 
 
-def configure_model(path, provider, model, *, effective_model=None, gateway=False, clarify_timeout=None):
+def configure_model(path, provider, model, *, effective_model=None, preserve_model=False, gateway=False, clarify_timeout=None):
     config = require_readable_config_before_write(path)
     previous = deepcopy(config)
     # A boot-time fallback must not replace a synced campaign model.
-    if effective_model is None or config.get("model") != effective_model:
+    if not (preserve_model and "model" in config) and (effective_model is None or config.get("model") != effective_model):
         config["model"] = model
     if provider:
         config.setdefault("providers", {})["oma-inference"] = provider
@@ -191,6 +191,7 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed, *, clarify
 
     configure_model(
         managed_path(root, "config.yaml"), provider, model, gateway=True, clarify_timeout=clarify_timeout,
+        preserve_model=managed_path(root, "oma", "agents", "default", "config.yaml").is_file(),
     )
     write_env(managed_path(root, ".env"), {
         **credentials,
