@@ -4,14 +4,14 @@ OMA is a self-hosted workspace for marketing campaigns and tool connections. The
 
 ## Run the full stack locally
 
-Use Docker Engine with Compose 2.24.4+ on an x86-64 Linux host or VM that supports privileged containers and nested Docker. Set `OPENROUTER_API_KEY` in a private `.env` using [`.env.example`](.env.example) as a reference. If you already have a private environment file elsewhere, set `COMPOSE_ENV_FILES` to its path, then start the stack from this checkout.
+Use Docker Engine with Compose 2.24.4+ on an x86-64 Linux host or VM that supports privileged containers and nested Docker. No model API key is needed to start. To supply OpenRouter credentials at startup, set `OPENROUTER_API_KEY` in a private `.env` using [`.env.example`](.env.example) as a reference. If you already have a private environment file elsewhere, set `COMPOSE_ENV_FILES` to its path, then start the stack from this checkout.
 
 ```sh
 make dev         # Console hot reload and the full runtime
 make production  # Production console build and the same full runtime
 ```
 
-The default OpenRouter model is [GPT-4.1 Mini](https://openrouter.ai/openai/gpt-4.1-mini). Set `OMA_HERMES_MODEL` in the environment file to choose a different OpenRouter model. Inference requires network access to OpenRouter. Set `OMA_INIT_CATALOG=0` to start Hermes without initializing the optional app catalog.
+The default OpenRouter model is [GPT-4.1 Mini](https://openrouter.ai/openai/gpt-4.1-mini). Set `OMA_HERMES_MODEL` in the environment file to choose a different initial model. If you start without a key, open [Hermes Dashboard → Keys](http://localhost:9119/env), select the profile you want to configure, and save its provider credential before starting a chat. OpenRouter inference still requires a valid key and network access. Set `OMA_INIT_CATALOG=0` to start Hermes without initializing the optional app catalog.
 
 Create the installation's single account at [http://localhost:3000/register](http://localhost:3000/register). After registration, enter your project website, GitHub repository, or both. The console saves the links in SQLite and sends the questions and answers to oma-agent. If the agent connection is unavailable, retry from project setup. You can skip setup and go straight to Campaigns. Existing accounts can open project setup from Campaigns. The signed-in [agent onboarding backup](http://localhost:3000/onboarding-backup) retains the previous conversation flow. Sign in again at [http://localhost:3000/login](http://localhost:3000/login). The Hermes dashboard is on port `9119`, its authenticated gateway is on `8642`, and optional catalog apps route through Traefik on `18080`. Compose initializes the catalog. Use these commands to verify it and start a local chat:
 
@@ -77,7 +77,7 @@ sha256sum -c SHA256SUMS
 tar -xzf oma-vm-vX.Y.Z-linux-amd64.tar.gz
 cd oma-vm-vX.Y.Z-linux-amd64
 install -m 600 .env.example .env
-# Set OPENROUTER_API_KEY in .env before running the installer.
+# Optional: set OPENROUTER_API_KEY in .env, or configure it in Hermes after startup.
 sudo bash install.sh
 ```
 
