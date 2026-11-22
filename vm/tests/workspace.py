@@ -78,4 +78,36 @@ with TemporaryDirectory() as temporary:
     assert safe_load(playbook.read_text()) == {
         "id": "growth", "name": "Growth", "brand_id": "example", "strategy": "New strategy\nSecond line.",
     }
+
+    # The current agent uses a shared brand and playbook and leaves earlier records in place.
+    current_brand = root / "brand" / "config.yaml"
+    current_brand.parent.mkdir()
+    current_brand.write_text("id: example\nname: Current brand\n")
+    current_playbook = root / "playbook" / "config.yaml"
+    current_playbook.parent.mkdir()
+    current_playbook.write_text("id: launch\nname: Launch\nbrand_id: ignored\nstrategy: Original plan\n")
+    new_campaign = root / "campaigns" / "social" / "config.yaml"
+    new_campaign.parent.mkdir()
+    new_campaign.write_text("id: social\nname: Social campaign\n")
+
+    current = records(root)
+    assert [item["name"] for item in current["brands"]] == ["Current brand"]
+    assert [(item["id"], item["brandId"]) for item in current["playbooks"]] == [
+        ("launch", "example"), ("growth", "example"),
+    ]
+    assert [(item["id"], item["playbookId"]) for item in current["campaigns"]] == [
+        ("seo", "growth"), ("social", "launch"),
+    ]
+    update_record(root, "brands", "example", {**update, "revision": current["brands"][0]["revision"]})
+    assert safe_load(current_brand.read_text())["name"] == "New name"
+    assert brand.read_text() == changed
+    update_record(root, "playbooks", "launch", {
+        "revision": current["playbooks"][0]["revision"], "strategy": "Updated launch plan",
+    })
+    assert safe_load(current_playbook.read_text())["strategy"] == "Updated launch plan"
+    assert safe_load(playbook.read_text())["strategy"] == "New strategy\nSecond line."
+    must_reject(409, root, "playbooks", "launch", {
+        "revision": current["playbooks"][0]["revision"], "strategy": "Stale plan",
+    })
+
 print("Workspace record reads and edits passed")

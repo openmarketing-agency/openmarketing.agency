@@ -4,7 +4,7 @@ The Unix socket is shared with the console. All paths and editable fields are
 fixed by the service, and runtime configuration and credentials stay private.
 """
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from hashlib import sha256
 from http.server import BaseHTTPRequestHandler
 import json
@@ -20,6 +20,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 
 COLLECTIONS = ("brands", "playbooks", "campaigns", "agents")
+SINGLETONS = {"brands": "brand", "playbooks": "playbook"}
 EDITABLE = {"brands": ("name", "description", "knowledge_base"), "playbooks": ("strategy",)}
 SLUG = re.compile(r"[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*")
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -53,12 +54,18 @@ def read_file(directory):
         return source, stat.S_IMODE(info.st_mode)
 
 
-def parse_record(source, record_id):
+def valid_id(record_id):
+    return isinstance(record_id, str) and len(record_id) <= 64 and SLUG.fullmatch(record_id) is not None
+
+
+def parse_record(source, record_id=None):
     try:
         data = safe_load(source)
     except (UnicodeError, YAMLError, RecursionError):
         raise WorkspaceError(422, "This workspace record contains invalid YAML.") from None
-    if not isinstance(data, dict) or data.get("id") != record_id:
+    if not isinstance(data, dict) or not valid_id(data.get("id")):
+        raise WorkspaceError(422, "This workspace record has an invalid ID.")
+    if record_id is not None and data["id"] != record_id:
         raise WorkspaceError(422, "The workspace record ID does not match its directory.")
     return data
 
@@ -79,8 +86,9 @@ def string_map(value):
     return {key: item for key, item in mapping(value).items() if isinstance(key, str) and isinstance(item, str)}
 
 
-def project(collection, record_id, source):
+def project(collection, source, record_id=None):
     data = parse_record(source, record_id)
+    record_id = data["id"]
     record = {
         "id": record_id, "name": string(data.get("name"), record_id) or record_id,
         "description": string(data.get("description")),
@@ -116,19 +124,29 @@ def project(collection, record_id, source):
 
 def records(root):
     result = {collection: [] for collection in COLLECTIONS}
+    singletons = {}
     skipped = 0
     try:
         with open_directory(root) as workspace:
+            for collection, path in SINGLETONS.items():
+                try:
+                    with open_directory(path, workspace) as record:
+                        source, _ = read_file(record)
+                    singletons[collection] = project(collection, source)
+                except FileNotFoundError:
+                    continue
+                except (OSError, WorkspaceError):
+                    skipped += 1
             for collection in COLLECTIONS:
                 try:
                     with open_directory(collection, workspace) as directory:
                         for record_id in sorted(os.listdir(directory)):
-                            if len(record_id) > 64 or not SLUG.fullmatch(record_id):
+                            if not valid_id(record_id):
                                 continue
                             try:
                                 with open_directory(record_id, directory) as record:
                                     source, _ = read_file(record)
-                                result[collection].append(project(collection, record_id, source))
+                                result[collection].append(project(collection, source, record_id))
                             except (OSError, WorkspaceError):
                                 skipped += 1
                 except FileNotFoundError:
@@ -137,12 +155,37 @@ def records(root):
                     skipped += 1
     except FileNotFoundError:
         pass
+    # Current campaigns share one strategy and brand. Legacy records retain their explicit links.
+    if playbook := singletons.get("playbooks"):
+        playbook["brandId"] = singletons.get("brands", {}).get("id", "")
+        for campaign in result["campaigns"]:
+            if not campaign["playbookId"]:
+                campaign["playbookId"] = playbook["id"]
+    for collection, record in singletons.items():
+        result[collection] = [record, *(item for item in result[collection] if item["id"] != record["id"])]
     return {**result, "skipped": skipped}
+
+
+@contextmanager
+def open_editable_record(workspace, collection, record_id):
+    with ExitStack() as handles:
+        try:
+            record = handles.enter_context(open_directory(SINGLETONS[collection], workspace))
+            source, mode = read_file(record)
+            matches = parse_record(source)["id"] == record_id
+        except (OSError, WorkspaceError):
+            matches = False
+        if not matches:
+            directory = handles.enter_context(open_directory(collection, workspace))
+            record = handles.enter_context(open_directory(record_id, directory))
+            source, mode = read_file(record)
+            parse_record(source, record_id)
+        yield record, source, mode
 
 
 def update_record(root, collection, record_id, request):
     fields = EDITABLE.get(collection)
-    if not fields or len(record_id) > 64 or not SLUG.fullmatch(record_id):
+    if not fields or not valid_id(record_id):
         raise WorkspaceError(404, "This workspace record was not found.")
     if not isinstance(request, dict) or set(request) != {"revision", *fields}:
         raise WorkspaceError(422, "Some workspace fields are missing or invalid.")
@@ -152,12 +195,10 @@ def update_record(root, collection, record_id, request):
         if not isinstance(value, str) or len(value) > limit or "\0" in value or (field == "name" and not value.strip()):
             raise WorkspaceError(422, "Some workspace fields are missing or invalid.")
     try:
-        with open_directory(root) as workspace, open_directory(collection, workspace) as directory, \
-                open_directory(record_id, directory) as record:
-            source, mode = read_file(record)
+        with open_directory(root) as workspace, open_editable_record(workspace, collection, record_id) as entry:
+            record, source, mode = entry
             if request["revision"] != sha256(source).hexdigest():
                 raise WorkspaceError(409, "This record changed while you were editing. Reopen it and try again.")
-            parse_record(source, record_id)
             yaml = roundtrip_yaml()
             data = yaml.load(source)
             for field in fields:
