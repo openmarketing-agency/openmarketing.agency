@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
 import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
-import { brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { brandUpdate, knowledgeUpdate, playbookUpdate, previewCampaignPlan, saveCampaignConfiguration, saveCampaignPlan, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -49,5 +49,42 @@ export async function saveCampaignSettingsAction(
   const user = await requireUser();
   const result = await saveCampaignConfiguration(id, Object.fromEntries(form), () => generateCampaignMcpUrl(id, user.id));
   if (result.configuration) revalidatePath("/campaigns/" + id);
+  return result;
+}
+
+export async function saveCampaignPlanAction(id: string, input: unknown) {
+  await requireUser();
+  try {
+    const saved = await saveCampaignPlan(id, input);
+    revalidatePath("/campaigns/" + id);
+    revalidatePath("/dashboard");
+    return { ok: true as const, ...saved };
+  } catch (error) {
+    if (error instanceof WorkspaceRequestError) return { ok: false as const, message: error.message };
+    throw error;
+  }
+}
+
+export async function askCampaignPlanAction(id: string, input: unknown) {
+  await requireUser();
+  try {
+    return { ok: true as const, ...(await previewCampaignPlan(id, input)) };
+  } catch (error) {
+    if (error instanceof WorkspaceRequestError) return { ok: false as const, message: error.message };
+    throw error;
+  }
+}
+
+export async function deployCampaignAction(
+  id: string,
+  _previous: CampaignConfigurationResult,
+  form: FormData,
+): Promise<CampaignConfigurationResult> {
+  const user = await requireUser();
+  const result = await saveCampaignConfiguration(id, Object.fromEntries(form), () => generateCampaignMcpUrl(id, user.id), true);
+  if (result.configuration) {
+    revalidatePath("/campaigns/" + id);
+    revalidatePath("/dashboard");
+  }
   return result;
 }

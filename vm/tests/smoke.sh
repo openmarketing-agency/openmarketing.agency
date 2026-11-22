@@ -34,6 +34,7 @@ omactl_tag=$("$engine" image inspect "$image" --format '{{index .Config.Labels "
 guest /opt/hermes/.venv/bin/python - fresh < "$root/tests/smoke.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/workspace.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/bundled_campaign_sync.py"
+guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_deploy.py"
 guest bash -euo pipefail -c '
     test -x /usr/local/bin/omactl
     omactl version --json | python -c "import json, sys; assert json.load(sys.stdin)[\"data\"][\"version\"] == sys.argv[1]" "$1"

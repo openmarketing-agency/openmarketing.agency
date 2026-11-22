@@ -2,6 +2,7 @@
 
 import { request } from "node:http";
 import { z } from "zod";
+import { campaignPlanChatSchema, campaignPlanResponseSchema, campaignPlanSchema } from "../campaign-plan";
 
 export const workspaceId = z.string().max(64).regex(/^[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*$/);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
@@ -89,7 +90,7 @@ async function workspaceRequest(path: string, body?: object, method = body ? "PU
   return new Promise((resolve, reject) => {
     const req = request({
       socketPath, path, method,
-      signal: AbortSignal.timeout(method === "POST" ? 70_000 : 6_000),
+      signal: AbortSignal.timeout(path.endsWith("/deploy") ? 130_000 : method === "POST" ? 70_000 : 6_000),
       headers: payload ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } : undefined,
     }, (response) => {
       const chunks: Buffer[] = [];
@@ -176,6 +177,32 @@ export async function saveWorkspaceRecord(collection: WorkspaceEdit, id: string,
   await workspaceRequest("/workspace/" + path, update);
 }
 
+const campaignPlanUpdate = campaignPlanSchema.extend({ revision });
+
+/** Save only the reviewed fields using the revision the user opened. */
+export async function saveCampaignPlan(id: string, input: unknown) {
+  const parsed = campaignPlanUpdate.safeParse(input);
+  if (!workspaceId.safeParse(id).success || !parsed.success) {
+    throw new WorkspaceRequestError(422, "Enter a campaign name and check the plan’s field lengths.");
+  }
+  const result = await workspaceRequest("/workspace/campaigns/" + id + "/plan", parsed.data);
+  const saved = z.object({ revision }).safeParse(result);
+  if (!saved.success) throw new WorkspaceRequestError(502, "Couldn’t confirm the saved campaign plan. Refresh to check it.");
+  return saved.data;
+}
+
+/** Ask for a draft revision without giving the model a write or deploy operation. */
+export async function previewCampaignPlan(id: string, input: unknown) {
+  const parsed = campaignPlanChatSchema.safeParse(input);
+  if (!workspaceId.safeParse(id).success || !parsed.success) {
+    throw new WorkspaceRequestError(422, "Check the draft and enter a shorter message.");
+  }
+  const result = await workspaceRequest("/workspace/campaigns/" + id + "/plan-chat", parsed.data, "POST");
+  const reply = campaignPlanResponseSchema.safeParse(result);
+  if (!reply.success) throw new WorkspaceRequestError(502, "oma-agent returned an unreadable suggestion. Try again.");
+  return reply.data;
+}
+
 const modelBaseUrl = z.union([z.literal(""), z.string().max(2048).refine((value) => {
   const url = URL.parse(value);
   return url?.protocol === "https:" && !url.username && !url.password && !/[?#\s\\]/.test(value);
@@ -219,6 +246,7 @@ export async function saveCampaignConfiguration(
   id: string,
   input: unknown,
   generateMcpUrl: () => Promise<{ url: string } | { error: string }>,
+  deploy = false,
 ): Promise<CampaignConfigurationResult> {
   const parsed = campaignUpdate.safeParse(input);
   if (!workspaceId.safeParse(id).success || !parsed.success) {
@@ -260,7 +288,7 @@ export async function saveCampaignConfiguration(
     return { error: "Couldn’t save the campaign settings. Check that oma-agent is running." };
   }
   try {
-    const updated = campaignConfiguration.parse(await workspaceRequest(path + "/sync", {
+    const updated = campaignConfiguration.parse(await workspaceRequest(path + (deploy ? "/deploy" : "/sync"), {
       revision: saved.revision,
       env: {
         ...(modelKey ? { HERMES_MODEL_API_KEY: modelKey } : {}),
@@ -271,11 +299,15 @@ export async function saveCampaignConfiguration(
     return { configuration: updated, synced: true };
   } catch (error) {
     let recovery = "Reload campaign settings and try again.";
+    if (deploy && error instanceof WorkspaceRequestError && [404, 409, 412, 422].includes(error.status)) {
+      return { configuration: saved, error: error.message };
+    }
     if (error instanceof WorkspaceRequestError && error.status === 412) {
       recovery = "Check that the campaign has a board and its profiles are linked to it.";
     } else if (modelKey) {
       recovery = "Reload campaign settings and re-enter the new model API key before retrying.";
     }
-    return { configuration: saved, error: "Settings were saved, but oma-agent could not sync the campaign. " + recovery };
+    const operation = deploy ? "deploy" : "sync";
+    return { configuration: saved, error: "Settings were saved, but oma-agent could not " + operation + " the campaign. " + recovery };
   }
 }

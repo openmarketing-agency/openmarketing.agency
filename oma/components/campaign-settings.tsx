@@ -3,15 +3,16 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
-import { saveCampaignSettingsAction } from "@/app/actions/workspace";
+import { deployCampaignAction, saveCampaignSettingsAction } from "@/app/actions/workspace";
 import type { CampaignConfiguration, CampaignModelDefaults } from "@/lib/server/agent-workspace";
 
 export function CampaignSettings({
-  campaignId, configuration, modelDefaults,
+  campaignId, configuration, modelDefaults, deploy = false,
 }: {
   campaignId: string;
   configuration: CampaignConfiguration;
   modelDefaults: CampaignModelDefaults;
+  deploy?: boolean;
 }) {
   const hasModel = Boolean(configuration.provider || configuration.modelId || configuration.baseUrl || configuration.hasModelKey);
   const initialModel = hasModel ? configuration : modelDefaults;
@@ -20,7 +21,7 @@ export function CampaignSettings({
   const [baseUrl, setBaseUrl] = useState(initialModel.baseUrl);
   const [environmentKey, setEnvironmentKey] = useState(!hasModel || Boolean(configuration.usesEnvironmentKey));
   const modelKey = useRef<HTMLInputElement>(null);
-  const [result, action, pending] = useActionState(saveCampaignSettingsAction.bind(null, campaignId), {});
+  const [result, action, pending] = useActionState((deploy ? deployCampaignAction : saveCampaignSettingsAction).bind(null, campaignId), {});
   const saved = result.configuration ?? configuration;
   const modelMatches = provider.trim() === saved.provider
     && modelId === saved.modelId && baseUrl === saved.baseUrl;
@@ -37,7 +38,7 @@ export function CampaignSettings({
   }
 
   return (
-    <section className="campaign-settings" aria-label="Campaign settings">
+    <section className="campaign-settings" aria-label={deploy ? "Deployment settings" : "Campaign settings"}>
       <form action={action} className="workspace-editor">
         <input type="hidden" name="revision" value={saved.revision} />
         <fieldset disabled={pending}>
@@ -83,9 +84,9 @@ export function CampaignSettings({
           </p>
         </fieldset>
         {result.error && <p className="form-error" role="alert">{result.error}</p>}
-        {result.synced && modelMatches && <p className="workspace-save-status" role="status">Settings saved and synced to oma-agent.</p>}
+        {result.synced && modelMatches && <p className="workspace-save-status" role="status">{deploy ? "Campaign deployed. Its agent profiles are synced." : "Settings saved and synced to oma-agent."}</p>}
         <button className="btn primary" type="submit" disabled={pending}>
-          {pending ? "Saving and syncing…" : "Save and sync"}
+          {deploy ? (pending ? "Deploying…" : "Deploy campaign") : (pending ? "Saving and syncing…" : "Save and sync")}
         </button>
       </form>
     </section>

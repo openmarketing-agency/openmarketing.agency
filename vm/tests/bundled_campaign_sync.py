@@ -93,6 +93,7 @@ def verify_sync(home):
         assert all(env[key] == value for key, value in request["env"].items())
     assert safe_load(owner_config.read_bytes())["kanban"]["dispatch_profiles"] == [specialist]
     assert sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}}) == result
+    assert sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}}, deploy=True) == result
 
 
 with TemporaryDirectory(prefix="oma-bundled-sync-") as directory:

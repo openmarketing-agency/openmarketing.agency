@@ -121,6 +121,12 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     } },
   ]);
   process.env.COMPOSIO_API_KEY = environment.COMPOSIO_API_KEY;
+  assert.equal((await saveCampaignConfiguration("seo", input, generateMcp, true)).synced, true);
+  assert.equal(requests.at(-1)?.path, "/workspace/campaigns/seo/deploy");
+  assert.deepEqual(requests.at(-1)?.body, {
+    revision: configuration.revision,
+    env: { HERMES_MODEL_API_KEY: "fixture-model", COMPOSIO_API_KEY: "fixture-composio" },
+  });
   syncFailureStatus = 502;
   const result = await saveCampaignConfiguration("seo", input, generateMcp);
   assert.deepEqual(result.configuration, configuration);
