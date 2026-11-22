@@ -26,6 +26,10 @@ npm run build
 
 The database tests create isolated SQLite files in a temporary directory. Project setup at `/onboarding` accepts a website, a GitHub repository, or both. It saves the supplied links and forwards the questions and answers through the configured oma-agent gateway. Failed deliveries can be retried with the saved links. In development, loading `/onboarding-backup` directly or refreshing it resets the backed-up agent conversation so it can be tested again.
 
+## Approval preview
+
+Open **Approvals** in the console to review sample drafts by campaign. Saved edits and approval decisions are stored in your browser. The mock chat can shorten copy, suggest a call to action, or apply a specific text replacement. Review decisions in this preview apply to the sample drafts.
+
 ## Use the API and connections
 
 The first registration creates the installation's sole account. The nullable `users.onboarding_state` field stores the project setup and any saved agent onboarding transcript. Browser login stores access and refresh tokens in HTTP-only cookies. API clients send `username` and `password` as form fields to `/api/v1/auth/jwt/login`, then send the returned access token as `Authorization: Bearer <token>`. The bearer API and machine-readable OpenAPI document are available at `/docs` and `/openapi.json`.
