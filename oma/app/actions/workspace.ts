@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
 import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
-import { brandUpdate, knowledgeUpdate, playbookUpdate, previewCampaignPlan, saveCampaignConfiguration, saveCampaignPlan, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { brandUpdate, knowledgeUpdate, playbookUpdate, previewCampaignPlan, saveCampaignConfiguration, saveCampaignPlan, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -50,6 +50,11 @@ export async function saveCampaignSettingsAction(
   const result = await saveCampaignConfiguration(id, Object.fromEntries(form), () => generateCampaignMcpUrl(id, user.id));
   if (result.configuration) revalidatePath("/campaigns/" + id);
   return result;
+}
+
+export async function saveStandaloneModelAction(_previous: StandaloneModelResult, form: FormData) {
+  await requireUser();
+  return saveStandaloneModel({ revision: form.get("revision"), modelId: form.get("modelId") });
 }
 
 export async function saveCampaignPlanAction(id: string, input: unknown) {

@@ -38,6 +38,7 @@ const campaign = record.extend({
   playbookId: z.string(), version: z.string(), orchestrator: z.string(), agentIds: strings,
   goals: strings, plans: strings, board: z.string(),
   installationState: z.string().optional(), model: z.string().optional(),
+  lifecycleState: z.string().optional(),
   configuration: campaignConfiguration.optional(),
 });
 const agent = record.extend({
@@ -46,9 +47,14 @@ const agent = record.extend({
     name: z.string(), schedule: z.string(), timezone: z.string().optional(), repeat: z.number().int().positive().optional(),
   })),
 });
+const standaloneModels = z.object({ revision, default: z.string(), maintenance: z.string() });
+export type StandaloneModels = z.infer<typeof standaloneModels>;
+export type StandaloneModelResult = { models?: StandaloneModels; error?: string };
+
 const inventory = z.object({
   brands: z.array(brand), playbooks: z.array(playbook), campaigns: z.array(campaign), agents: z.array(agent),
   skipped: z.number().int().nonnegative(),
+  standaloneModels: standaloneModels.optional(),
 });
 
 export type AgentWorkspace = z.infer<typeof inventory>;
@@ -211,6 +217,26 @@ const hostedComposioUrl = z.string().max(2048).regex(/^(?:https:\/\/backend\.com
 const keyValue = z.string().max(4096).regex(/^[\x20-\x7e]*$/);
 const modelProvider = z.string().trim().max(80).regex(/^(?:[A-Za-z0-9_.-]+(?:[:@][A-Za-z0-9_.-]+)?)?$/);
 const modelIdentifier = z.string().trim().max(200).regex(/^[^\s$]*$/);
+
+const standaloneModelUpdate = z.object({
+  revision,
+  modelId: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/),
+});
+
+export async function saveStandaloneModel(input: unknown): Promise<StandaloneModelResult> {
+  const parsed = standaloneModelUpdate.safeParse(input);
+  if (!parsed.success) return { error: "Enter a valid model ID for both agents." };
+  try {
+    const result = standaloneModels.safeParse(await workspaceRequest("/workspace/agents/model", parsed.data, "POST"));
+    if (!result.success || result.data.default !== parsed.data.modelId || result.data.maintenance !== parsed.data.modelId) {
+      return { error: "Could not confirm the model on both agents. Reload the page to check their settings." };
+    }
+    return { models: result.data };
+  } catch (error) {
+    if (error instanceof WorkspaceRequestError) return { error: error.message };
+    throw error;
+  }
+}
 
 export type CampaignModelDefaults = { provider: string; modelId: string; baseUrl: string; hasApiKey: boolean };
 

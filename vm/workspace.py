@@ -26,6 +26,7 @@ from urllib.parse import urlsplit
 
 from markdown_it import MarkdownIt
 
+from hermes_constants import named_profile_is_live
 from hermes_yaml import YAMLError, roundtrip_yaml, safe_load
 from ruamel.yaml.scalarstring import LiteralScalarString
 
@@ -356,6 +357,8 @@ def project(collection, source, directory, record_id=None):
             "goals": strings(data.get("goals")), "plans": strings(data.get("plans")),
             "board": string(data.get("kanban_board_name")) or string(data.get("kanban_board")),
             "installationState": string(data.get("installation_state")), "model": model_name(data.get("model")),
+            "lifecycleState": ("paused" if data.get("installation_state") == "installing" else
+                               string(data.get("lifecycle_state"), "resumed" if data.get("installation_state") == "installed" else "paused")),
         }
     jobs = data.get("jobs")
     return {
@@ -713,9 +716,25 @@ def update_campaign_configuration(root, campaign_id, update):
         return campaign_configuration(updated)
 
 
+def read_legacy_install_registry(path):
+    registry = json.loads(path.read_bytes())
+    if registry.get("schemaVersion") != 1 or not isinstance(registry.get("playbooks"), list):
+        raise ValueError("Invalid installed playbook registry")
+    for playbook in registry["playbooks"]:
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", playbook["id"]):
+            raise ValueError("Invalid installed playbook ID")
+        ids = [agent["id"] for agent in playbook["agents"]]
+        if playbook["orchestrator"] not in ids or any(
+            not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", name)
+            or not name.startswith(playbook["id"] + "__") for name in ids
+        ):
+            raise ValueError("Invalid installed profile ID")
+    return registry
+
+
 def ensure_bundled_campaign_routing(root, campaign_id, record, source, mode, *, allow_new=False):
     """Link legacy bundled profiles to their native campaign board before the first sync."""
-    from bootstrap import managed_path, read_registry
+    from bootstrap import managed_path
     from hermes_cli import kanban_db
     from hermes_cli.oma_campaigns.install import _install_lock
     from hermes_cli.oma_campaigns.schema import validate_record
@@ -733,7 +752,7 @@ def ensure_bundled_campaign_routing(root, campaign_id, record, source, mode, *, 
     allowed_sources = {f"/opt/oma/campaigns/{campaign_id}", f"/opt/oma/playbooks/{campaign_id}"}
     try:
         try:
-            registry = read_registry(managed_path(home, ".oma", "installed.json"))
+            registry = read_legacy_install_registry(managed_path(home, ".oma", "installed.json"))
         except FileNotFoundError:
             if allow_new:
                 return False
@@ -818,8 +837,95 @@ def valid_sync_key(value):
             and value.isascii() and all(32 <= ord(char) <= 126 for char in value))
 
 
+STANDALONE_AGENTS = ("default", "maintenance")
+
+
+@contextmanager
+def standalone_model_files(root):
+    home = root.parent
+    files = []
+    with ExitStack() as handles:
+        native_home = handles.enter_context(open_directory(home))
+        profiles = handles.enter_context(open_directory("profiles", native_home))
+        for agent_id in STANDALONE_AGENTS:
+            record, saved, mode = handles.enter_context(editable_record(root, "agents", agent_id))
+            if parse_record(saved, agent_id).get("campaign_id") is not None:
+                raise WorkspaceError(404, "Both standalone agents must be installed before syncing a shared model.")
+            files.append((record, saved, mode))
+            native = native_home
+            if agent_id == "maintenance":
+                native = handles.enter_context(open_directory(agent_id, profiles))
+                if not named_profile_is_live(home / "profiles" / agent_id):
+                    raise WorkspaceError(404, "The maintenance profile is not installed.")
+            files.append((native, *read_file(native)))
+        yield files
+
+
+def standalone_model_state(files):
+    sources = [source for _, source, _ in files]
+    revision = sha256(b"".join(sha256(source).digest() for source in sources)).hexdigest()
+    return {"revision": revision, **{
+        agent: model_name(mapping(safe_load(source)).get("model"))
+        for agent, source in zip(STANDALONE_AGENTS, sources[1::2])
+    }}
+
+
+def load_standalone_models(root):
+    try:
+        with standalone_model_files(root) as files:
+            return standalone_model_state(files)
+    except (OSError, WorkspaceError, UnicodeError, YAMLError, RecursionError):
+        return None
+
+
+def update_standalone_model(root, request):
+    if (not isinstance(request, dict) or set(request) != {"revision", "modelId"}
+            or not isinstance(request["revision"], str) or not re.fullmatch(r"[a-f0-9]{64}", request["revision"])
+            or not isinstance(request["modelId"], str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}", request["modelId"])):
+        raise WorkspaceError(422, "Enter a valid model ID for both agents.")
+    selected = request["modelId"]
+    try:
+        with standalone_model_files(root) as files:
+            if request["revision"] != standalone_model_state(files)["revision"]:
+                raise WorkspaceError(409, "An agent configuration changed. Reload the page and try again.")
+            updates = []
+            for directory, source, mode in files:
+                yaml = roundtrip_yaml()
+                document = yaml.load(source)
+                if not isinstance(document, dict):
+                    raise WorkspaceError(422, "An agent configuration is not a YAML mapping.")
+                model = document.get("model")
+                if model_name(model) == selected:
+                    continue
+                # Update only the selection, retaining each profile's provider, URL and key reference.
+                if isinstance(model, dict):
+                    model["default"] = selected
+                else:
+                    document["model"] = selected
+                text = StringIO()
+                yaml.dump(document, text)
+                updates.append((directory, source, mode, text.getvalue().encode()))
+            applied = []
+            try:
+                for directory, source, mode, updated in updates:
+                    replace_file(directory, "config.yaml", mode, updated, lambda: read_file(directory)[0] == source)
+                    applied.append((directory, source, mode, updated))
+            except (OSError, WorkspaceError):
+                for directory, source, mode, updated in reversed(applied):
+                    try:
+                        replace_file(directory, "config.yaml", mode, source, lambda: read_file(directory)[0] == updated)
+                    except (OSError, WorkspaceError):
+                        raise WorkspaceError(409, "Could not restore all settings after a concurrent edit. Reload and check both agents.") from None
+                raise
+            return standalone_model_state([(directory, *read_file(directory)) for directory, _, _ in files])
+    except (FileNotFoundError, NotADirectoryError):
+        raise WorkspaceError(404, "Both standalone agents must be installed before syncing a shared model.") from None
+    except (UnicodeError, YAMLError, RecursionError):
+        raise WorkspaceError(422, "An agent configuration contains invalid YAML.") from None
+
+
 def sync_agent_configuration(root, agent_id, request):
-    if agent_id not in {"default", "maintenance"}:
+    if agent_id not in STANDALONE_AGENTS:
         raise WorkspaceError(404, "This agent does not support standalone sync.")
     if not isinstance(request, dict) or request.keys() - {"revision"} or (
         "revision" in request and (not isinstance(request["revision"], str) or not re.fullmatch(r"[a-f0-9]{64}", request["revision"]))
@@ -950,6 +1056,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         try:
             if self.path == "/workspace":
                 result = records(self.server.root)
+                with self.server.edit_lock:
+                    models = load_standalone_models(self.server.root)
+                if models is not None:
+                    result["standaloneModels"] = models
             elif document:
                 result = brand_document(self.server.root, *document.groups())
             elif logo:
@@ -975,24 +1085,30 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = re.fullmatch(r"/workspace/(campaigns|agents)/([^/]+)/(sync|deploy|plan-chat)", self.path)
-        if not path or (path[1] == "agents" and path[3] != "sync"):
+        shared_model = self.path == "/workspace/agents/model"
+        if not shared_model and (not path or (path[1] == "agents" and path[3] != "sync")):
             self.reply(404, {"message": "Unknown workspace request."})
             return
         try:
             request = self.read_update()
-            if path[1] == "agents":
+            if shared_model:
+                with self.server.edit_lock:
+                    result = update_standalone_model(self.server.root, request)
+            elif path and path[1] == "agents":
                 with self.server.edit_lock:
                     result = sync_agent_configuration(self.server.root, path[2], request)
-            elif path[3] == "plan-chat":
+            elif path and path[3] == "plan-chat":
                 if not self.server.plan_chat_lock.acquire(blocking=False):
                     raise WorkspaceError(429, "A campaign suggestion is already running. Try again in a moment.")
                 try:
                     result = ask_campaign_plan(self.server.root, path[2], request)
                 finally:
                     self.server.plan_chat_lock.release()
-            else:
+            elif path:
                 with self.server.edit_lock:
                     result = sync_campaign_configuration(self.server.root, path[2], request, deploy=path[3] == "deploy")
+            else:
+                raise WorkspaceError(404, "Unknown workspace request.")
         except (ValueError, RecursionError):
             self.reply(400, {"message": "Invalid workspace request."})
         except WorkspaceError as error:

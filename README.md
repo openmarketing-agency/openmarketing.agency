@@ -1,6 +1,6 @@
 # Open Marketing Agency
 
-OMA is a self-hosted workspace for marketing campaigns and tool connections. The full stack includes the Next.js console, Hermes with the bundled [campaigns](campaigns/) and skills, and `omactl` with its app catalog and Traefik. Hermes uses OpenRouter for inference.
+OMA is a self-hosted workspace for marketing campaigns and tool connections. The full stack includes the Next.js console, OMA Agent (Hermes), and `omactl` with its app catalog and Traefik. The VM no longer preinstalls repository campaign templates or skills. Existing workspace records and profiles are kept, and OMA Agent still supplies its own starter profiles and skills.
 
 ## Run the full stack locally
 
@@ -22,9 +22,11 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes c
 
 Open [Chat](http://localhost:3000/chat) to talk with oma-agent’s default profile. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available.
 
+In the **Campaigns** sidebar, enter a **Shared model ID** under **Default and maintenance agents** and click **Save and sync**. This saves the same selection for both agents and applies it to both native profiles, without changing their providers, credentials, or campaign agents. Choose a model supported by both profiles’ configured providers. Start a new chat to use the updated selection.
+
 Set `OMA_HERMES_CLARIFY_TIMEOUT=0` in `.env` to let the default profile wait indefinitely for an answer in the agent onboarding backup. A positive value sets the wait in seconds. Leaving the variable unset keeps the profile's saved setting, which defaults to 90 seconds on a fresh installation. Recreate the VM container after changing the value.
 
-Use [Campaigns](http://localhost:3000/dashboard) in the console to configure campaign tool selections and MCP connections. Composio is optional and requires an API key for its hosted tool catalog.
+Use [Campaigns](http://localhost:3000/dashboard) in the console to configure campaign tool selections and MCP connections. The list and overview show **Running**, **Stopped**, or **Stopping…** based on the saved lifecycle state, not on whether a job is currently active. Composio is optional and requires an API key for its hosted tool catalog.
 Open a campaign’s **Tools** tab to add tools to its shared list. Suggestions appear when a verified channel or launch link from the linked brand matches a supported tool provider. Browse **All tools** to add other integrations. The campaign’s MCP connection uses its saved tool list, including existing specialist selections.
 
 Open a campaign’s **Settings** to configure its model. Set `OMA_HERMES_PROVIDER`, `OMA_HERMES_MODEL`, and `OMA_HERMES_BASE_URL` in `.env` to prefill the form. Use a provider supported by oma-agent, or `custom` for an OpenAI-compatible endpoint. The console can use `OMA_HERMES_API_KEY` for the configured provider and HTTPS base URL. A key entered in Settings overrides it for that campaign. Composio generation uses `COMPOSIO_API_KEY`.
@@ -42,6 +44,18 @@ The full stack shows brands, playbooks, campaigns, and agent records from the de
 The console serves [API documentation](http://localhost:3000/docs) and a [database readiness endpoint](http://localhost:3000/health/ready).
 
 The console and bundled agent both run under Docker. Quitting Docker Engine stops both. Run `make dev` or `make production` to start them together again. Press Ctrl+C in the `make dev` terminal, or run `docker compose -f compose.yaml -f compose.vm.yaml down`, to stop the full stack. Use the same environment file for Compose commands. The console stores SQLite and its signing key in `.oma-data/`. The VM volume holds Hermes profiles, gateway keys, the nested Docker engine, and catalog app data. Stop the stack before taking filesystem backups. Keep a secure copy of any configured signing or integration encryption keys.
+
+### Optional Camofox browser sidecar
+
+Camofox runs on the private Compose network and has no published port. Generate a key once in a separate private file, and keep using that file when recreating the stack:
+
+```sh
+mkdir -p -m 700 .oma-data
+(set -C; umask 077; printf 'CAMOFOX_API_KEY=%s\n' "$(openssl rand -hex 32)" > .env.camofox)
+docker compose --env-file .env --env-file .env.camofox -f compose.yaml -f compose.vm.yaml -f compose.camofox.yaml up --build -d --wait
+```
+
+The VM writes `CAMOFOX_URL=http://camofox:9377` and the key into the `default` and `maintenance` profiles’ `.env` files before starting Hermes. The key is also required for Camofox API requests other than health checks. It is not sent to Next.js. This runs the upstream browser image separately; it does not bundle the browser into the Apache-2.0 OMA image.
 
 ### Console only
 

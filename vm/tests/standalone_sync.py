@@ -27,14 +27,18 @@ class Connection(HTTPConnection):
         self.sock.connect(self.host)
 
 
-def post(address, agent, body):
+def request(address, method, path, body=None):
     client = Connection(address, timeout=10)
     try:
-        client.request("POST", f"/workspace/agents/{agent}/sync", json.dumps(body))
+        client.request(method, path, json.dumps(body) if body is not None else None)
         reply = client.getresponse()
         return reply.status, json.loads(reply.read())
     finally:
         client.close()
+
+
+def post(address, agent, body):
+    return request(address, "POST", f"/workspace/agents/{agent}/sync", body)
 
 
 with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
@@ -74,6 +78,32 @@ with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
             atomic_config_replace(record, {**safe_load(record.read_bytes()), "oma_skills": []})
             assert post(address, "default", {})[0] == 200
             assert not installed.exists() and skill.exists()
+
+            endpoint = "/workspace/agents/model"
+            assert request(address, "POST", endpoint, {"revision": "0" * 64, "modelId": "not-applied"})[0] == 404
+            maintenance = home / "profiles" / "maintenance" / "config.yaml"
+            maintenance.parent.mkdir(parents=True)
+            previous = {"model": {"default": "old-maintenance", "provider": "custom", "api_key": "${FIXTURE_KEY}"},
+                        "agent": {"enabled_toolsets": ["terminal"]}}
+            atomic_config_replace(maintenance, previous)
+            saved_maintenance = root / "agents" / "maintenance" / "config.yaml"
+            saved_maintenance.parent.mkdir()
+            atomic_config_replace(saved_maintenance, {"id": "maintenance", "name": "Maintenance",
+                                  "description": "Test agent", "campaign_id": None})
+            baseline = request(address, "GET", "/workspace")[1]["standaloneModels"]
+            assert baseline["default"] == "after" and baseline["maintenance"] == "old-maintenance"
+            assert "FIXTURE_KEY" not in json.dumps(baseline)
+            payload = {"revision": baseline["revision"], "modelId": "provider/new-model"}
+            assert request(address, "POST", endpoint, {**payload, "profile": "demo__worker"})[0] == 422
+            assert request(address, "POST", endpoint, {**payload, "modelId": "${INVALID}"})[0] == 422
+            status, synced = request(address, "POST", endpoint, payload)
+            assert status == 200 and synced["default"] == synced["maintenance"] == payload["modelId"]
+            assert request(address, "POST", endpoint, payload)[0] == 409
+            assert safe_load(record.read_bytes())["model"] == payload["modelId"]
+            assert safe_load(saved_maintenance.read_bytes())["model"] == payload["modelId"]
+            previous["model"]["default"] = payload["modelId"]
+            assert safe_load(maintenance.read_bytes()) == previous
+            assert safe_load(native.read_bytes()) == {"model": payload["modelId"], "agent": {"enabled_toolsets": ["file", "web"]}}
         finally:
             server.shutdown()
             worker.join()
