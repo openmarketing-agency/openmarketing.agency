@@ -9,6 +9,7 @@ import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from dotenv import dotenv_values
 from hermes_yaml import safe_load
 from tools.clarify_gateway import resolve_clarify_timeout
 
@@ -44,8 +45,7 @@ for agent in ("default", "maintenance"):
 assert gateway_seed.stat().st_mode & 0o777 == 0o600
 state = hashlib.sha256(gateway_seed.read_bytes()).hexdigest()
 config = safe_load((root / "config.yaml").read_text())
-assert config["model"]["default"] == "oma-image-smoke"
-assert config["model"]["provider"] == "custom:oma-inference"
+assert config["model"]["provider"] == "openrouter"
 assert resolve_clarify_timeout(config) == 0
 if os.environ["OMA_INIT_CATALOG"] == "1":
     assert (root / ".oma" / "omactl.yml").is_file()
@@ -57,10 +57,14 @@ if os.environ["OMA_INIT_CATALOG"] == "1":
 state_file = root / ".oma-smoke-test.json"
 member_file = root / "profiles" / "maintenance" / "skills" / "member-smoke" / "SKILL.md"
 if sys.argv[1] == "fresh":
+    assert config["model"]["default"] == "oma-image-smoke"
+    assert not dotenv_values(root / ".env", interpolate=False).get("OPENROUTER_API_KEY")
     member_file.parent.mkdir(parents=True)
     member_file.write_text("Member-created skill\n")
     state_file.write_text(state)
 else:
+    assert config["model"]["default"] == "member-model"
+    assert dotenv_values(root / ".env", interpolate=False).get("OPENROUTER_API_KEY") == "synthetic-key-for-test-only"
     assert member_file.read_text() == "Member-created skill\n"
     assert state_file.read_text() == state
 print(f"VM {sys.argv[1]}: gateway, dashboard, and both standalone records ready; no preinstalled campaigns")

@@ -25,7 +25,7 @@ services:
       - vm-data:/opt/data
       - console-gateway-key:/run/oma-console
     environment:
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in your environment file}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OMA_HERMES_MODEL: ${OMA_HERMES_MODEL:-openai/gpt-4.1-mini}
       OMA_HERMES_CLARIFY_TIMEOUT: ${OMA_HERMES_CLARIFY_TIMEOUT:-}
       OMA_HERMES_GATEWAY_SEED: ${OMA_HERMES_GATEWAY_SEED:-}

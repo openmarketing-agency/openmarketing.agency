@@ -88,7 +88,8 @@ def bootstrap(root, model, provider, credentials, gateway_seed, *, clarify_timeo
 
     configure_model(
         managed_path(root, "config.yaml"), provider, model, gateway=True, clarify_timeout=clarify_timeout,
-        preserve_model=managed_path(root, "oma", "agents", "default", "config.yaml").is_file(),
+        # Without a deployment credential, the model is only a first-boot default.
+        preserve_model=not credentials or managed_path(root, "oma", "agents", "default", "config.yaml").is_file(),
     )
     write_env(managed_path(root, ".env"), {
         **credentials,
@@ -117,16 +118,19 @@ if __name__ == "__main__":
             raise ValueError
     except ValueError:
         raise SystemExit("Set OMA_HERMES_CLARIFY_TIMEOUT to a non-negative number of seconds") from None
-    if openrouter_key := os.environ.pop("OPENROUTER_API_KEY", ""):
+    openrouter_key = os.environ.pop("OPENROUTER_API_KEY", "")
+    litellm_url = os.environ.pop("OMA_LITELLM_URL", "")
+    litellm_key = os.environ.pop("OMA_LITELLM_KEY", "")
+    if not openrouter_key and (litellm_url or litellm_key):
+        if not (litellm_url and litellm_key):
+            raise SystemExit("Set both OMA_LITELLM_URL and OMA_LITELLM_KEY when configuring LiteLLM")
+        model = {"provider": "custom:oma-inference", "default": model_name or "oma-hermes"}
+        provider = {"api": litellm_url, "key_env": "OMA_LITELLM_KEY", "transport": "chat_completions"}
+        credentials = {"OMA_LITELLM_KEY": litellm_key}
+    else:
         model = {"provider": "openrouter", "default": model_name or "openai/gpt-4.1-mini"}
         provider = None
-        credentials = {"OPENROUTER_API_KEY": openrouter_key}
-    else:
-        if not os.environ.get("OMA_LITELLM_URL") or not os.environ.get("OMA_LITELLM_KEY"):
-            raise SystemExit("Set OPENROUTER_API_KEY or both OMA_LITELLM_URL and OMA_LITELLM_KEY")
-        model = {"provider": "custom:oma-inference", "default": model_name or "oma-hermes"}
-        provider = {"api": os.environ.pop("OMA_LITELLM_URL"), "key_env": "OMA_LITELLM_KEY", "transport": "chat_completions"}
-        credentials = {"OMA_LITELLM_KEY": os.environ.pop("OMA_LITELLM_KEY")}
+        credentials = {"OPENROUTER_API_KEY": openrouter_key} if openrouter_key else {}
     bootstrap(
         home,
         model, provider, credentials,

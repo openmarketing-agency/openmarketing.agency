@@ -22,8 +22,6 @@ trap cleanup EXIT
 
 "$engine" run --detach --name "$container" --privileged --network "$network" \
     --mount "$mount" \
-    -e OMA_LITELLM_URL=http://127.0.0.1:8080/v1 \
-    -e OMA_LITELLM_KEY=image-smoke-test-key \
     -e OMA_HERMES_MODEL=oma-image-smoke \
     -e OMA_HERMES_CLARIFY_TIMEOUT=0 \
     -e OMA_INIT_CATALOG="${OMA_TEST_CATALOG:-0}" \
@@ -48,17 +46,20 @@ guest bash -euo pipefail -c '
     docker volume create oma-smoke-persist
 ' _ "${omactl_tag#v}"
 
-# Put a member-owned setting in the default profile before restart.
+# Set a model and credential on the disposable profile after keyless startup.
 guest /opt/hermes/.venv/bin/python - <<'PY'
 from pathlib import Path
 
+from dotenv import set_key
 from hermes_cli.config import atomic_config_replace, require_readable_config_before_write
 
 root = Path("/opt/data")
 config_path = root / "config.yaml"
 config = require_readable_config_before_write(config_path)
 config.setdefault("clarify", {})["timeout"] = 90
+config["model"]["default"] = "member-model"
 atomic_config_replace(config_path, config)
+set_key(root / ".env", "OPENROUTER_API_KEY", "synthetic-key-for-test-only")
 PY
 
 "$engine" stop "$container" >/dev/null
