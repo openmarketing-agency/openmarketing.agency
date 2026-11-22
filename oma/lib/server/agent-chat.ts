@@ -58,14 +58,16 @@ interface Gateway {
   key: string;
 }
 
-async function gateway(): Promise<Gateway> {
+type ProfileScope = "configured" | "default";
+
+async function gateway(scope: ProfileScope = "configured"): Promise<Gateway> {
   const address = process.env.OMA_AGENT_URL?.trim();
   if (!address) {
-    throw new AgentChatError(503, "Set OMA_AGENT_URL and OMA_AGENT_API_KEY to connect your Hermes gateway.");
+    throw new AgentChatError(503, "Set OMA_AGENT_URL and OMA_AGENT_API_KEY to connect the oma-agent gateway.");
   }
   const url = URL.parse(address);
   if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new AgentChatError(503, "Set OMA_AGENT_URL to a valid HTTP or HTTPS Hermes gateway URL.");
+    throw new AgentChatError(503, "Set OMA_AGENT_URL to a valid HTTP or HTTPS oma-agent gateway URL.");
   }
 
   const keyFile = process.env.OMA_AGENT_API_KEY_FILE?.trim();
@@ -74,15 +76,17 @@ async function gateway(): Promise<Gateway> {
     try {
       key = (await readFile(keyFile, "utf8")).trim();
     } catch {
-      throw new AgentChatError(503, "Waiting for the local Hermes gateway key. Check that the agent has started.");
+      throw new AgentChatError(503, "Waiting for the local oma-agent gateway key. Check that the agent has started.");
     }
   }
   if (!key || /[\r\n]/.test(key)) {
-    throw new AgentChatError(503, "Set OMA_AGENT_API_KEY to your Hermes gateway’s API key.");
+    throw new AgentChatError(503, "Set OMA_AGENT_API_KEY to the oma-agent gateway’s API key.");
   }
 
   const path = url.pathname.replace(/\/+$/, "").replace(/\/v1$/, "");
-  return { baseUrl: url.origin + path + "/v1", key };
+  // The unprefixed gateway serves the default profile. Explicit profile URLs use its named route.
+  const scopedPath = scope === "default" ? path.replace(/\/p\/[^/]+$/, "/p/default") : path;
+  return { baseUrl: url.origin + scopedPath + "/v1", key };
 }
 
 async function sendRequest(config: Gateway, path: string, options: { body?: object; turnId?: string } = {}) {
@@ -100,30 +104,30 @@ async function sendRequest(config: Gateway, path: string, options: { body?: obje
       redirect: "error",
     });
   } catch {
-    throw new AgentChatError(503, "Couldn’t reach Hermes. Check that the gateway is running and reachable from OMA.");
+    throw new AgentChatError(503, "Couldn’t reach oma-agent. Check that it’s running and reachable from OMA.");
   }
   if (response.ok) return response;
   await response.body?.cancel();
   if (response.status === 401 || response.status === 403) {
-    throw new AgentChatError(response.status, "Hermes rejected the gateway key.");
+    throw new AgentChatError(response.status, "oma-agent rejected the gateway key.");
   }
   if (response.status === 404 && path.startsWith("/runs/")) {
-    throw new AgentChatError(404, "This Hermes turn is no longer available.");
+    throw new AgentChatError(404, "This chat turn is no longer available.");
   }
   if ([404, 405, 501].includes(response.status) && path === "/runs") {
-    throw new AgentChatError(501, "This Hermes gateway needs support for the Runs API.");
+    throw new AgentChatError(501, "The oma-agent gateway needs support for the Runs API.");
   }
   if (response.status === 409) {
-    throw new AgentChatError(409, "Hermes couldn’t accept this request. The turn or question may have changed.");
+    throw new AgentChatError(409, "oma-agent couldn’t accept this request. The turn or question may have changed.");
   }
-  throw new AgentChatError(response.status, `Hermes couldn’t complete the request (HTTP ${response.status}).`);
+  throw new AgentChatError(response.status, `oma-agent couldn’t complete the request (HTTP ${response.status}).`);
 }
 
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
   } catch {
-    throw new AgentChatError(502, "Hermes returned an invalid response.");
+    throw new AgentChatError(502, "oma-agent returned an invalid response.");
   }
 }
 
@@ -134,7 +138,7 @@ function signature(userId: string, config: Gateway, id: string) {
 
 function readHandle(userId: string, config: Gateway, handle: unknown) {
   const parsed = handleSchema.safeParse(handle);
-  const invalid = () => new AgentChatError(404, "This Hermes turn is no longer available.");
+  const invalid = () => new AgentChatError(404, "This chat turn is no longer available.");
   if (!parsed.success) throw invalid();
   const [id, proof] = parsed.data.split(".");
   if (!timingSafeEqual(Buffer.from(proof), Buffer.from(signature(userId, config, id)))) throw invalid();
@@ -143,7 +147,7 @@ function readHandle(userId: string, config: Gateway, handle: unknown) {
 
 function projectRun(payload: unknown, key: string): AgentRun {
   const parsed = statusSchema.safeParse(payload);
-  if (!parsed.success) throw new AgentChatError(502, "Hermes returned an invalid run status.");
+  if (!parsed.success) throw new AgentChatError(502, "oma-agent returned an invalid run status.");
   const redact = (value: string) => value.replaceAll(key, "[redacted]");
   const run = parsed.data;
   if (run.status === "completed") return { status: "completed", answer: redact(run.output ?? "") };
@@ -161,9 +165,9 @@ function projectRun(payload: unknown, key: string): AgentRun {
   return { status: "running" };
 }
 
-export async function agentStatus(): Promise<AgentStatus> {
+export async function agentStatus(scope?: ProfileScope): Promise<AgentStatus> {
   try {
-    const response = await sendRequest(await gateway(), "/models");
+    const response = await sendRequest(await gateway(scope), "/models");
     await response.body?.cancel();
     return { ready: true };
   } catch (error) {
@@ -172,22 +176,22 @@ export async function agentStatus(): Promise<AgentStatus> {
   }
 }
 
-export async function startAgentRun(userId: string, input: unknown) {
+export async function startAgentRun(userId: string, input: unknown, scope?: ProfileScope) {
   const parsed = turnInput.safeParse(input);
   if (!parsed.success) throw new AgentChatError(422, "Enter a valid chat message and try again.");
-  const config = await gateway();
+  const config = await gateway(scope);
   const { sessionId, turnId, message } = parsed.data;
   const response = await sendRequest(config, "/runs", {
     turnId, body: { session_id: sessionId, input: message },
   });
   const result = z.object({ run_id: runId }).safeParse(await readJson(response));
-  if (!result.success) throw new AgentChatError(502, "Hermes didn’t return a valid run identifier.");
+  if (!result.success) throw new AgentChatError(502, "oma-agent didn’t return a valid run identifier.");
   const id = result.data.run_id;
   return { handle: `${id}.${signature(userId, config, id)}` };
 }
 
-export async function getAgentRun(userId: string, handle: unknown): Promise<AgentRun> {
-  const config = await gateway();
+export async function getAgentRun(userId: string, handle: unknown, scope?: ProfileScope): Promise<AgentRun> {
+  const config = await gateway(scope);
   const id = readHandle(userId, config, handle);
   return projectRun(await readJson(await sendRequest(config, `/runs/${id}`)), config.key);
 }
@@ -221,10 +225,10 @@ export async function getAgentRunProgress(userId: string, handle: unknown): Prom
   };
 }
 
-export async function answerAgentPrompt(userId: string, handle: unknown, prompt: unknown) {
+export async function answerAgentPrompt(userId: string, handle: unknown, prompt: unknown, scope?: ProfileScope) {
   const parsed = answerInput.safeParse(prompt);
   if (!parsed.success) throw new AgentChatError(422, "Enter a valid response to the current question.");
-  const config = await gateway();
+  const config = await gateway(scope);
   const id = readHandle(userId, config, handle);
   const { kind, id: requestId, generation, answer } = parsed.data;
   const response = await sendRequest(config, `/runs/${id}/${kind}`, {

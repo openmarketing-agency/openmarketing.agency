@@ -19,13 +19,13 @@ async function withUser<T>(operation: (userId: string) => Promise<T>) {
 }
 
 export async function sendChatMessage(sessionId: string, turnId: string, message: string) {
-  return withUser((userId) => startAgentRun(userId, { sessionId, turnId, message }));
+  return withUser((userId) => startAgentRun(userId, { sessionId, turnId, message }, "default"));
 }
 
 export async function readChatTurn(handle: string) {
-  return withUser((userId) => getAgentRun(userId, handle));
+  return withUser((userId) => getAgentRun(userId, handle, "default"));
 }
 
 export async function answerChatPrompt(handle: string, prompt: unknown) {
-  return withUser((userId) => answerAgentPrompt(userId, handle, prompt));
+  return withUser((userId) => answerAgentPrompt(userId, handle, prompt, "default"));
 }

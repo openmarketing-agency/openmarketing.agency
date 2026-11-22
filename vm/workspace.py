@@ -577,6 +577,7 @@ def ask_campaign_plan(root, campaign_id, request):
         pass
     from agent.auxiliary_client import call_llm
     from agent.runtime_scope import bind_profile_scope
+    from hermes_cli.oma_campaigns.install import default_home
 
     instruction = (
         "You are oma-agent's campaign planning assistant. Help edit only the current campaign's "
@@ -589,11 +590,16 @@ def ask_campaign_plan(root, campaign_id, request):
     )
     context = {"role": "system", "content": instruction + "\nCurrent draft:\n" + json.dumps(request["draft"])}
     try:
-        with bind_profile_scope(root.parent):
+        home = default_home()
+        if home != root.parent.resolve():
+            raise WorkspaceError(503, "The campaign editor needs oma-agent’s default profile.")
+        with bind_profile_scope(home):
             result = call_llm(messages=[context, *history], tools=[], max_tokens=4500, timeout=45.0)
         raw = result.choices[0].message.content.strip()
         fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", raw, re.DOTALL)
         answer = json.loads(fenced[1] if fenced else raw)
+    except WorkspaceError:
+        raise
     except Exception:
         raise WorkspaceError(502, "oma-agent couldn’t return a plan suggestion. Try again.") from None
     if (not isinstance(answer, dict) or set(answer) != {"reply", "plan"}

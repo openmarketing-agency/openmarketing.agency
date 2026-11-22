@@ -20,7 +20,7 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm omactl d
 docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes chat
 ```
 
-Open [Chat](http://localhost:3000/chat) in the console to talk with the bundled Hermes agent. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available.
+Open [Chat](http://localhost:3000/chat) to talk with oma-agent’s default profile. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available.
 
 Set `OMA_HERMES_CLARIFY_TIMEOUT=0` in `.env` to let the default profile wait indefinitely for an answer in the agent onboarding backup. A positive value sets the wait in seconds. Leaving the variable unset keeps the profile's saved setting, which defaults to 90 seconds on a fresh installation. Recreate the VM container after changing the value.
 
@@ -31,7 +31,7 @@ Open a campaign’s **Settings** to configure its model. Set `OMA_HERMES_PROVIDE
 
 **Save and sync** creates a Composio connection from the campaign’s selected tools. It then writes the model and generated MCP URL to `campaigns/<id>/config.yaml` in the mounted workspace and uses the private `POST /workspace/campaigns/<id>/sync` endpoint to update installed campaign profiles. For bundled campaigns created by earlier Docker images, the first sync creates the campaign board and adds missing routing to the existing profiles. Saving a campaign with no tools clears its generated Composio connection. YAML stores only key references. The model and MCP settings support per-agent overrides. Rebuild and recreate the console and VM after updating the stack, and recreate the console after changing its `.env` defaults.
 
-Open **Edit plan** inside a campaign to change its name, description, goals, or steps. Campaign chat uses oma-agent’s model to suggest revisions for the draft. **Review suggestion** fills the editor and **Save plan** writes the reviewed fields to the workspace.
+Open **Edit plan** inside a campaign to change its name, description, goals, or steps. Campaign chat uses oma-agent’s default profile to suggest revisions for the draft. **Review suggestion** fills the editor and **Save plan** writes the reviewed fields to the workspace.
 
 Use **Deploy campaign** to review the saved plan, agent roster, selected tools, and model. Deployment provisions a draft’s board and agent profiles, then syncs their settings. Already installed campaigns reuse their board and profiles. Deployment leaves publishing, scheduling, and running jobs to their existing controls.
 

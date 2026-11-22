@@ -91,7 +91,7 @@ test("uses the private key file for the bundled gateway and reports unreachable 
     throw new TypeError("unreachable");
   });
   assert.deepEqual(await agentStatus(), {
-    ready: false, message: "Couldn’t reach Hermes. Check that the gateway is running and reachable from OMA.",
+    ready: false, message: "Couldn’t reach oma-agent. Check that it’s running and reachable from OMA.",
   });
 });
 
@@ -144,4 +144,23 @@ test("reads aggregate activity from protected detailed health with the configure
   valid = false;
   await assert.rejects(getAgentActivityCounts(), (error: unknown) =>
     error instanceof AgentChatError && error.status === 502);
+});
+
+test("uses the default profile for chat even when the configured gateway URL names a specialist", async (t) => {
+  useGateway(t);
+  const expected = "http://vm:8642/p/default/v1";
+  const requests = t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    assert.ok(url.startsWith(expected));
+    assert.equal(new Headers(options.headers).get("authorization"), "Bearer " + key);
+    if (url === expected + "/models") return Response.json({ data: [] });
+    if (url === expected + "/runs") return Response.json({ run_id: "run_default" }, { status: 202 });
+    if (url.endsWith("/clarify")) return new Response(null, { status: 204 });
+    return Response.json({ status: "completed", output: "From the default profile." });
+  });
+  assert.deepEqual(await agentStatus("default"), { ready: true });
+  const { handle } = await startAgentRun(account, message, "default");
+  await assert.rejects(getAgentRun(account, handle), (error: unknown) => error instanceof AgentChatError && error.status === 404);
+  await answerAgentPrompt(account, handle, { id: "question", generation: 0, kind: "clarify", answer: "Yes" }, "default");
+  assert.deepEqual(await getAgentRun(account, handle, "default"), { status: "completed", answer: "From the default profile." });
+  assert.equal(requests.mock.callCount(), 4);
 });

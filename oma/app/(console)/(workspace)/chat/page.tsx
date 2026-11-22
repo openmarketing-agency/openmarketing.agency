@@ -19,7 +19,7 @@ async function Chat() {
         <h1>Chat</h1>
         <p>Talk with your Hermes agent.</p>
       </header>
-      <HermesChat status={await agentStatus()} />
+      <HermesChat status={await agentStatus("default")} />
     </div>
   );
 }
