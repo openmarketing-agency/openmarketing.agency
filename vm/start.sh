@@ -16,6 +16,10 @@ fi
 cd "$HERMES_HOME"
 /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python /opt/oma/bootstrap.py
 unset OPENROUTER_API_KEY OMA_LITELLM_URL OMA_LITELLM_KEY OMA_HERMES_GATEWAY_SEED
+if [[ -f /opt/hermes/hermes_cli/oma_campaigns/standalone.py ]]; then
+    /command/s6-setuidgid hermes /opt/hermes/.venv/bin/python -m hermes_cli.oma_campaigns.standalone \
+        seed --install-dir /opt/hermes --ensure-maintenance || echo 'Warning: could not seed standalone OMA agents' >&2
+fi
 
 trap 'kill $(jobs -pr) 2>/dev/null || true; wait' EXIT
 # Agent37's custom VM kernels can need these modules before Docker can use nftables.
