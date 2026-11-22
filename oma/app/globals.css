@@ -3302,6 +3302,34 @@ ol.workspace-copy-list {
   }
 }
 
+.campaign-settings {
+  width: min(100%, 76ch);
+}
+.campaign-settings .workspace-editor {
+  display: grid;
+  justify-items: start;
+  gap: 22px;
+}
+.campaign-settings fieldset {
+  width: 100%;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.campaign-settings legend {
+  padding: 0;
+  margin-bottom: 9px;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.campaign-settings p {
+  margin: 0;
+}
+.campaign-model-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 16px;
+}
+
 /* Scoped brand sources and documents use the workspace list and editor styles. */
 .workspace-source-list {
   display: grid;

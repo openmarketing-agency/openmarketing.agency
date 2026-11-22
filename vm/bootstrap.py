@@ -10,6 +10,7 @@ from tempfile import TemporaryDirectory
 
 from dotenv import dotenv_values, set_key
 from hermes_cli.config import atomic_config_replace, require_readable_config_before_write
+from hermes_yaml import YAMLError, safe_load
 
 
 def managed_path(root, *parts):
@@ -112,10 +113,12 @@ def write_env(path, values):
             set_key(path, name, value)
 
 
-def configure_model(path, provider, model, *, gateway=False, clarify_timeout=None):
+def configure_model(path, provider, model, *, effective_model=None, gateway=False, clarify_timeout=None):
     config = require_readable_config_before_write(path)
     previous = deepcopy(config)
-    config["model"] = model
+    # A boot-time fallback must not replace a synced campaign model.
+    if effective_model is None or config.get("model") != effective_model:
+        config["model"] = model
     if provider:
         config.setdefault("providers", {})["oma-inference"] = provider
     if gateway:
@@ -136,6 +139,18 @@ def configure_model(path, provider, model, *, gateway=False, clarify_timeout=Non
                 toolsets.append("clarify")
     if config != previous:
         atomic_config_replace(path, config)
+
+
+def synced_agent_model(root, name):
+    try:
+        path = managed_path(root, "oma", "agents", name, "config.yaml")
+        if path.stat().st_size > 256 * 1024:
+            return None
+        record = safe_load(path.read_bytes())
+    except (OSError, ValueError, YAMLError, RecursionError):
+        return None
+    effective = record.get("effective") if isinstance(record, dict) and record.get("id") == name else None
+    return effective.get("model") if isinstance(effective, dict) else None
 
 
 def bootstrap(root, seed, model, provider, credentials, gateway_seed, *, clarify_timeout=None):
@@ -167,7 +182,8 @@ def bootstrap(root, seed, model, provider, credentials, gateway_seed, *, clarify
             profile = managed_path(root, "profiles", name)
             if not profile.is_dir():
                 raise ValueError(f"Missing managed profile: {name}")
-            configure_model(managed_path(profile, "config.yaml"), provider, model)
+            configure_model(managed_path(profile, "config.yaml"), provider, model,
+                            effective_model=synced_agent_model(root, name))
             values = credentials
             if name == playbook["orchestrator"]:
                 values = {**credentials, "API_SERVER_KEY": gateway_key(name)}

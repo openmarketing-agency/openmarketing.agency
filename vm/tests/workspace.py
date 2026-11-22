@@ -5,11 +5,15 @@ import os
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from hermes_yaml import safe_load
 
 sys.path.insert(0, "/opt/oma")
-from workspace import WorkspaceError, agent_profile, brand_document, brand_logo, records, update_knowledge, update_record
+from workspace import (
+    WorkspaceError, agent_profile, brand_document, brand_logo, records, sync_campaign_configuration,
+    update_campaign_configuration, update_knowledge, update_record,
+)
 
 
 def must_reject(status, *args):
@@ -177,5 +181,66 @@ with TemporaryDirectory() as temporary:
     broken = records(root)["brands"][0]
     assert broken["knowledge"] == "" and "knowledgeRevision" not in broken
     assert outside.read_text() == "Outside data"
+
+
+
+with TemporaryDirectory() as temporary:
+    root = Path(temporary) / "oma"
+    campaign = root / "campaigns" / "seo" / "config.yaml"
+    campaign.parent.mkdir(parents=True)
+    campaign.write_text(
+        "# Campaign notes\nid: seo\nname: Organic search\n"
+        "model: {default: old-model, context_length: 2000}\n"
+        "mcp_servers: {other: {url: 'https://other.example.test/mcp'}}\n"
+    )
+    original = campaign.read_bytes()
+    update = {
+        "revision": sha256(original).hexdigest(), "provider": "litellm-proxy", "modelId": "proxy-model",
+        "baseUrl": "https://proxy.example.test/v1", "setModelKey": True,
+        "composioUrl": "https://backend.composio.dev/tool_router/trs_example/mcp",
+    }
+    reject_call(422, update_campaign_configuration, root, "seo", {
+        **update, "composioUrl": "https://backend.composio.dev.unrelated.test/tool_router/trs_example/mcp",
+    })
+    assert campaign.read_bytes() == original
+    configuration = update_campaign_configuration(root, "seo", update)
+    assert records(root)["campaigns"][0]["configuration"] == configuration
+    updated_text = campaign.read_text()
+    assert "# Campaign notes" in updated_text
+    saved = safe_load(updated_text)
+    assert saved["model"] == {
+        "default": "proxy-model", "context_length": 2000, "provider": "custom",
+        "base_url": update["baseUrl"], "api_key": "${LITELLM_API_KEY}",
+    }
+    assert saved["mcp_servers"] == {
+        "other": {"url": "https://other.example.test/mcp"},
+        "composio": {"url": update["composioUrl"], "headers": {"x-api-key": "${COMPOSIO_API_KEY}"}},
+    }
+    reject_call(409, update_campaign_configuration, root, "seo", update)
+    reject_call(422, update_campaign_configuration, root, "seo", {
+        **update, "revision": configuration["revision"], "baseUrl": "https://next.example.test", "setModelKey": False,
+    })
+    keys = {"LITELLM_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key"}
+    with patch.dict(os.environ, {"UNRELATED_TOKEN": "fixture-unrelated"}), patch("workspace.subprocess.Popen") as native:
+        native.return_value.__enter__.return_value.wait.return_value = 0
+        reject_call(422, sync_campaign_configuration, root, "seo", {
+            "revision": configuration["revision"], "env": {"UNRELATED_TOKEN": "fixture-unrelated"},
+        })
+        reject_call(409, sync_campaign_configuration, root, "seo", {"revision": update["revision"], "env": keys})
+        native.assert_not_called()
+        assert sync_campaign_configuration(root, "seo", {"revision": configuration["revision"], "env": keys}) == configuration
+        args, kwargs = native.call_args
+        assert args == (["sync-campaign", "seo"],)
+        assert {key: kwargs["env"][key] for key in keys} == keys
+        assert "UNRELATED_TOKEN" not in kwargs["env"]
+        native.return_value.__enter__.return_value.wait.return_value = 1
+        reject_call(502, sync_campaign_configuration, root, "seo", {"revision": configuration["revision"], "env": keys})
+    assert all(value not in campaign.read_text() for value in keys.values())
+    cleared = update_campaign_configuration(root, "seo", {
+        **update, "revision": configuration["revision"], "provider": "", "modelId": "",
+        "baseUrl": "", "setModelKey": False, "composioUrl": "",
+    })
+    assert cleared["modelId"] == "" and cleared["composioUrl"] == ""
+    assert safe_load(campaign.read_text())["mcp_servers"] == {"other": {"url": "https://other.example.test/mcp"}}
 
 print("Workspace record reads and edits passed")

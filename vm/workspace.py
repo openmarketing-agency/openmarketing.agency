@@ -15,8 +15,11 @@ import os
 from pathlib import Path
 import re
 from secrets import token_hex
-from socketserver import UnixStreamServer
+from signal import SIGKILL
+from socketserver import ThreadingUnixStreamServer
+from threading import Lock
 import stat
+import subprocess
 from urllib.parse import urlsplit
 
 from markdown_it import MarkdownIt
@@ -31,6 +34,10 @@ EDITABLE = {"brands": ("name", "description", "knowledge_base"), "playbooks": ("
 SLUG = re.compile(r"[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*")
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 MAX_FILE_SIZE = 256 * 1024
+MODEL_KEY = "LITELLM_API_KEY"
+COMPOSIO_KEY = "COMPOSIO_API_KEY"
+RUNTIME_ENV = ("PATH", "HOME", "USER", "LOGNAME", "HERMES_HOME", "HERMES_DIR", "PYTHONPATH", "LANG",
+               "LC_ALL", "XDG_RUNTIME_DIR", "VIRTUAL_ENV")
 
 
 class WorkspaceError(Exception):
@@ -321,7 +328,7 @@ def project(collection, source, directory, record_id=None):
         }
     if collection == "campaigns":
         return {
-            **record, "playbookId": string(data.get("playbook")), "version": string(data.get("version")),
+            **record, "configuration": campaign_configuration(source), "playbookId": string(data.get("playbook")), "version": string(data.get("version")),
             "orchestrator": string(data.get("orchestrator")), "agentIds": strings(data.get("agents")),
             "goals": strings(data.get("goals")), "plans": strings(data.get("plans")),
             "board": string(data.get("kanban_board_name")) or string(data.get("kanban_board")),
@@ -392,6 +399,8 @@ def records(root):
 def open_editable_record(workspace, collection, record_id):
     with ExitStack() as handles:
         try:
+            if collection not in SINGLETONS:
+                raise FileNotFoundError
             record = handles.enter_context(open_directory(SINGLETONS[collection], workspace))
             source, mode = read_file(record)
             matches = parse_record(source)["id"] == record_id
@@ -436,7 +445,7 @@ def validate_edit(request, fields):
 
 @contextmanager
 def editable_record(root, collection, record_id):
-    if collection not in EDITABLE or not valid_id(record_id):
+    if collection not in {*EDITABLE, "campaigns"} or not valid_id(record_id):
         raise WorkspaceError(404, "This workspace record was not found.")
     try:
         with open_directory(root) as workspace, open_editable_record(workspace, collection, record_id) as entry:
@@ -448,6 +457,8 @@ def editable_record(root, collection, record_id):
 
 
 def update_record(root, collection, record_id, request):
+    if collection not in EDITABLE:
+        raise WorkspaceError(404, "This workspace record was not found.")
     with editable_record(root, collection, record_id) as (record, source, mode):
         data = parse_record(source)
         fields = ("name", "description") if collection == "brands" and "knowledge_base_file" in data else EDITABLE[collection]
@@ -481,6 +492,146 @@ def update_knowledge(root, record_id, request):
                     return (before.st_dev, before.st_ino) == (after.st_dev, after.st_ino) and read_file(current, current_name)[0] == content
 
             replace_file(parent, name, mode, request["knowledge_base"].encode(), still_current)
+
+
+def configuration_url(value):
+    valid = http_url(value)
+    if not valid:
+        return ""
+    parsed = urlsplit(valid)
+    if parsed.scheme != "https" or parsed.query or parsed.fragment:
+        return ""
+    return valid
+
+
+def composio_url(value):
+    valid = configuration_url(value)
+    return valid if re.fullmatch(
+        r"https://backend\.composio\.dev/tool_router/(?:v3/)?[A-Za-z0-9_-]+/mcp/?", valid
+    ) else ""
+
+
+def campaign_configuration(source):
+    data = parse_record(source)
+    model = mapping(data.get("model"))
+    server = mapping(mapping(data.get("mcp_servers")).get("composio"))
+    return {
+        "revision": sha256(source).hexdigest(),
+        "provider": string(model.get("provider")),
+        "modelId": model_name(data.get("model")),
+        "baseUrl": configuration_url(model.get("base_url")),
+        "hasModelKey": bool(model.get("api_key")),
+        "composioUrl": composio_url(server.get("url")),
+    }
+
+
+def validate_campaign_settings(update):
+    fields = {"revision", "provider", "modelId", "baseUrl", "composioUrl", "setModelKey"}
+    if (
+        not isinstance(update, dict) or set(update) != fields or type(update["setModelKey"]) is not bool
+        or any(not isinstance(update[key], str) for key in fields - {"setModelKey"})
+        or len(update["modelId"]) > 200 or re.search(r"[\s$]", update["modelId"])
+        or not re.fullmatch(r"[A-Za-z0-9_.-]{0,80}", update["provider"])
+        or (update["baseUrl"] and not configuration_url(update["baseUrl"]))
+        or (update["composioUrl"] and not composio_url(update["composioUrl"]))
+        or (any(update[key] for key in ("provider", "baseUrl", "setModelKey")) and not update["modelId"])
+        or (update["setModelKey"] and not update["baseUrl"])
+    ):
+        raise WorkspaceError(422, "Check the campaign model and Composio URL fields.")
+
+
+def update_campaign_configuration(root, campaign_id, update):
+    validate_campaign_settings(update)
+    if update["provider"] == "litellm-proxy":
+        # Hermes calls an OpenAI-compatible proxy without a registered provider name "custom".
+        update = {**update, "provider": "custom"}
+    with editable_record(root, "campaigns", campaign_id) as (record, source, mode):
+        current = campaign_configuration(source)
+        if update["revision"] != current["revision"]:
+            raise WorkspaceError(409, "This campaign changed. Reload its settings and try again.")
+        yaml = roundtrip_yaml()
+        document = yaml.load(source)
+        fields = {"provider": "provider", "modelId": "default", "baseUrl": "base_url"}
+        if update["setModelKey"] or any(update[key] != current[key] for key in fields):
+            if not update["modelId"]:
+                document.pop("model", None)
+            else:
+                model = mapping(document.get("model"))
+                if update["baseUrl"] != current["baseUrl"] and current["hasModelKey"] and not update["setModelKey"]:
+                    raise WorkspaceError(422, "Enter a model API key when changing the URL of an authenticated model.")
+                for key, yaml_key in fields.items():
+                    if update[key]:
+                        model[yaml_key] = update[key]
+                    else:
+                        model.pop(yaml_key, None)
+                if update["setModelKey"]:
+                    model["api_key"] = "${" + MODEL_KEY + "}"
+                document["model"] = model
+        servers = mapping(document.get("mcp_servers"))
+        if update["composioUrl"]:
+            server = mapping(servers.get("composio"))
+            headers = mapping(server.get("headers"))
+            for header in list(headers):
+                if isinstance(header, str) and header.lower() == "x-api-key" and header != "x-api-key":
+                    del headers[header]
+            headers["x-api-key"] = "${" + COMPOSIO_KEY + "}"
+            server.update(url=update["composioUrl"], headers=headers)
+            servers["composio"] = server
+            document["mcp_servers"] = servers
+        elif current["composioUrl"]:
+            del servers["composio"]
+            document["mcp_servers"] = servers
+        if document == parse_record(source):
+            return current
+        text = StringIO()
+        yaml.dump(document, text)
+        updated = text.getvalue().encode()
+        replace_file(record, "config.yaml", mode, updated, lambda: read_file(record)[0] == source)
+        return campaign_configuration(updated)
+
+
+def valid_sync_key(value):
+    return (isinstance(value, str) and 0 < len(value) <= 4096 and bool(value.strip())
+            and value.isascii() and all(32 <= ord(char) <= 126 for char in value))
+
+
+def sync_campaign_configuration(root, campaign_id, request):
+    if not isinstance(request, dict) or set(request) != {"revision", "env"} or not isinstance(request["env"], dict):
+        raise WorkspaceError(422, "Invalid campaign sync request.")
+    env = request["env"]
+    if not set(env) <= {MODEL_KEY, COMPOSIO_KEY} or not all(valid_sync_key(value) for value in env.values()):
+        raise WorkspaceError(422, "Invalid campaign API keys.")
+    with editable_record(root, "campaigns", campaign_id) as (record, source, _):
+        if request["revision"] != sha256(source).hexdigest():
+            raise WorkspaceError(409, "This campaign changed before sync. Reload its settings and try again.")
+        data = parse_record(source, campaign_id)
+        model = mapping(data.get("model"))
+        server = mapping(mapping(data.get("mcp_servers")).get("composio"))
+        if MODEL_KEY in env and not (
+            model.get("api_key") == "${" + MODEL_KEY + "}" and configuration_url(model.get("base_url"))
+        ):
+            raise WorkspaceError(422, "Save a model URL with the API key before syncing.")
+        if COMPOSIO_KEY in env and not (
+            composio_url(server.get("url")) and mapping(server.get("headers")).get("x-api-key") == "${" + COMPOSIO_KEY + "}"
+        ):
+            raise WorkspaceError(422, "Save a Composio MCP URL before syncing its API key.")
+        try:
+            # Kill the launcher and its worker together before releasing the edit lock on timeout.
+            with subprocess.Popen(
+                ["sync-campaign", campaign_id], cwd=root.parent, start_new_session=True,
+                env={**{name: os.environ[name] for name in RUNTIME_ENV if name in os.environ}, **env},
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            ) as runner:
+                try:
+                    status = runner.wait(timeout=60)
+                except subprocess.TimeoutExpired:
+                    os.killpg(runner.pid, SIGKILL)
+                    raise
+                if status:
+                    raise subprocess.CalledProcessError(status, "sync-campaign")
+        except (OSError, subprocess.SubprocessError):
+            raise WorkspaceError(502, "oma-agent could not sync the campaign. Verify that the campaign is installed and try again.") from None
+        return campaign_configuration(read_file(record)[0])
 
 
 def brand_document(root, record_id, document_id):
@@ -568,20 +719,47 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             return
         self.reply(200, result)
 
-    def do_PUT(self):
-        path = re.fullmatch(r"/workspace/([^/]+)/([^/]+)(/knowledge)?", self.path)
-        if not path or (path[3] and path[1] != "brands"):
+    def read_update(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        if not 0 < length <= MAX_FILE_SIZE:
+            raise WorkspaceError(413, "The workspace update is too large.")
+        return json.loads(self.rfile.read(length))
+
+    def do_POST(self):
+        path = re.fullmatch(r"/workspace/campaigns/([^/]+)/sync", self.path)
+        if not path:
             self.reply(404, {"message": "Unknown workspace request."})
             return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            if not 0 < length <= MAX_FILE_SIZE:
-                raise WorkspaceError(413, "The workspace update is too large.")
-            request = json.loads(self.rfile.read(length))
-            if path[3]:
-                update_knowledge(self.server.root, path[2], request)
-            else:
-                update_record(self.server.root, path[1], path[2], request)
+            request = self.read_update()
+            with self.server.edit_lock:
+                result = sync_campaign_configuration(self.server.root, path[1], request)
+        except (ValueError, RecursionError):
+            self.reply(400, {"message": "Invalid campaign sync request."})
+        except WorkspaceError as error:
+            self.reply(error.status, {"message": str(error)})
+        except OSError:
+            self.reply(503, {"message": "Could not read the agent workspace."})
+        else:
+            self.reply(200, result)
+
+    def do_PUT(self):
+        path = re.fullmatch(r"/workspace/([^/]+)/([^/]+)(/knowledge|/config)?", self.path)
+        if not path or (path[3] == "/knowledge" and path[1] != "brands") or (
+            (path[1] == "campaigns") != (path[3] == "/config")
+        ):
+            self.reply(404, {"message": "Unknown workspace request."})
+            return
+        try:
+            request = self.read_update()
+            result = {}
+            with self.server.edit_lock:
+                if path[1] == "campaigns":
+                    result = update_campaign_configuration(self.server.root, path[2], request)
+                elif path[3]:
+                    update_knowledge(self.server.root, path[2], request)
+                else:
+                    update_record(self.server.root, path[1], path[2], request)
         except (ValueError, RecursionError):
             self.reply(400, {"message": "Invalid workspace update."})
         except WorkspaceError as error:
@@ -589,14 +767,15 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         except OSError:
             self.reply(503, {"message": "Could not save the agent workspace record."})
         else:
-            self.reply(200, {})
+            self.reply(200, result)
 
 
 if __name__ == "__main__":
     socket_path = Path(os.environ.get("OMA_WORKSPACE_SOCKET", "/run/oma-console/workspace.sock"))
     socket_path.unlink(missing_ok=True)
     os.umask(0o077)
-    with UnixStreamServer(str(socket_path), WorkspaceHandler) as server:
+    with ThreadingUnixStreamServer(str(socket_path), WorkspaceHandler) as server:
+        server.edit_lock = Lock()
         server.root = Path(os.environ["HERMES_HOME"]) / "oma"
         socket_path.chmod(0o660)
         server.serve_forever()

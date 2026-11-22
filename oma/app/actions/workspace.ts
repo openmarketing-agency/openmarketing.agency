@@ -1,4 +1,4 @@
-/** Saves the signed-in owner's brand or strategy edits back to oma-agent. */
+/** Saves the signed-in owner’s workspace and campaign settings edits back to oma-agent. */
 
 "use server";
 
@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
-import { brandUpdate, knowledgeUpdate, playbookUpdate, saveWorkspaceRecord, WorkspaceRequestError, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -38,4 +38,15 @@ export async function saveWorkspaceEdit(
   revalidatePath("/campaigns/[id]", "page");
   revalidatePath(path);
   redirect(path + (collection === "brand-knowledge" ? "?saved=knowledge" : "?saved=1"));
+}
+
+export async function saveCampaignSettingsAction(
+  id: string,
+  _previous: CampaignConfigurationResult,
+  form: FormData,
+): Promise<CampaignConfigurationResult> {
+  await requireUser();
+  const result = await saveCampaignConfiguration(id, Object.fromEntries(form));
+  if (result.configuration) revalidatePath("/campaigns/" + id);
+  return result;
 }

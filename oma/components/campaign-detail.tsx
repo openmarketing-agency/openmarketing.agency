@@ -1,12 +1,13 @@
-/** Shows a saved campaign and manages its shared tool selection and hosted MCP connection. */
+/** Shows a saved campaign and manages its shared tools, hosted MCP connection, and agent settings. */
 
 "use client";
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Plug, Terminal, Workflow } from "lucide-react";
+import { ArrowLeft, Check, Plug, Settings, Terminal, Workflow } from "lucide-react";
 
 import { CampaignMcpSetup } from "@/components/campaign-mcp-setup";
+import { CampaignSettings } from "@/components/campaign-settings";
 import { ToolkitBrowser } from "@/components/toolkit-browser";
 import { campaignConnectionScope, campaignToolSlugs, type ToolAssignment } from "@/lib/agent-connections";
 import type { CampaignToolRecommendation } from "@/lib/campaign-tool-suggestions";
@@ -15,12 +16,13 @@ import type { SavedCampaign } from "@/lib/server/agent-workspace";
 import type { Toolkit } from "@/lib/tool-catalog";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 
-type View = "overview" | "tools" | "mcp";
+type View = "overview" | "tools" | "mcp" | "settings";
 
 const views = [
   { id: "overview", label: "Overview", icon: null },
   { id: "tools", label: "Tools", icon: Plug },
   { id: "mcp", label: "MCP connection", icon: Terminal },
+  { id: "settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function CampaignDetail({
@@ -95,7 +97,7 @@ export function CampaignDetail({
           </button>
         ))}
       </div>
-      {error && view !== "overview" && <p role="alert" className="form-error">{error}</p>}
+      {error && (view === "tools" || view === "mcp") && <p role="alert" className="form-error">{error}</p>}
 
       {view === "overview" && overview}
       {view === "tools" && (
@@ -105,6 +107,13 @@ export function CampaignDetail({
             feedback={feedback} onChange={updateConnections} />
         </div>
       )}
+      {view === "settings" && (campaign.configuration ? (
+        <CampaignSettings campaignId={campaign.id} configuration={campaign.configuration}
+          generatedMcpUrl={mcp?.selection === selection ? mcp.connection.url : undefined}
+          openMcp={() => selectView("mcp")} />
+      ) : (
+        <p className="notice">Campaign settings are unavailable. Check that the agent workspace is up to date.</p>
+      ))}
       {view === "mcp" && (
         <div className="playbook-mcp-view">
           {selected.length > 0 && (

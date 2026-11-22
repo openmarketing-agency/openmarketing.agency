@@ -39,7 +39,7 @@ async function Detail({ params, searchParams }: Props) {
   const linkedPlaybook = records.playbooks.find((item) => item.id === saved.playbookId);
   const brand = records.brands.find((item) => item.id === linkedPlaybook?.brandId);
   const [workspace, query] = await Promise.all([loadToolWorkspace(suggestCampaignTools(saved, brand)), searchParams]);
-  const initialView = query.view === "mcp" ? "mcp"
+  const initialView = query.view === "mcp" || query.view === "settings" ? query.view
     : query.view === "tools" || query.view === "team" || (query.view !== "overview" && typeof query.agent === "string")
       ? "tools" : "overview";
 
