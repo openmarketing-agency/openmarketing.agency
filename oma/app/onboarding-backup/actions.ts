@@ -47,8 +47,8 @@ export async function answerSetup(id: string, generation: number, answer: string
 export async function finishSetup() {
   const user = await requireUser();
   const persistCompletion = process.env.NODE_ENV !== "development";
-  if (!completeOnboarding(user.id, persistCompletion)) redirect("/onboarding", "replace");
-  revalidatePath("/onboarding");
+  if (!completeOnboarding(user.id, persistCompletion)) redirect("/onboarding-backup", "replace");
+  revalidatePath("/onboarding-backup");
   revalidatePath("/dashboard");
   redirect("/dashboard", "replace");
 }

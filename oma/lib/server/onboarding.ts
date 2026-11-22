@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { maxSetupAnswerLength, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
 import { AgentChatError, answerAgentPrompt, getAgentRun, startAgentRun } from "./agent-chat";
+import { readProjectSetupEnvelope, type ProjectSetupEnvelope } from "./project-setup";
 
 const exchange = z.object({ question: z.string(), answer: z.string() });
 const promptIdentity = z.object({ id: z.string(), generation: z.number() });
@@ -23,21 +24,28 @@ const schema = z.discriminatedUnion("status", [
 ]);
 type State = z.infer<typeof schema>;
 type ActiveState = Extract<State, { status: "running" }> & { handle: string };
-type Snapshot = { json: string; state: State | null } | undefined;
+type Snapshot = { json: string; state: State | null; project?: ProjectSetupEnvelope } | undefined;
 
 function read(userId: string): Snapshot {
   const row = getDb().prepare("SELECT onboarding_state FROM users WHERE id = ?").get(userId);
   if (row?.onboarding_state == null) return;
   const json = String(row.onboarding_state);
   const stored: unknown = JSON.parse(json);
-  // A JSON null is also empty, but keep its original text for the conditional update.
-  return { json, state: stored === null ? null : schema.parse(stored) };
+  const project = readProjectSetupEnvelope(stored);
+  const agent = project ? project.agent : stored;
+  // Keep the full original value to guard writes from either onboarding flow.
+  return { json, state: agent === null ? null : schema.parse(agent), project };
+}
+
+function encode(next: State | null, project?: ProjectSetupEnvelope) {
+  return JSON.stringify(project ? { ...project, agent: next } : next);
 }
 
 function save(userId: string, previous: Snapshot, next: State | null) {
   // IS also matches a NULL snapshot on the first write, so every update guards against a concurrent change.
+  const stored = next !== null || previous?.project ? encode(next, previous?.project) : null;
   return getDb().prepare("UPDATE users SET onboarding_state = ? WHERE id = ? AND onboarding_state IS ?")
-    .run(next === null ? null : JSON.stringify(next), userId, previous?.json ?? null).changes === 1;
+    .run(stored, userId, previous?.json ?? null).changes === 1;
 }
 
 function view(state?: State | null, question?: SetupQuestion): OnboardingView {
@@ -178,7 +186,8 @@ export async function submitOnboardingAnswer(userId: string, input: unknown): Pr
   };
   const next = { ...state, handle: state.handle, pending };
   if (!save(userId, previous, next)) throw closed();
-  return deliverAnswer(userId, { json: JSON.stringify(next), state: next }, next, question);
+  const project = previous?.project;
+  return deliverAnswer(userId, { json: encode(next, project), state: next, project }, next, question);
 }
 
 export function completeOnboarding(userId: string, persistCompletion = true) {
@@ -192,14 +201,23 @@ export function completeOnboarding(userId: string, persistCompletion = true) {
 }
 
 export function resetOnboarding(userId: string): OnboardingView {
-  getDb().prepare("UPDATE users SET onboarding_state = NULL WHERE id = ?").run(userId);
-  return view();
+  const previous = read(userId);
+  return save(userId, previous, null) ? view() : readOnboarding(userId);
 }
 
 export function skipOnboarding(userId: string) {
   // Skipping works even while another tab is writing progress or the gateway is down.
+  const skipped = JSON.stringify({ status: "skipped", history: [] });
   getDb().prepare(`
-    UPDATE users SET onboarding_state = ?
-    WHERE id = ? AND json_extract(onboarding_state, '$.status') IS NOT 'done'
-  `).run(JSON.stringify({ status: "skipped", history: [] }), userId);
+    UPDATE users SET onboarding_state = CASE
+      WHEN json_extract(onboarding_state, '$.kind') = 'project-setup'
+        THEN json_set(onboarding_state, '$.agent', json(?))
+      ELSE ?
+    END
+    WHERE id = ? AND (CASE
+      WHEN json_extract(onboarding_state, '$.kind') = 'project-setup'
+        THEN json_extract(onboarding_state, '$.agent.status')
+      ELSE json_extract(onboarding_state, '$.status')
+    END) IS NOT 'done'
+  `).run(skipped, skipped, userId);
 }

@@ -7,19 +7,19 @@ import { Loading } from "@/components/ui";
 import { WorkspaceIndex } from "@/components/workspace-records";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace } from "@/lib/server/agent-workspace";
-import { readOnboarding } from "@/lib/server/onboarding";
+import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
 
 export const metadata: Metadata = { title: "Campaigns" };
 
 async function SetupLink() {
   const user = await requireUser();
-  const { step } = readOnboarding(user.id);
-  if (step.status === "closed") return null;
+  const project = readProjectSetup(user.id);
+  if (isProjectSetupComplete(project)) return null;
 
   return (
     <div className="mb-6">
       <Link href="/onboarding" className="btn secondary">
-        {step.status === "intro" ? "Set up your workspace" : "Resume workspace setup"}
+        {project?.setup.status === "done" ? "Finish project setup" : "Set up your workspace"}
       </Link>
     </div>
   );

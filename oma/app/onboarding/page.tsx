@@ -1,60 +1,67 @@
-/** Shows the signed-in owner's setup conversation. */
+/** Introduces the static project setup flow and keeps it accessible only to signed-in users. */
 
-import { randomUUID } from "node:crypto";
+import { ArrowUpRight } from "lucide-react";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { logoutAction } from "@/app/actions/auth";
-import { skipSetup } from "@/app/actions/onboarding";
+import { skipProjectSetup } from "@/app/actions/project-setup";
 import { Brand } from "@/components/brand";
 import { requireUser } from "@/lib/dal";
-import { isOnboardingDocumentRequest } from "@/lib/onboarding";
-import { readOnboarding } from "@/lib/server/onboarding";
+import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
 
-import { OnboardingChat } from "./onboarding-chat";
+import { ProjectForm } from "./project-form";
 import "./onboarding.css";
 
-export const metadata: Metadata = { title: "Set up your workspace" };
+export const metadata: Metadata = { title: "Set up your project" };
 
 async function Setup() {
   const user = await requireUser();
-  const initial = readOnboarding(user.id);
-  const development = process.env.NODE_ENV === "development";
-  if (initial.step.status === "closed" && !development) redirect("/dashboard");
-  const resetOnOpen = development && isOnboardingDocumentRequest(await headers());
-  // Next can preserve the previous chat's client state when reopening the route.
-  const chatKey = development ? randomUUID() : undefined;
+  const project = readProjectSetup(user.id);
+  if (isProjectSetupComplete(project)) redirect("/dashboard");
+  const links = project?.setup.status === "done"
+    ? { websiteUrl: project.setup.websiteUrl, githubUrl: project.setup.githubUrl } : undefined;
 
   return (
-    <div className="onboarding-page">
-      <header className="onboarding-header">
-        <div className="onboarding-header-inner">
-          <Brand href="/dashboard" />
-          <div className="onboarding-header-actions">
-            <form action={skipSetup}><button className="onboarding-sign-out">Skip setup</button></form>
-            <form action={logoutAction}><button className="onboarding-sign-out">Sign out</button></form>
-          </div>
+    <main id="main-content" tabIndex={-1} className="project-setup-main">
+      <div className="project-setup-content">
+        <h1>Set up your project</h1>
+        <p className="project-setup-intro">Give oma-agent a website or GitHub repository to start with. You can add both.</p>
+        <ProjectForm initialLinks={links} needsRetry={Boolean(project?.delivery)} />
+        <form action={skipProjectSetup} className="project-setup-skip">
+          <button type="submit">Skip for now</button>
+        </form>
+      </div>
+      <aside className="project-setup-story" aria-labelledby="project-setup-story-title">
+        <div className="project-setup-art" aria-hidden="true">
+          <Image src="/orca-mascot.webp" alt="" width={480} height={480} unoptimized />
         </div>
-      </header>
-      <main id="main-content" tabIndex={-1} className="onboarding-main">
-        <div className="onboarding-shell">
-          <OnboardingChat key={chatKey} initial={initial} resetOnOpen={resetOnOpen} />
+        <div className="project-setup-story-copy">
+          <h2 id="project-setup-story-title">Open-source<br className="project-setup-story-break" /> marketing.</h2>
+          <p>Your project details are stored in your own OMA installation.</p>
+          <a href="https://github.com/openmarketing-agency/openmarketing.agency" target="_blank" rel="noreferrer">
+            View source on GitHub <ArrowUpRight size={16} aria-hidden="true" />
+          </a>
         </div>
-      </main>
-    </div>
+      </aside>
+    </main>
   );
 }
 
 export default function OnboardingPage() {
   return (
-    <Suspense fallback={
-      <main id="main-content" className="onboarding-page">
-        <p className="onboarding-loading-page" role="status">Loading your setup…</p>
-      </main>
-    }>
-      <Setup />
-    </Suspense>
+    <div className="project-setup-page">
+      <header className="project-setup-header">
+        <Brand />
+        <form action={logoutAction}>
+          <button type="submit" className="project-setup-signout">Sign out</button>
+        </form>
+      </header>
+      <Suspense fallback={<main id="main-content" className="project-setup-loading" role="status">Loading setup…</main>}>
+        <Setup />
+      </Suspense>
+    </div>
   );
 }

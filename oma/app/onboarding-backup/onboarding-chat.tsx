@@ -6,7 +6,7 @@ import { ArrowRight, ChevronRight, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react";
 
-import { answerSetup, finishSetup, refreshSetup, resetDevelopmentSetup, startSetup } from "@/app/actions/onboarding";
+import { answerSetup, finishSetup, refreshSetup, resetDevelopmentSetup, startSetup } from "./actions";
 import { maxSetupAnswerLength, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
 
 export function OnboardingChat({ initial, resetOnOpen }: { initial: OnboardingView; resetOnOpen: boolean }) {
