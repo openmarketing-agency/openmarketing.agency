@@ -3092,17 +3092,6 @@ ol.workspace-copy-list {
   white-space: pre-wrap;
   line-height: 1.65;
 }
-.workspace-palette dd {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.workspace-palette span {
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--control);
-  border-radius: 3px;
-}
 .workspace-editor {
   max-width: 76ch;
   margin-top: 22px;
@@ -3226,8 +3215,7 @@ ol.workspace-copy-list {
 }
 .workspace-source-list dd p { flex-basis: 100%; }
 .workspace-source-status { color: var(--muted); font-size: 12px; }
-.workspace-sources a,
-.workspace-document-heading a:not(.btn) {
+.workspace-sources a {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -3241,38 +3229,13 @@ ol.workspace-copy-list {
   padding: 8px 6px;
   border-bottom: 1px solid var(--border);
 }
-.workspace-document-list a:hover,
-.workspace-document-list a[aria-current] { background: var(--raised); }
+.workspace-document-list a:hover { background: var(--raised); }
 .workspace-document-list a span { flex: 1; }
 .workspace-document-list small { display: block; color: var(--muted); font-size: 12px; }
-.workspace-document {
-  scroll-margin-top: 72px;
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-.workspace-document-heading {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px 16px;
-  margin-bottom: 8px;
-}
-.workspace-document-heading h2 { margin: 0; }
-.workspace-document-heading h3 { font-weight: 650; }
 @media (max-width: 520px) {
   .workspace-source-list > div { grid-template-columns: 1fr; }
 }
 
-.workspace-section-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  font-size: 13px;
-}
-.workspace-section-nav a,
 .workspace-markdown a,
 .workspace-agent-list h3 a {
   color: var(--accent);
@@ -3300,28 +3263,6 @@ ol.workspace-copy-list {
 .workspace-markdown pre { padding: 10px; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
 .workspace-markdown :not(pre) > code { padding: 1px 4px; }
 .workspace-markdown blockquote { padding-inline-start: 12px; border-inline-start: 2px solid var(--border); }
-.workspace-logo-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(175px, 100%), 1fr));
-  gap: 12px;
-  margin: 0 0 16px;
-  padding: 0;
-  list-style: none;
-}
-.workspace-logo-list li { display: grid; gap: 5px; min-width: 0; }
-.workspace-logo-list img {
-  width: 100%;
-  height: 100px;
-  padding: 12px;
-  object-fit: contain;
-  background: var(--raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-.workspace-logo-list strong { font-size: 13px; font-weight: 600; }
-.workspace-logo-list span { color: var(--muted); font-size: 12px; }
-
-
 /* Campaign suggestions show their saved source next to the normal tool action. */
 .campaign-tools { margin-block: 20px; }
 .campaign-tool-evidence {

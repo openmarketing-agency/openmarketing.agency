@@ -44,6 +44,7 @@ function ConsoleFrame({
   const home = demo ? "/demo" : "/dashboard";
   const isCampaignDetail = pathname.startsWith(demo ? "/demo/campaigns/" : "/campaigns/");
   const isApprovalDetail = !demo && pathname.startsWith("/approvals/");
+  const recordCollection = !demo && pathname.match(/^\/workspace\/(brands|playbooks)\//)?.[1];
   const nav = [
     { href: home, label: "Campaigns", icon: BookOpen },
     ...(!demo ? [{ href: "/approvals", label: "Approvals", icon: ClipboardCheck }] : []),
@@ -121,6 +122,8 @@ function ConsoleFrame({
             <span>
               {isCampaignDetail
                 ? "Campaign details"
+                : recordCollection === "brands" ? "Brand details"
+                : recordCollection === "playbooks" ? "Playbook details"
                 : isApprovalDetail ? "Approvals" : nav.find(({ href }) => href === pathname)?.label ?? "Campaigns"}
             </span>
           </div>

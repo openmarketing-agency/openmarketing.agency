@@ -1,0 +1,330 @@
+/* Gives saved brand and playbook details a shared reading layout, with styles scoped to these pages. */
+
+.record-detail {
+  max-width: 78rem;
+  min-width: 0;
+  margin-inline: auto;
+  overflow-wrap: anywhere;
+}
+
+.record-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.record-identity {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 16px;
+}
+
+.record-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 52px;
+  height: 52px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.record-mark:has(img) { background: #fff; }
+.record-mark img { object-fit: contain; }
+
+.record-heading h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3.3vw, 2.5rem);
+  font-weight: 650;
+  line-height: 1.12;
+  letter-spacing: -0.032em;
+}
+
+.record-heading p {
+  max-width: 74ch;
+  margin: 9px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.record-heading > .btn { flex: none; }
+
+.record-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: clamp(8px, 2.4vw, 28px);
+  margin-block: 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.record-tabs a {
+  padding: 12px 6px 10px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.record-tabs a:hover { color: var(--accent); }
+.record-tabs a[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.record-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-top: 24px;
+}
+
+.record-columns:has(.record-related) {
+  grid-template-columns: minmax(0, 1fr) minmax(13rem, 26%);
+}
+
+.record-columns > .record-reading { grid-area: 1 / 1; }
+.record-related { grid-area: 1 / 2; }
+
+.record-related,
+.record-reading,
+.record-group,
+.record-editor {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.record-reading,
+.record-group,
+.record-editor {
+  padding: clamp(16px, 2.5vw, 30px);
+  background: var(--surface);
+}
+
+.record-reading { scroll-margin-top: 16px; }
+
+.record-detail :is(.record-reading, .record-group, .record-editor) > h2,
+.record-detail .record-section-heading h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+
+.record-reading > h2,
+.record-reading > .record-section-heading {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.record-detail .record-reading > h2 { margin-bottom: 18px; }
+
+.record-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.record-section-heading .btn { min-height: 36px; }
+
+.record-reading :is(.workspace-markdown, .workspace-record-copy) {
+  max-width: 72ch;
+  font-size: 0.969rem;
+  line-height: 1.7;
+}
+
+.record-reading .workspace-record-copy { white-space: pre-wrap; }
+
+.record-reading .workspace-markdown > * + * { margin-top: 14px; }
+.record-detail .record-reading .workspace-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 24px 0 6px;
+  font-weight: 650;
+}
+.record-detail .record-reading .workspace-markdown :is(h1, h2, h3, h4, h5, h6):first-child { margin-top: 0; }
+.record-reading .workspace-markdown hr { margin-block: 22px; border-color: var(--border); }
+.record-reading .workspace-markdown li::marker { color: var(--accent); }
+
+.record-related {
+  padding: 16px;
+  background: var(--raised);
+}
+
+.record-links + .record-links {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.record-links h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.record-links h2 svg { color: var(--accent); }
+.record-links ul { margin: 0; padding: 0; list-style: none; }
+
+.record-links a {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 4px 7px;
+  margin-inline: -7px;
+  border-radius: 6px;
+}
+
+.record-links a:hover {
+  color: var(--accent);
+  background: var(--active);
+}
+
+.record-links a svg { color: var(--accent); flex: none; }
+
+.record-groups {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.record-empty { color: var(--muted); }
+.record-group > :is(.workspace-source-list, .record-palette, .record-logos) { margin-top: 14px; }
+
+.record-group .workspace-source-list { gap: 0; }
+.record-group .workspace-source-list > div { padding-block: 12px; }
+.record-group .workspace-source-list > div:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.record-discoveries dd {
+  align-items: center;
+}
+
+.record-discovery-status {
+  margin-inline-start: auto;
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--muted);
+  background: var(--raised);
+  font-size: 0.75rem;
+  font-weight: 550;
+}
+
+.record-discovery-status[data-verified="true"] {
+  color: var(--accent);
+  background: var(--active);
+}
+
+.record-detail .workspace-document-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  column-gap: 22px;
+  margin-top: 12px;
+}
+
+.record-detail .workspace-document-list a {
+  min-height: 55px;
+  margin-inline: -6px;
+  gap: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+.record-detail .workspace-document-list a svg { flex: none; margin: 0; color: var(--accent); }
+.record-detail .workspace-document-list a:hover span { text-decoration: underline; text-underline-offset: 3px; }
+
+.record-detail .record-document .back-link { margin-bottom: 12px; }
+
+.record-logos,
+.record-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+
+.record-logos { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+
+.record-logos li,
+.record-palette > div { min-width: 0; }
+.record-logo-preview,
+.record-swatch {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  background: var(--raised);
+}
+
+.record-logo-preview {
+  display: grid;
+  place-items: center;
+  height: 136px;
+  padding: 16px;
+}
+.record-logo-preview:has(img) { background: #fff; }
+.record-logo-preview img {
+  width: 100%;
+  height: 102px;
+  object-fit: contain;
+}
+
+.record-swatch { height: 56px; }
+.record-logos strong,
+.record-palette dt { font-weight: 600; }
+.record-logos small,
+.record-palette dd { display: block; color: var(--muted); font-size: 0.82rem; }
+
+.record-editor {
+  margin-top: 24px;
+  max-width: 55rem;
+}
+
+.record-detail .record-editor .workspace-editor {
+  max-width: none;
+  margin-top: 16px;
+}
+
+@media (max-width: 960px) {
+  .record-columns:has(.record-related) { grid-template-columns: minmax(0, 1fr); }
+  .record-columns > .record-reading,
+  .record-related { grid-area: auto; }
+}
+
+@media (max-width: 600px) {
+  .record-detail > .back-link { margin-bottom: 16px; }
+  .record-heading { flex-direction: column; gap: 13px; }
+  .record-identity {
+    display: grid;
+    grid-template-columns: 43px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px 12px;
+  }
+  .record-identity > div { display: contents; }
+  .record-identity p { grid-column: 1 / -1; margin: 0; }
+  .record-mark { height: 43px; border-radius: 10px; }
+  .record-mark img { width: 29px; height: 29px; }
+  .record-links:has(li:only-child) {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px 16px;
+  }
+  .record-links:has(li:only-child) h2 { margin: 0; }
+  .record-links + .record-links { margin-top: 8px; padding-top: 10px; }
+  .record-tabs { margin-top: 14px; }
+  .record-columns, .record-groups { margin-top: 16px; gap: 14px; }
+  .record-palette { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
+}

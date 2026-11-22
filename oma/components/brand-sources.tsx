@@ -1,7 +1,7 @@
 /** Displays saved brand channels, public research signals, and referenced workspace documents. */
 
 import Link from "next/link";
-import { ArrowUpRight, FileText } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight, FileText } from "lucide-react";
 
 import { WorkspaceText } from "@/components/workspace-text";
 import type { SavedBrand, SavedBrandDocument } from "@/lib/server/agent-workspace";
@@ -35,9 +35,9 @@ type Discovery = NonNullable<SavedBrand["channels"]>[number];
 function Discoveries({ heading, items }: { heading: string; items: Discovery[] | undefined }) {
   if (!items?.length) return null;
   return (
-    <section className="workspace-sources" id={heading === "Channels" ? "brand-channels" : undefined}>
+    <section className="record-group workspace-sources">
       <h2>{heading}</h2>
-      <dl className="workspace-source-list">
+      <dl className="workspace-source-list record-discoveries">
         {items.map(({ label, status, url, feedUrl, signupUrl }, index) => (
           <div key={index}>
             <dt>{labelFor(label)}</dt>
@@ -45,7 +45,7 @@ function Discoveries({ heading, items }: { heading: string; items: Discovery[] |
               {url && <ExternalLink url={url} />}
               {feedUrl && <ExternalLink url={feedUrl} label="Feed" />}
               {signupUrl && <ExternalLink url={signupUrl} label="Sign up" />}
-              <span className="workspace-source-status">{discoveryLabels[status]}</span>
+              <span className="record-discovery-status" data-verified={status === "verified"}>{discoveryLabels[status]}</span>
             </dd>
           </div>
         ))}
@@ -57,17 +57,55 @@ function Discoveries({ heading, items }: { heading: string; items: Discovery[] |
 type Props = {
   brand: SavedBrand;
   path: string;
-  activeDocument?: string;
   selected?: { document?: SavedBrandDocument; error?: string };
 };
 
-export function BrandSources({ brand, path, activeDocument, selected }: Props) {
+export function BrandChannels({ brand }: { brand: SavedBrand }) {
   return (
-    <>
+    <div className="record-groups" id="brand-channels">
       <Discoveries heading="Channels" items={brand.channels} />
       <Discoveries heading="Launches" items={brand.launches} />
+      {!brand.channels?.length && !brand.launches?.length && <p className="record-empty">No channels or launches saved yet.</p>}
+    </div>
+  );
+}
+
+export function BrandResearch({ brand, path, selected }: Props) {
+  const hasDocuments = Boolean(brand.designSource || brand.documents?.length);
+  const researchPath = path + "?view=research";
+  return (
+    <div className="record-groups" id="brand-research">
+      {selected ? (
+        <section id="brand-document" className="record-reading record-document" aria-labelledby="document-title">
+          <Link href={researchPath} className="back-link"><ArrowLeft size={14} aria-hidden="true" /> All documents</Link>
+          <h2 id="document-title">{selected.document ? labelFor(selected.document.title) : "Brand document"}</h2>
+          {selected.document
+            ? <WorkspaceText text={selected.document.content} html={selected.document.html} empty="This document is empty." />
+            : <p className="form-error" role="alert">{selected.error}</p>}
+        </section>
+      ) : hasDocuments && (
+        <section className="record-group workspace-sources">
+          <div className="record-section-heading">
+            <h2>Documents</h2>
+            {brand.designSource && <ExternalLink url={brand.designSource} label="Design system source" />}
+          </div>
+          {!!brand.documents?.length && (
+            <ul className="workspace-document-list">
+              {brand.documents.map(({ id, title, path: file }) => (
+                <li key={file}>
+                  <Link href={researchPath + "&document=" + id + "#brand-document"} prefetch={false}>
+                    <FileText size={17} aria-hidden="true" />
+                    <span>{labelFor(title)}<small>{file}</small></span>
+                    <ArrowRight size={15} aria-hidden="true" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
       {!!brand.repositories?.length && (
-        <section className="workspace-sources">
+        <section className="record-group workspace-sources">
           <h2>Repositories</h2>
           <dl className="workspace-source-list">
             {brand.repositories.map(({ label, url, commit }, index) => (
@@ -82,7 +120,7 @@ export function BrandSources({ brand, path, activeDocument, selected }: Props) {
         </section>
       )}
       {!!brand.competitors?.length && (
-        <section className="workspace-sources">
+        <section className="record-group workspace-sources">
           <h2>Competitors</h2>
           <dl className="workspace-source-list">
             {brand.competitors.map(({ label, url, sources }, index) => (
@@ -97,37 +135,8 @@ export function BrandSources({ brand, path, activeDocument, selected }: Props) {
           </dl>
         </section>
       )}
-      {(brand.designSource || !!brand.documents?.length) && (
-        <section className="workspace-sources" id="brand-research">
-          <h2>Research and documentation</h2>
-          {brand.designSource && <p><ExternalLink url={brand.designSource} label="Design system source" /></p>}
-          <ul className="workspace-document-list">
-            {brand.documents?.map(({ id, title, path: file }) => (
-              <li key={file}>
-                <Link href={path + "?document=" + id + "#brand-document"} prefetch={false}
-                  aria-current={activeDocument === id ? "location" : undefined}>
-                  <FileText size={15} aria-hidden="true" />
-                  <span>{labelFor(title)}<small>{file}</small></span>
-                  <ArrowUpRight size={14} aria-hidden="true" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {selected && (
-            <div id="brand-document" className="workspace-document">
-              <div className="workspace-document-heading">
-                <h3>{selected.document ? labelFor(selected.document.title) : "Brand document"}</h3>
-                <Link href={path}>Close document</Link>
-              </div>
-              {selected.document
-                ? <WorkspaceText text={selected.document.content} html={selected.document.html} empty="This document is empty." />
-                : <p className="form-error" role="alert">{selected.error}</p>}
-            </div>
-          )}
-        </section>
-      )}
       {!!brand.signals?.length && (
-        <section className="workspace-sources">
+        <section className="record-group workspace-sources">
           <h2>Public website signals</h2>
           <dl className="workspace-source-list">
             {brand.signals.map(({ label, status, signal }) => (
@@ -139,6 +148,9 @@ export function BrandSources({ brand, path, activeDocument, selected }: Props) {
           </dl>
         </section>
       )}
-    </>
+      {!selected && !hasDocuments && !brand.repositories?.length && !brand.competitors?.length && !brand.signals?.length && (
+        <p className="record-empty">No brand research saved yet.</p>
+      )}
+    </div>
   );
 }
