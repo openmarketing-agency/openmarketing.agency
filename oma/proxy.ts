@@ -104,7 +104,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
   if (onAuthPage && authenticated) {
     response = NextResponse.redirect(new URL("/dashboard", request.url));
-  } else if (!isPublic(pathname) && !authenticated) {
+  } else if (!authenticated && !isPublic(pathname) && pathname !== "/api/agent/activity") {
+    // The activity endpoint returns its own JSON 401 after checking the session.
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
     response = NextResponse.redirect(loginUrl);

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 
-import { AgentChatError, agentStatus, answerAgentPrompt, getAgentRun, startAgentRun } from "../lib/server/agent-chat";
+import { AgentChatError, agentStatus, answerAgentPrompt, getAgentActivityCounts, getAgentRun, getAgentRunProgress, startAgentRun } from "../lib/server/agent-chat";
 
 const key = "fixture-agent-key";
 const account = "fixture-owner";
@@ -93,4 +93,55 @@ test("uses the private key file for the bundled gateway and reports unreachable 
   assert.deepEqual(await agentStatus(), {
     ready: false, message: "Couldn’t reach Hermes. Check that the gateway is running and reachable from OMA.",
   });
+});
+
+test("projects authorized run progress without returning prompts, outputs, or secrets", async (t) => {
+  useGateway(t);
+  const runEndpoint = "http://vm:8642/p/seo__orchestrator/v1/runs";
+  let payload: object = { status: "queued" };
+  const requests = t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    assert.equal(new Headers(options.headers).get("authorization"), "Bearer " + key);
+    if (url === runEndpoint) return Response.json({ run_id: "run_progress" }, { status: 202 });
+    assert.equal(url, runEndpoint + "/run_progress");
+    return Response.json(payload);
+  });
+  const { handle } = await startAgentRun(account, message);
+  await assert.rejects(getAgentRunProgress("different-user", handle), (error: unknown) =>
+    error instanceof AgentChatError && error.status === 404);
+  assert.equal(requests.mock.callCount(), 1);
+  assert.deepEqual(await getAgentRunProgress(account, handle), { status: "queued" });
+
+  payload = { status: "running", tool: "web_search", progress_at: 1700000000, output: key };
+  assert.deepEqual(await getAgentRunProgress(account, handle), {
+    status: "running", tool: "web_search", updatedAt: "2023-11-14T22:13:20.000Z",
+  });
+  payload = { status: "running", tool: key };
+  assert.deepEqual(await getAgentRunProgress(account, handle), { status: "running" });
+  payload = { status: "running", pending_controls: [{ kind: "clarify", question: "private prompt" }] };
+  assert.deepEqual(await getAgentRunProgress(account, handle), { status: "waiting_for_answer" });
+  payload = { status: "running", pending_controls: [{ kind: "clarify" }, { kind: "approval", command: "private command" }] };
+  assert.deepEqual(await getAgentRunProgress(account, handle), { status: "waiting_for_approval" });
+
+  for (const status of ["waiting_for_approval", "stopping", "completed", "failed", "cancelled", "unknown"]) {
+    payload = { status, output: "private output", progress_at: null };
+    assert.deepEqual(await getAgentRunProgress(account, handle), { status });
+  }
+});
+
+test("reads aggregate activity from protected detailed health with the configured profile prefix", async (t) => {
+  useGateway(t);
+  let valid = true;
+  t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    assert.equal(url, "http://vm:8642/p/seo__orchestrator/health/detailed");
+    assert.equal(new Headers(options.headers).get("authorization"), "Bearer " + key);
+    assert.equal(options.method, "GET");
+    assert.equal(options.cache, "no-store");
+    return Response.json(valid ? {
+      active_agents: 1, api_server: { active_runs: 2 }, platforms: { private: key },
+    } : { status: "ok" });
+  });
+  assert.deepEqual(await getAgentActivityCounts(), { activeAgents: 1, activeRuns: 2 });
+  valid = false;
+  await assert.rejects(getAgentActivityCounts(), (error: unknown) =>
+    error instanceof AgentChatError && error.status === 502);
 });

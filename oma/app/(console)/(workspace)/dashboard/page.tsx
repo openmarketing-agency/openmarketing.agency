@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { AgentActivity } from "@/components/agent-activity";
 import { CampaignLibrary } from "@/components/campaign-library";
 import { Loading } from "@/components/ui";
 import { WorkspaceIndex } from "@/components/workspace-records";
@@ -48,6 +49,7 @@ async function Dashboard() {
   return (
     <CampaignLibrary saved={saved} setup={
       <>
+        <AgentActivity />
         <SetupLink />
         {error && <p className="form-error" role="alert">{error}</p>}
         {!records && !error && <p>Start the full Docker stack to see saved campaigns.</p>}

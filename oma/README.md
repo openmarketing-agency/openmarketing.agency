@@ -26,6 +26,8 @@ npm run build
 
 The database tests create isolated SQLite files in a temporary directory. Project setup at `/onboarding` accepts a website, a GitHub repository, or both. It saves the supplied links and forwards the questions and answers through the configured oma-agent gateway. Failed deliveries can be retried with the saved links. In development, loading `/onboarding-backup` directly or refreshing it resets the backed-up agent conversation so it can be tested again.
 
+The Campaigns dashboard shows live oma-agent activity counts and the status of the submitted project setup, including its current tool when the gateway reports one.
+
 ## Approval preview
 
 Open **Approvals** in the console to review sample drafts by campaign. Saved edits and approval decisions are stored in your browser. The mock chat can shorten copy, suggest a call to action, or apply a specific text replacement. Review decisions in this preview apply to the sample drafts.

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
 
 import { getDb } from "../lib/db";
+import { readDashboardAgentActivity } from "../lib/server/agent-activity";
 import { beginOnboarding, readOnboarding, resetOnboarding, skipOnboarding } from "../lib/server/onboarding";
 import { isProjectSetupComplete, readProjectSetup, sendProjectSetup, skipSavedProjectSetup, validateProjectLinks } from "../lib/server/project-setup";
 
@@ -161,4 +162,34 @@ test("skipping setup starts no agent run", async (t) => {
     status: "done", websiteUrl: "https://example.com/", githubUrl: null,
   }), { ok: true });
   assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("reads the saved setup run independently of aggregate gateway metrics", async (t) => {
+  const id = "progress-owner";
+  const setup = { status: "done" as const, websiteUrl: "https://example.com/", githubUrl: null };
+  db.prepare("INSERT INTO users (id, email, hashed_password, onboarding_state) VALUES (?, ?, ?, ?)")
+    .run(id, "progress@example.test", "fixture-hash", JSON.stringify({ kind: "project-setup", setup, agent: null }));
+  let runStatus = 200;
+  let healthStatus = 200;
+  const checks = t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url.endsWith("/v1/runs")) return Response.json({ run_id: "run_setup" }, { status: 202 });
+    if (url.endsWith("/health/detailed")) {
+      return Response.json({ active_agents: 0, api_server: { active_runs: 1 } }, { status: healthStatus });
+    }
+    assert.equal(url, "http://vm:8642/v1/runs/run_setup");
+    return Response.json({ status: "running", tool: "web_search" }, { status: runStatus });
+  });
+
+  assert.deepEqual(await readDashboardAgentActivity(id), {
+    gateway: { activeRuns: 1, activeAgents: 0 }, setup: { status: "not_sent" },
+  });
+  assert.equal(checks.mock.callCount(), 1);
+  assert.deepEqual(await sendProjectSetup(id, setup), { ok: true });
+  healthStatus = 503;
+  assert.deepEqual(await readDashboardAgentActivity(id), { gateway: null, setup: { status: "running", tool: "web_search" } });
+  runStatus = 404;
+  assert.deepEqual(await readDashboardAgentActivity(id), { gateway: null, setup: { status: "unavailable" } });
+  runStatus = 503;
+  assert.deepEqual(await readDashboardAgentActivity(id), { gateway: null, setup: { status: "connection_lost" } });
+  assert.deepEqual(await readDashboardAgentActivity("other-account"), { gateway: null, setup: null });
 });

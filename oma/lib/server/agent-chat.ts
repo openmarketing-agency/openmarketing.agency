@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
+import type { AgentRunProgress } from "@/lib/agent-activity";
 import { maxChatMessageLength, type AgentPrompt, type AgentRun, type AgentStatus } from "@/lib/agent-chat";
 import { loadSettings } from "./settings";
 
@@ -29,6 +30,20 @@ const controlSchema = z.discriminatedUnion("kind", [
 const statusSchema = z.object({
   status: z.string(), output: z.string().nullish(), pending_controls: z.array(z.unknown()).optional(),
 });
+const activitySchema = z.object({
+  api_server: z.object({ active_runs: z.number().int().nonnegative() }),
+  active_agents: z.number().int().nonnegative(),
+});
+const progressSchema = z.object({
+  status: z.string(),
+  tool: z.string().regex(/^[a-zA-Z0-9_.-]{1,96}$/).optional().catch(undefined),
+  progress_at: z.number().positive().max(8.64e12).optional().catch(undefined),
+  pending_controls: z.array(z.unknown()).optional(),
+});
+const progressStatus = z.enum([
+  "queued", "running", "waiting_for_approval", "stopping", "completed", "failed", "cancelled", "unknown",
+]);
+const pendingKindSchema = z.object({ kind: z.enum(["clarify", "approval"]) });
 const runningStatuses = new Set(["queued", "started", "running", "waiting_for_approval", "stopping"]);
 const handleSchema = z.string().regex(/^run_[A-Za-z0-9_-]{1,128}\.[A-Za-z0-9_-]{43}$/);
 
@@ -175,6 +190,35 @@ export async function getAgentRun(userId: string, handle: unknown): Promise<Agen
   const config = await gateway();
   const id = readHandle(userId, config, handle);
   return projectRun(await readJson(await sendRequest(config, `/runs/${id}`)), config.key);
+}
+
+export async function getAgentActivityCounts() {
+  const config = await gateway();
+  // Detailed health lives alongside /v1, under the same configured profile prefix.
+  const health = { ...config, baseUrl: config.baseUrl.slice(0, -"/v1".length) };
+  const parsed = activitySchema.safeParse(await readJson(await sendRequest(health, "/health/detailed")));
+  if (!parsed.success) throw new AgentChatError(502, "oma-agent didn’t return activity counts.");
+  return { activeRuns: parsed.data.api_server.active_runs, activeAgents: parsed.data.active_agents };
+}
+
+export async function getAgentRunProgress(userId: string, handle: unknown): Promise<AgentRunProgress> {
+  const config = await gateway();
+  const id = readHandle(userId, config, handle);
+  const parsed = progressSchema.safeParse(await readJson(await sendRequest(config, "/runs/" + id)));
+  if (!parsed.success) throw new AgentChatError(502, "oma-agent didn’t return run progress.");
+  const { tool, progress_at: progressAt, pending_controls: controls, status: rawStatus } = parsed.data;
+  const reported = progressStatus.safeParse(rawStatus);
+  let status: AgentRunProgress["status"] = rawStatus === "started" ? "running" : reported.data ?? "unknown";
+  if (status === "running") {
+    const kinds = controls?.map((item) => pendingKindSchema.safeParse(item).data?.kind);
+    if (kinds?.includes("approval")) status = "waiting_for_approval";
+    else if (kinds?.includes("clarify")) status = "waiting_for_answer";
+  }
+  return {
+    status,
+    ...(status === "running" && tool && !tool.includes(config.key) ? { tool } : {}),
+    ...(progressAt === undefined ? {} : { updatedAt: new Date(progressAt * 1000).toISOString() }),
+  };
 }
 
 export async function answerAgentPrompt(userId: string, handle: unknown, prompt: unknown) {
