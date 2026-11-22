@@ -1,4 +1,4 @@
-/* Gives saved brand and playbook details a shared reading layout, with styles scoped to these pages. */
+/* Provides the shared reading layout for saved brands, playbooks, and agent profiles. */
 
 .record-detail {
   max-width: 78rem;
@@ -327,4 +327,42 @@
   .record-tabs { margin-top: 14px; }
   .record-columns, .record-groups { margin-top: 16px; gap: 14px; }
   .record-palette { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
+}
+
+.agent-profile-jump { display: none; }
+.agent-profile-related section { scroll-margin-top: 68px; }
+.agent-profile-related section + section { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
+.agent-profile-related h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+.agent-profile-related h2 svg { flex: none; color: var(--accent); }
+.agent-profile-fields { display: grid; gap: 12px; margin: 12px 0 0; }
+.agent-profile-fields dt,
+.agent-profile-note,
+.agent-profile-job-details { color: var(--muted); font-size: 0.8125rem; }
+.agent-profile-fields dd { margin: 4px 0 0; }
+.agent-profile-fields code { font-size: 0.8125rem; }
+
+.agent-profile-labels,
+.agent-profile-jobs { list-style: none; padding: 0; }
+.agent-profile-labels { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.agent-profile-labels li {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 6px;
+  background: var(--surface);
+  font-size: 0.8125rem;
+}
+.agent-profile-jobs,
+.agent-profile-note { margin-top: 8px; }
+.agent-profile-jobs li + li { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.agent-profile-jobs h3 { font-weight: 600; }
+.agent-profile-jobs p { margin-top: 3px; }
+
+@media (max-width: 960px) {
+  .agent-profile-jump { display: flex; }
 }

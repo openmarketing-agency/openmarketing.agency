@@ -12,7 +12,7 @@ import { WorkspaceText } from "@/components/workspace-text";
 import { WorkspaceRecordEditor } from "@/components/workspace-record-editor";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, loadBrandDocument, workspaceId, type SavedBrand } from "@/lib/server/agent-workspace";
-import "./record-detail.css";
+import "@/components/workspace-record-detail.css";
 
 type Props = {
   params: Promise<{ collection: string; id: string }>;
