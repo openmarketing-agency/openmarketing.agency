@@ -5,10 +5,11 @@ import { Suspense } from "react";
 import { AgentActivity } from "@/components/agent-activity";
 import { CampaignLibrary } from "@/components/campaign-library";
 import { Loading } from "@/components/ui";
-import { WorkspaceIndex } from "@/components/workspace-records";
+import { campaignAgentIds, WorkspaceIndex } from "@/components/workspace-records";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace } from "@/lib/server/agent-workspace";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
+import "@/components/campaign-pages.css";
 
 export const metadata: Metadata = { title: "Campaigns" };
 
@@ -18,11 +19,9 @@ async function SetupLink() {
   if (isProjectSetupComplete(project)) return null;
 
   return (
-    <div className="mb-6">
-      <Link href="/onboarding" className="btn secondary">
-        {project?.setup.status === "done" ? "Finish project setup" : "Set up your workspace"}
-      </Link>
-    </div>
+    <Link href="/onboarding" className="btn secondary">
+      {project?.setup.status === "done" ? "Finish project setup" : "Set up your workspace"}
+    </Link>
   );
 }
 
@@ -42,19 +41,17 @@ async function Dashboard() {
     const brand = records.brands.find((item) => item.id === playbook?.brandId);
     return {
       id: campaign.id, name: campaign.name, description: campaign.description, version: campaign.version,
-      agentCount: campaign.agentIds.length, playbook: playbook && { id: playbook.id, name: playbook.name },
+      agentCount: campaignAgentIds(records, campaign).length, playbook: playbook && { id: playbook.id, name: playbook.name },
       brand: brand && { id: brand.id, name: brand.name },
     };
   });
   return (
-    <CampaignLibrary saved={saved} setup={
-      <>
-        <AgentActivity />
-        <SetupLink />
-        {error && <p className="form-error" role="alert">{error}</p>}
-        {!records && !error && <p>Start the full Docker stack to see saved campaigns.</p>}
-        {records && <WorkspaceIndex workspace={records} />}
-      </>
-    } />
+    <CampaignLibrary
+      saved={saved}
+      setup={<SetupLink />}
+      notice={error ? <p className="form-error" role="alert">{error}</p>
+        : !records && <p className="notice">Start the full Docker stack to see saved campaigns.</p>}
+      sidebar={<><AgentActivity />{records && <WorkspaceIndex workspace={records} />}</>}
+    />
   );
 }

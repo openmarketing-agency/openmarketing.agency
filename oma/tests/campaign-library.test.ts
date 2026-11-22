@@ -6,7 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { CampaignLibrary } from "../components/campaign-library";
-import { CampaignOverview } from "../components/workspace-records";
+import { campaignAgentIds, CampaignAgents, CampaignOverview } from "../components/workspace-records";
 import { type AgentWorkspace, type SavedCampaign } from "../lib/server/agent-workspace";
 
 test("shows an empty campaign list when the agent has saved none", () => {
@@ -30,21 +30,42 @@ const campaign: SavedCampaign = {
 };
 const workspace: AgentWorkspace = { campaigns: [campaign], agents: [], brands: [], playbooks: [], skipped: 0 };
 
-test("leaves campaign details and agent tools empty when records are absent", () => {
+test("leaves campaign details empty when records are absent", () => {
   const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace, campaign }));
   assert.doesNotMatch(html, /<h2|<dt|<li/);
 });
 
-test("shows saved agents in their campaign overview", () => {
+test("shows campaign agents and scheduled work in the dedicated roster", () => {
   const researcher = {
-    id: "seo__researcher", campaignId: "seo", name: "Retail insights", description: "", toolsets: [], jobs: [],
+    id: "seo__researcher", campaignId: "seo", name: "Retail insights", description: "Reviews retailer search trends.", toolsets: ["web"],
+    jobs: [{ name: "Review traffic", schedule: "Daily", timezone: "UTC", repeat: 2 }],
   };
   const data = { ...workspace, agents: [
     researcher,
     { ...researcher, id: "seo__orchestrator" },
     { ...researcher, id: "seo__writer", campaignId: "social-media" },
   ] };
-  const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace: data, campaign }));
-  assert.match(html, /Retail insights/);
-  assert.doesNotMatch(html, /Google Search Console|Google Analytics/);
+  const declaredCampaign = { ...campaign, agentIds: ["seo__researcher", "seo__missing"] };
+  const ids = campaignAgentIds(data, declaredCampaign);
+  assert.deepEqual(ids, ["seo__researcher", "seo__missing", "seo__orchestrator"]);
+  const html = renderToStaticMarkup(createElement(CampaignAgents, { workspace: data, campaign: declaredCampaign, ids }));
+  assert.match(html, /href="\/workspace\/agents\/seo__researcher"/);
+  assert.match(html, /Coordinator/);
+  assert.match(html, /Review traffic · Daily · UTC · 2 runs/);
+  assert.match(html, /seo__missing/);
+  assert.doesNotMatch(html, /href="[^"]*seo__missing|seo__writer|Google Search Console|Google Analytics/);
+});
+
+test("keeps campaign goals and plans with their linked brand and playbook in the overview", () => {
+  const saved = { ...campaign, playbookId: "retail-plan", goals: ["Grow organic sales"], plans: ["Review search traffic"] };
+  const data = {
+    ...workspace,
+    brands: [{ id: "retail", name: "Retail Brand", description: "", revision: "", knowledge: "", palette: {}, logos: {}, assets: {} }],
+    playbooks: [{ id: "retail-plan", name: "Retail strategy", description: "", revision: "", brandId: "retail", strategy: "" }],
+  };
+  const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace: data, campaign: saved }));
+  assert.match(html, /<h2>Goals<\/h2><ul[^>]*><li>Grow organic sales<\/li>/);
+  assert.match(html, /<h2>Plans<\/h2><ol[^>]*><li>Review search traffic<\/li>/);
+  assert.match(html, /href="\/workspace\/brands\/retail"/);
+  assert.match(html, /href="\/workspace\/playbooks\/retail-plan"/);
 });

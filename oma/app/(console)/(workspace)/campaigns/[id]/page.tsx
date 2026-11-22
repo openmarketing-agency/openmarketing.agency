@@ -3,13 +3,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { CampaignDetail } from "@/components/campaign-detail";
-import { CampaignOverview } from "@/components/workspace-records";
+import { campaignAgentIds, CampaignAgents, CampaignOverview } from "@/components/workspace-records";
 import { Loading } from "@/components/ui";
 import { suggestCampaignTools } from "@/lib/campaign-tool-suggestions";
 import { loadToolWorkspace } from "@/lib/tool-workspace";
 import { connectionFeedback } from "@/lib/connection-attempt";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, loadCampaignModelDefaults, workspaceId } from "@/lib/server/agent-workspace";
+import "@/components/campaign-pages.css";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -39,17 +40,17 @@ async function Detail({ params, searchParams }: Props) {
   const linkedPlaybook = records.playbooks.find((item) => item.id === saved.playbookId);
   const brand = records.brands.find((item) => item.id === linkedPlaybook?.brandId);
   const [workspace, query] = await Promise.all([loadToolWorkspace(suggestCampaignTools(saved, brand)), searchParams]);
-  const initialView = query.view === "mcp" || query.view === "settings" ? "settings"
-    : query.view === "tools" || query.view === "team" || (query.view !== "overview" && typeof query.agent === "string")
-      ? "tools" : "overview";
+  const agents = campaignAgentIds(records, saved);
 
   return (
     <CampaignDetail
+      key={saved.id}
       campaign={saved}
       modelDefaults={loadCampaignModelDefaults()}
       overview={<CampaignOverview workspace={records} campaign={saved} />}
+      agents={<CampaignAgents workspace={records} campaign={saved} ids={agents} />}
+      agentCount={agents.length}
       {...workspace}
-      initialView={initialView}
       feedback={connectionFeedback(query.connection_result)}
     />
   );
