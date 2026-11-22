@@ -9,10 +9,12 @@ import {
   toolCatalog,
 } from "@/lib/composio";
 import {
+  CAMPAIGN_SCOPE,
   connectionScope,
+  isWorkspaceScope,
   campaignToolSlugs,
   WORKSPACE_SCOPE,
-  type AgentConnectionScope,
+  type ToolConnectionScope,
 } from "@/lib/agent-connections";
 import { listToolAssignments, saveToolAssignment } from "@/lib/backend";
 import {
@@ -27,7 +29,7 @@ import {
 } from "@/lib/connection-attempt";
 import { type CatalogQuery, toolkitSlug } from "@/lib/tool-catalog";
 import { ToolConnectionConfigurationError } from "@/lib/tool-connection-service";
-import { loadAgentWorkspace, savedCampaignToolAgents } from "@/lib/server/agent-workspace";
+import { loadAgentWorkspace } from "@/lib/server/agent-workspace";
 
 export async function refreshConnectionsAction() {
   const user = await requireUser();
@@ -53,13 +55,13 @@ export async function toolCategoriesAction() {
 }
 export async function assignToolAction(
   slug: string,
-  scope: AgentConnectionScope,
+  scope: ToolConnectionScope,
   assigned: boolean,
 ) {
   const user = await requireUser();
   try {
     connectionScope(user.id, scope);
-    const tool = await (await toolCatalog()).get(slug);
+    const tool = assigned ? await (await toolCatalog()).get(slug) : undefined;
     const result = await saveToolAssignment(
       await requireAccessToken(),
       scope.playbookId,
@@ -75,11 +77,16 @@ export async function assignToolAction(
 }
 export async function connectToolAction(
   toolId: string,
-  scope: AgentConnectionScope = WORKSPACE_SCOPE,
+  scope: ToolConnectionScope = WORKSPACE_SCOPE,
 ): Promise<{ url?: string; connected?: boolean; error?: string }> {
   const user = await requireUser();
   try {
     const context = connectionScope(user.id, scope);
+    if (scope.agentId === CAMPAIGN_SCOPE) {
+      const { records, error } = await loadAgentWorkspace();
+      if (error) return { error };
+      if (!records?.campaigns.some((campaign) => campaign.id === scope.playbookId)) return { error: "Campaign not found." };
+    }
     const slug = toolkitSlug(toolId);
     const tool = await (await toolCatalog()).get(slug);
     const nonce = randomBytes(32).toString("hex");
@@ -91,7 +98,7 @@ export async function connectToolAction(
       callbackUrl.toString(),
     );
     // Save selection after a successful link creation; consent may still be pending.
-    if (scope.playbookId !== "workspace" || tool.noAuth) {
+    if (!isWorkspaceScope(scope) || tool.noAuth) {
       const saved = await saveToolAssignment(
         await requireAccessToken(),
         scope.playbookId,
@@ -161,18 +168,16 @@ export async function disconnectToolAction(slug: string) {
   }
 }
 export async function generateMcpAction(
-  playbookId: string,
+  campaignId: string,
 ): Promise<{ connection?: HostedMcpConnection; error?: string }> {
   const user = await requireUser();
   try {
     const { records, error } = await loadAgentWorkspace();
     if (error) return { error };
-    const campaign = records?.campaigns.find((item) => item.id === playbookId);
-    if (!records || !campaign) return { error: "Campaign not found." };
-    const agentIds = new Set(savedCampaignToolAgents(records, campaign).map((agent) => agent.scopeId));
+    if (!records?.campaigns.some((item) => item.id === campaignId)) return { error: "Campaign not found." };
     const saved = await listToolAssignments(await requireAccessToken());
     if (!saved.ok) return { error: saved.error.message };
-    const slugs = campaignToolSlugs(playbookId, saved.data.filter((assignment) => agentIds.has(assignment.agent_id)));
+    const slugs = campaignToolSlugs(campaignId, saved.data);
     const session = await (await toolConnections()).mcpSession(user.id, slugs);
     return { connection: hostedMcpConnection(session.mcp) };
   } catch (error) {

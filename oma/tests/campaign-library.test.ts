@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { CampaignLibrary } from "../components/campaign-library";
 import { CampaignOverview } from "../components/workspace-records";
-import { savedCampaignToolAgents, type AgentWorkspace, type SavedCampaign } from "../lib/server/agent-workspace";
+import { type AgentWorkspace, type SavedCampaign } from "../lib/server/agent-workspace";
 
 test("shows an empty campaign list when the agent has saved none", () => {
   const html = renderToStaticMarkup(createElement(CampaignLibrary, { saved: [] }));
@@ -33,10 +33,9 @@ const workspace: AgentWorkspace = { campaigns: [campaign], agents: [], brands: [
 test("leaves campaign details and agent tools empty when records are absent", () => {
   const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace, campaign }));
   assert.doesNotMatch(html, /<h2|<dt|<li/);
-  assert.deepEqual(savedCampaignToolAgents(workspace, campaign), []);
 });
 
-test("uses the saved agent name for eligible tool assignments", () => {
+test("shows saved agents in their campaign overview", () => {
   const researcher = {
     id: "seo__researcher", campaignId: "seo", name: "Retail insights", description: "", toolsets: [], jobs: [],
   };
@@ -45,7 +44,6 @@ test("uses the saved agent name for eligible tool assignments", () => {
     { ...researcher, id: "seo__orchestrator" },
     { ...researcher, id: "seo__writer", campaignId: "social-media" },
   ] };
-  assert.deepEqual(savedCampaignToolAgents(data, campaign), [{ ...researcher, scopeId: "researcher" }]);
   const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace: data, campaign }));
   assert.match(html, /Retail insights/);
   assert.doesNotMatch(html, /Google Search Console|Google Analytics/);

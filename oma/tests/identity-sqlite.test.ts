@@ -1,6 +1,7 @@
 /** Verifies single-account registration, session rotation, and workspace data on an isolated SQLite file. */
 
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +25,7 @@ function request(path: string, method: string, body?: object, token?: string) {
   return controlPlane(new Request(url, { method, headers, body: body && JSON.stringify(body) }), path.split("/"));
 }
 
-test("concurrent signup creates one account and login requires its password", async () => {
+test("concurrent signup creates one account and login requires its password", async (t) => {
   const password = "test-password";
   const emails = ["one@example.test", "two@example.test"];
   const responses = await Promise.all(emails.map(email => request("auth/register", "POST", { email, password })));
@@ -54,6 +55,42 @@ test("concurrent signup creates one account and login requires its password", as
   assert.deepEqual(await assignments.json(), [{
     playbook_id: "seo", agent_id: "researcher", toolkit_slug: "googleanalytics",
   }]);
+
+  const socketPath = join(directory, "mock-workspace.sock");
+  const workspace = createServer((_request, response) => {
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({
+      brands: [], playbooks: [], agents: [], skipped: 0,
+      campaigns: ["seo", "editorial"].map((id) => ({
+        id, name: id, description: "", playbookId: "", version: "", orchestrator: "",
+        agentIds: [], goals: [], plans: [], board: "",
+      })),
+    }));
+  });
+  await new Promise<void>((resolve, reject) => workspace.once("error", reject).listen(socketPath, resolve));
+  const previousSocket = process.env.OMA_WORKSPACE_SOCKET;
+  process.env.OMA_WORKSPACE_SOCKET = socketPath;
+  t.after(async () => {
+    if (previousSocket === undefined) delete process.env.OMA_WORKSPACE_SOCKET;
+    else process.env.OMA_WORKSPACE_SOCKET = previousSocket;
+    workspace.closeAllConnections();
+    await new Promise<void>((resolve) => workspace.close(() => resolve()));
+  });
+  const token = successor.access_token;
+  const editorial = "tool-assignments/editorial/campaign/googleanalytics";
+  const seo = "tool-assignments/seo/campaign/googleanalytics";
+  const global = "tool-assignments/workspace/connections/googleanalytics";
+  for (const endpoint of [editorial, editorial, seo, global]) {
+    assert.equal((await request(endpoint, "PUT", undefined, token)).status, 204);
+  }
+  assert.equal((await request("tool-assignments/unknown/campaign/googleanalytics", "PUT", undefined, token)).status, 404);
+  assert.equal((await request(editorial, "PUT")).status, 401);
+  assert.equal((await request(seo, "DELETE", undefined, token)).status, 204);
+  const remaining = await request("tool-assignments", "GET", undefined, token);
+  assert.deepEqual(await remaining.json(), [
+    { playbook_id: "editorial", agent_id: "campaign", toolkit_slug: "googleanalytics" },
+    { playbook_id: "workspace", agent_id: "connections", toolkit_slug: "googleanalytics" },
+  ]);
 
   const integration = { name: "Example MCP", url: "https://example.test/mcp" };
   const created = await request("mcp-integrations", "POST", integration, successor.access_token);

@@ -81,8 +81,7 @@ export function CampaignMcpSetup({
             Campaign MCP connection
           </h3>
           <p>
-            One hosted URL for the tools selected across your {campaignName}{" "}
-            team.
+            One hosted URL for the tools selected for {campaignName}.
           </p>
         </div>
         <button

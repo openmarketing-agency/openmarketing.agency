@@ -20,17 +20,21 @@ import {
   toolCategoriesAction,
 } from "@/app/actions/composio";
 import {
+  isWorkspaceScope,
   WORKSPACE_SCOPE,
-  type AgentConnectionScope,
+  type ToolConnectionScope,
 } from "@/lib/agent-connections";
+import type { CampaignToolRecommendation } from "@/lib/campaign-tool-suggestions";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 import type { CatalogPage, Toolkit } from "@/lib/tool-catalog";
 
 const EMPTY_TOOLKITS: Toolkit[] = [];
+const NO_RECOMMENDATIONS: CampaignToolRecommendation[] = [];
 
 export function ToolkitBrowser({
   scope = WORKSPACE_SCOPE,
-  agentName,
+  campaignName,
+  recommendations = NO_RECOMMENDATIONS,
   snapshot: initialSnapshot,
   selected: initialSelected = [],
   metadata: initialMetadata = [],
@@ -39,8 +43,9 @@ export function ToolkitBrowser({
   demo = false,
   demoCatalog = EMPTY_TOOLKITS,
 }: {
-  scope?: AgentConnectionScope;
-  agentName?: string;
+  scope?: ToolConnectionScope;
+  campaignName?: string;
+  recommendations?: CampaignToolRecommendation[];
   snapshot: ConnectionSnapshot;
   selected?: string[];
   metadata?: Toolkit[];
@@ -53,8 +58,8 @@ export function ToolkitBrowser({
     metadata: Toolkit[],
   ) => void;
 }) {
-  const isAgent = scope.playbookId !== "workspace";
-  const [tab, setTab] = useState(isAgent ? "assigned" : "connected");
+  const isCampaign = !isWorkspaceScope(scope);
+  const [tab, setTab] = useState(isCampaign ? (recommendations.length ? "suggested" : "assigned") : "connected");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<{ id: string; name: string }[]>(
@@ -78,7 +83,7 @@ export function ToolkitBrowser({
   const [pending, startTransition] = useTransition();
   const revision = useRef(0);
   const [retry, setRetry] = useState(0);
-  const showCategories = !isAgent || tab === "all";
+  const showCategories = !isCampaign || tab === "all";
   useEffect(() => {
     if (demo || !showCategories) return;
     let live = true;
@@ -166,8 +171,10 @@ export function ToolkitBrowser({
       ...selected.filter((slug) => known(slug).noAuth),
     ]),
   ];
-  const localItems = (
-    tab === "assigned" ? selected.map(known) : connectedIds.map(known)
+  const recommendationBySlug = new Map(recommendations.map((item) => [item.slug, item]));
+  const localItems = (tab === "suggested"
+    ? recommendations.map((item) => item.tool ?? { ...known(item.slug), name: item.name, description: "" })
+    : (tab === "assigned" ? selected : connectedIds).map(known)
   ).filter(
     (tool) =>
       `${tool.name} ${tool.slug} ${tool.description}`
@@ -177,8 +184,9 @@ export function ToolkitBrowser({
   );
   const catalogLoading = tab === "all" && loading;
   const visible = tab === "all" ? page.items : localItems;
-  const tabs = isAgent
+  const tabs = isCampaign
     ? [
+        ...(recommendations.length ? [{ id: "suggested", label: "Suggested" }] : []),
         { id: "assigned", label: `Added (${selected.length})` },
         { id: "all", label: "All tools" },
       ]
@@ -215,7 +223,7 @@ export function ToolkitBrowser({
             {
               ...snapshot,
               connected:
-                remove && !isAgent
+                remove && !isCampaign
                   ? snapshot.connected.filter((slug) => slug !== tool.slug)
                   : tool.noAuth
                     ? snapshot.connected
@@ -227,7 +235,7 @@ export function ToolkitBrowser({
           return;
         }
         if (
-          isAgent &&
+          isCampaign &&
           (remove || tool.noAuth || snapshot.connected.includes(tool.slug))
         ) {
           const result = await assignToolAction(tool.slug, scope, !remove);
@@ -244,8 +252,8 @@ export function ToolkitBrowser({
           );
           setNotice(
             remove
-              ? `${tool.name} removed from ${agentName}. The account stays connected.`
-              : `${tool.name} added to ${agentName}.`,
+              ? `${tool.name} removed from ${campaignName}.`
+              : `${tool.name} added to ${campaignName}.`,
           );
         } else if (remove) {
           const result = await disconnectToolAction(tool.slug);
@@ -260,8 +268,8 @@ export function ToolkitBrowser({
           );
           setNotice(
             tool.noAuth
-              ? `${tool.name} removed from all agent selections.`
-              : `${tool.name} disconnected. Agents using this account will need to reconnect it.`,
+              ? `${tool.name} removed from all campaign selections.`
+              : `${tool.name} disconnected. Campaigns using this account will need to reconnect it.`,
           );
         } else {
           const result = await connectToolAction(tool.slug, scope);
@@ -276,7 +284,7 @@ export function ToolkitBrowser({
           const fresh = await refreshConnectionsAction();
           update(
             fresh,
-            isAgent || tool.noAuth
+            isCampaign || tool.noAuth
               ? [...new Set([...selected, tool.slug])]
               : selected,
             tool,
@@ -339,11 +347,12 @@ export function ToolkitBrowser({
     }
   }
   return (
-    <div className={`tool-browser ${isAgent ? "for-agent" : "for-workspace"}`}>
+    <div className={`tool-browser ${isCampaign ? "for-campaign" : "for-workspace"}`}>
       <div className="tool-browser-heading">
         <div>
-          <h2>{isAgent ? "Tools for this agent" : "Your tools"}</h2>
-          {!isAgent && <p>Connect accounts once, then choose which specialists use them.</p>}
+          <h2>{isCampaign ? "Campaign tools" : "Your tools"}</h2>
+          {!isCampaign && <p>Connect accounts once and add them to your campaigns.</p>}
+          {tab === "suggested" && <p>Based on the brand’s verified channels and launches.</p>}
         </div>
         <button
           className="icon-button"
@@ -375,15 +384,15 @@ export function ToolkitBrowser({
           <input
             aria-label="Search tools"
             placeholder={
-              tab === "all" || isAgent
+              tab === "all" || isCampaign
                 ? "Search all tools, including web search…"
                 : "Search connected tools…"
             }
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
-              if (isAgent) setTab("all");
-              if (tab === "all" || isAgent) setLoading(true);
+              if (isCampaign) setTab("all");
+              if (tab === "all" || isCampaign) setLoading(true);
             }}
           />
           {search && (
@@ -398,15 +407,15 @@ export function ToolkitBrowser({
             </button>
           )}
         </label>
-        <label className="tool-category-filter">
+        {showCategories && <label className="tool-category-filter">
           <span className="sr-only">Tool category</span>
           <select
             aria-label="Tool category"
             value={category}
             onChange={(event) => {
               setCategory(event.target.value);
-              if (isAgent) setTab("all");
-              if (tab === "all" || isAgent) setLoading(true);
+              if (isCampaign) setTab("all");
+              if (tab === "all" || isCampaign) setLoading(true);
             }}
           >
             <option value="">All categories</option>
@@ -426,7 +435,7 @@ export function ToolkitBrowser({
             ))}
           </select>
           <ChevronDown size={14} />
-        </label>
+        </label>}
       </div>
       {!snapshot.configured && !demo && (
         <p className="notice">
@@ -469,11 +478,13 @@ export function ToolkitBrowser({
             const added = selected.includes(tool.slug);
             const active =
               snapshot.connected.includes(tool.slug) || tool.noAuth;
-            const isConnected = isAgent
+            const isConnected = isCampaign
               ? added && active
               : connectedIds.includes(tool.slug);
             const reconnect = snapshot.reconnect?.includes(tool.slug);
             const waiting = snapshot.pending?.includes(tool.slug);
+            const suggestion = tab === "suggested" ? recommendationBySlug.get(tool.slug) : undefined;
+            const unavailable = suggestion && !active && !suggestion.tool && snapshot.configured;
             return (
               <article className="tool-catalog-item" key={tool.slug}>
                 <div className="tool-catalog-icon">
@@ -481,13 +492,26 @@ export function ToolkitBrowser({
                 </div>
                 <div className="tool-catalog-info">
                   <h3>{tool.name}</h3>
-                  <p>{tool.description}</p>
+                  {tool.description && <p>{tool.description}</p>}
+                  {suggestion && (
+                    <ul className="campaign-tool-evidence">
+                      {suggestion.evidence.map((source) => (
+                        <li key={source.kind + source.url}>
+                          {source.kind === "channel" ? "Brand channel" : "Brand launch"} <span aria-hidden="true">·</span>{" "}
+                          <a href={source.url} target="_blank" rel="noreferrer">
+                            {source.label.replaceAll(/[-_]/g, " ")} <ArrowUpRight size={12} aria-hidden="true" />
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <div className="tool-catalog-tags">
                     {tool.noAuth && <span>No sign-in needed</span>}
                     {tool.categories.slice(0, 1).map((item) => (
                       <span key={item.id}>{item.name}</span>
                     ))}
                     {waiting && !active && <span>Authorization pending</span>}
+                    {unavailable && <span>Catalog details unavailable</span>}
                   </div>
                 </div>
                 <div className="tool-catalog-controls">
@@ -495,7 +519,7 @@ export function ToolkitBrowser({
                     <>
                       <span className="connection-status">
                         <Check size={13} />
-                        {isAgent
+                        {isCampaign
                           ? "Added"
                           : tool.noAuth
                             ? "Enabled"
@@ -505,11 +529,11 @@ export function ToolkitBrowser({
                         className="btn ghost"
                         disabled={pending}
                         onClick={() => mutate(tool, true)}
-                        aria-label={`${isAgent ? "Remove" : "Disconnect"} ${tool.name}`}
+                        aria-label={`${isCampaign ? "Remove" : "Disconnect"} ${tool.name}`}
                       >
                         {busy === tool.slug ? (
                           <LoaderCircle size={14} className="spin" />
-                        ) : isAgent ? (
+                        ) : isCampaign ? (
                           "Remove"
                         ) : tool.noAuth ? (
                           "Remove"
@@ -524,19 +548,19 @@ export function ToolkitBrowser({
                         className="btn secondary"
                         disabled={pending || !snapshot.configured}
                         onClick={() => mutate(tool)}
-                        aria-label={`${isAgent && active ? "Add" : "Connect"} ${tool.name}`}
+                        aria-label={`${isCampaign && active ? "Add" : "Connect"} ${tool.name}`}
                       >
                         {busy === tool.slug ? (
                           <LoaderCircle size={14} className="spin" />
                         ) : (
                           <>
-                            {isAgent && active
-                              ? "Add to agent"
+                            {isCampaign && active
+                              ? "Add to campaign"
                               : tool.noAuth
                                 ? "Enable"
                                 : reconnect
                                   ? "Reconnect"
-                                  : isAgent
+                                  : isCampaign
                                     ? "Connect & add"
                                     : "Connect"}
                             {active ? (
@@ -547,7 +571,7 @@ export function ToolkitBrowser({
                           </>
                         )}
                       </button>
-                      {isAgent && added && (
+                      {isCampaign && added && (
                         <button
                           className="btn ghost"
                           onClick={() => mutate(tool, true)}

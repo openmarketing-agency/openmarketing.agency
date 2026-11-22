@@ -2,7 +2,6 @@
 
 import { request } from "node:http";
 import { z } from "zod";
-import { findCampaignAgent } from "../campaigns";
 
 export const workspaceId = z.string().max(64).regex(/^[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*$/);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
@@ -59,17 +58,6 @@ export type WorkspaceEdit = "brands" | "playbooks" | "brand-knowledge";
 export type SavedPlaybook = z.infer<typeof playbook>;
 export type SavedCampaign = z.infer<typeof campaign>;
 export type SavedAgent = z.infer<typeof agent>;
-
-/** Match saved agent records to the console's existing tool-assignment scopes. */
-export function savedCampaignToolAgents(workspace: AgentWorkspace, campaign: SavedCampaign) {
-  const prefix = campaign.id + "__";
-  return workspace.agents.flatMap((agent) => {
-    if (agent.campaignId !== campaign.id || agent.id === campaign.orchestrator || !agent.id.startsWith(prefix)) return [];
-    const scopeId = agent.id.slice(prefix.length);
-    const scope = findCampaignAgent(campaign.id, scopeId);
-    return scope && scopeId !== "default" ? [{ ...agent, scopeId }] : [];
-  });
-}
 
 export const brandUpdate = z.object({
   revision,

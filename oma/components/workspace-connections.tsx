@@ -45,8 +45,8 @@ export function WorkspaceConnections({
         onChange={(next) => setCurrent(next)}
       />
       <p className="connections-sharing-note">
-        Accounts can be used by multiple specialists. Disconnecting an account
-        affects every agent using it.
+        Accounts can be used by multiple campaigns. Disconnecting an account
+        affects every campaign using it.
       </p>
     </div>
   );

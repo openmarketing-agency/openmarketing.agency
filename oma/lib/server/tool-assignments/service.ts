@@ -1,12 +1,13 @@
-/** Stores toolkit selections for specialists and the local workspace. */
+/** Stores campaign and workspace tool selections while preserving the legacy specialist API. */
 
+import { CAMPAIGN_SCOPE, WORKSPACE_SCOPE, type ToolAssignment } from "@/lib/agent-connections";
 import { getDb } from "@/lib/db";
+import { loadAgentWorkspace, workspaceId } from "@/lib/server/agent-workspace";
+import { validToolkitSlug } from "@/lib/tool-catalog";
 
 import { ErrorCode, apiError } from "../common/api-error";
-import type { ToolAssignment } from "@/lib/agent-connections";
 
 const SPECIALISTS = new Set(["researcher", "writer", "humanizer", "verifier", "publisher"]);
-const TOOLKIT_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 export function listAssignments(userId: string): ToolAssignment[] {
   return getDb().prepare(`
@@ -15,11 +16,19 @@ export function listAssignments(userId: string): ToolAssignment[] {
   `).all(userId) as unknown as ToolAssignment[];
 }
 
-export function saveAssignment(userId: string, playbookId: string, agentId: string, toolkitSlug: string, assigned: boolean): void {
-  const knownScope = (playbookId === "seo" && SPECIALISTS.has(agentId))
-    || (playbookId === "workspace" && agentId === "connections");
-  if (!knownScope || !TOOLKIT_SLUG_PATTERN.test(toolkitSlug)) {
+export async function saveAssignment(userId: string, campaignId: string, scope: string, slug: string, assigned: boolean) {
+  const isCampaign = scope === CAMPAIGN_SCOPE;
+  const legacy = (campaignId === "seo" && SPECIALISTS.has(scope))
+    || (campaignId === WORKSPACE_SCOPE.playbookId && scope === WORKSPACE_SCOPE.agentId);
+  if ((!isCampaign && !legacy) || !workspaceId.safeParse(campaignId).success || !validToolkitSlug(slug)) {
     throw apiError(422, ErrorCode.INVALID_TOOL_ASSIGNMENT);
+  }
+  if (isCampaign && assigned) {
+    const { records, error } = await loadAgentWorkspace();
+    if (error) throw apiError(503, error);
+    if (!records?.campaigns.some((campaign) => campaign.id === campaignId)) {
+      throw apiError(404, "Campaign not found.");
+    }
   }
 
   const db = getDb();
@@ -27,10 +36,16 @@ export function saveAssignment(userId: string, playbookId: string, agentId: stri
     db.prepare(`
       INSERT INTO tool_assignments (user_id, playbook_id, agent_id, toolkit_slug) VALUES (?, ?, ?, ?)
       ON CONFLICT (user_id, playbook_id, agent_id, toolkit_slug) DO NOTHING
-    `).run(userId, playbookId, agentId, toolkitSlug);
+    `).run(userId, campaignId, scope, slug);
+  } else if (isCampaign) {
+    // Replace specialist selections as a group, preserving the separate workspace connection.
+    db.prepare(`
+      DELETE FROM tool_assignments WHERE user_id = ? AND playbook_id = ? AND toolkit_slug = ?
+        AND NOT (playbook_id = ? AND agent_id = ?)
+    `).run(userId, campaignId, slug, WORKSPACE_SCOPE.playbookId, WORKSPACE_SCOPE.agentId);
   } else {
     db.prepare(`
       DELETE FROM tool_assignments WHERE user_id = ? AND playbook_id = ? AND agent_id = ? AND toolkit_slug = ?
-    `).run(userId, playbookId, agentId, toolkitSlug);
+    `).run(userId, campaignId, scope, slug);
   }
 }

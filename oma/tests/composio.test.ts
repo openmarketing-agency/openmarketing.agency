@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { connectionScope, campaignToolSlugs } from "../lib/agent-connections";
+import { campaignConnectionScope, connectionScope, campaignToolSlugs } from "../lib/agent-connections";
 import { CONNECTION_ATTEMPT_MAX_AGE, readConnectionAttempt } from "../lib/connection-attempt";
 import { hostedMcpConnection, mcpClientConfiguration } from "../lib/mcp-client-config";
 import { createToolCatalog, suggestedToolkit } from "../lib/tool-catalog";
@@ -112,6 +112,13 @@ test("binds OAuth callbacks to the signed-in owner, connection attempt, and prov
   const wrongAgent = JSON.stringify({ ...attempt, returnTo: "/playbooks/seo?agent=researcher" });
   assert.equal(readConnectionAttempt(wrongAgent, accountId, attempt.nonce, false, now), null);
   assert.equal(readConnectionAttempt(saved, "another-user", attempt.nonce, false, now), null);
+  const campaignScope = campaignConnectionScope("release-week");
+  const campaignAttempt = { ...attempt, ...campaignScope, returnTo: "/campaigns/release-week?view=tools" };
+  assert.equal(connectionScope(accountId, campaignScope).returnTo, campaignAttempt.returnTo);
+  assert.deepEqual(readConnectionAttempt(JSON.stringify(campaignAttempt), accountId, attempt.nonce, false, now), campaignAttempt);
+  assert.equal(readConnectionAttempt(JSON.stringify({ ...campaignAttempt, returnTo: "/campaigns/another?view=tools" }),
+    accountId, attempt.nonce, false, now), null);
+  assert.throws(() => connectionScope(accountId, campaignConnectionScope("../other")), /saved campaign/);
   assert.equal(readConnectionAttempt(saved, accountId, "another-state", false, now), null);
   assert.equal(readConnectionAttempt(saved, accountId, attempt.nonce, false, now + CONNECTION_ATTEMPT_MAX_AGE * 1000), null);
   assert.equal(readConnectionAttempt(JSON.stringify({ ...attempt, returnTo: "https://outside.example.test" }), accountId, attempt.nonce, false, now), null);
@@ -207,11 +214,15 @@ test("pins assigned accounts in hosted MCP sessions and exports environment refe
   const slugs = campaignToolSlugs("seo", [
     assignment("researcher", toolkit.slug),
     assignment("writer", toolkit.slug),
-    assignment("writer", publicTool.slug),
+    assignment("campaign", publicTool.slug),
     assignment("default", "unassigned-default-tool"),
     { ...assignment("writer", "other-playbook-tool"), playbook_id: "finance" },
   ]);
   assert.deepEqual(slugs, [toolkit.slug, publicTool.slug]);
+  assert.deepEqual(campaignToolSlugs("release-week", [
+    { playbook_id: "release-week", agent_id: "campaign", toolkit_slug: publicTool.slug },
+    assignment("writer", toolkit.slug),
+  ]), [publicTool.slug]);
   const session = await service.mcpSession(accountId, slugs);
   assert.deepEqual(create.mock.calls[0].arguments, [accountId, {
     toolkits: slugs,

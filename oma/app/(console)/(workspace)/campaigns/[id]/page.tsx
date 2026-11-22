@@ -5,21 +5,21 @@ import { ArrowLeft } from "lucide-react";
 import { CampaignDetail } from "@/components/campaign-detail";
 import { CampaignOverview } from "@/components/workspace-records";
 import { Loading } from "@/components/ui";
+import { suggestCampaignTools } from "@/lib/campaign-tool-suggestions";
 import { loadToolWorkspace } from "@/lib/tool-workspace";
 import { connectionFeedback } from "@/lib/connection-attempt";
 import { requireUser } from "@/lib/dal";
-import { loadAgentWorkspace, savedCampaignToolAgents, workspaceId } from "@/lib/server/agent-workspace";
+import { loadAgentWorkspace, workspaceId } from "@/lib/server/agent-workspace";
+
 type Props = {
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
-export default function Page({ params, searchParams }: Props) {
-  return (
-    <Suspense fallback={<Loading label="Loading campaign…" />}>
-      <Detail params={params} searchParams={searchParams} />
-    </Suspense>
-  );
+
+export default function Page(props: Props) {
+  return <Suspense fallback={<Loading label="Loading campaign…" />}><Detail {...props} /></Suspense>;
 }
+
 async function Detail({ params, searchParams }: Props) {
   const { id } = await params;
   if (!workspaceId.safeParse(id).success) notFound();
@@ -36,34 +36,19 @@ async function Detail({ params, searchParams }: Props) {
     );
   }
 
-  const overview = <CampaignOverview workspace={records} campaign={saved} />;
-  const agents = savedCampaignToolAgents(records, saved);
-  if (!agents.length) {
-    return (
-      <div className="agent-playbook-page">
-        <Link className="back-link" href="/dashboard"><ArrowLeft size={14} aria-hidden="true" /> Campaigns</Link>
-        <header className="agent-page-heading">
-          <div>
-            <div className="agent-title-line">
-              <h1>{saved.name}</h1>
-              {saved.version && <span className="version-label">v{saved.version}</span>}
-            </div>
-            {saved.description && <p>{saved.description}</p>}
-          </div>
-        </header>
-        {overview}
-      </div>
-    );
-  }
-  const [workspace, query] = await Promise.all([loadToolWorkspace(), searchParams]);
+  const linkedPlaybook = records.playbooks.find((item) => item.id === saved.playbookId);
+  const brand = records.brands.find((item) => item.id === linkedPlaybook?.brandId);
+  const [workspace, query] = await Promise.all([loadToolWorkspace(suggestCampaignTools(saved, brand)), searchParams]);
+  const initialView = query.view === "mcp" ? "mcp"
+    : query.view === "tools" || query.view === "team" || (query.view !== "overview" && typeof query.agent === "string")
+      ? "tools" : "overview";
+
   return (
     <CampaignDetail
       campaign={saved}
-      agents={agents}
-      overview={overview}
+      overview={<CampaignOverview workspace={records} campaign={saved} />}
       {...workspace}
-      initialAgent={typeof query.agent === "string" ? query.agent : undefined}
-      initialView={typeof query.view === "string" ? query.view : undefined}
+      initialView={initialView}
       feedback={connectionFeedback(query.connection_result)}
     />
   );
