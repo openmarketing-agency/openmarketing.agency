@@ -8,6 +8,7 @@ import {
   BookOpen,
   ChevronRight,
   Cable,
+  ClipboardCheck,
   LogOut,
   Menu,
   MessageSquare,
@@ -42,8 +43,10 @@ function ConsoleFrame({
   const [open, setOpen] = useState(false);
   const home = demo ? "/demo" : "/dashboard";
   const isCampaignDetail = pathname.startsWith(demo ? "/demo/campaigns/" : "/campaigns/");
+  const isApprovalDetail = !demo && pathname.startsWith("/approvals/");
   const nav = [
     { href: home, label: "Campaigns", icon: BookOpen },
+    ...(!demo ? [{ href: "/approvals", label: "Approvals", icon: ClipboardCheck }] : []),
     {
       href: demo ? "/demo/connections" : "/connections",
       label: "Connections",
@@ -76,7 +79,7 @@ function ConsoleFrame({
         <nav className="sidebar-navigation" aria-label="Workspace">
           <div className="nav-label">Workspace</div>
           {nav.map(({ href, label: name, icon: Icon }) => {
-            const active = pathname === href || (href === home && isCampaignDetail);
+            const active = pathname === href || (href === home && isCampaignDetail) || (href === "/approvals" && isApprovalDetail);
             return (
               <Link key={href} href={href} onClick={() => setOpen(false)}
                 className={`nav-link${active ? " active" : ""}`}
@@ -118,7 +121,7 @@ function ConsoleFrame({
             <span>
               {isCampaignDetail
                 ? "Campaign details"
-                : nav.find(({ href }) => href === pathname)?.label ?? "Campaigns"}
+                : isApprovalDetail ? "Approvals" : nav.find(({ href }) => href === pathname)?.label ?? "Campaigns"}
             </span>
           </div>
         </header>
