@@ -1,7 +1,7 @@
 /** Displays linked brands, playbooks, and agent records from the mounted workspace. */
 
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 
 import type { AgentWorkspace, SavedCampaign } from "@/lib/server/agent-workspace";
 
@@ -37,11 +37,13 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
   const agentIds = new Set([...campaign.agentIds, ...workspace.agents.filter((agent) => agent.campaignId === campaign.id).map((agent) => agent.id)]);
   return (
     <div className="workspace-overview">
-      {(playbook?.brandId || campaign.playbookId || campaign.board) && (
+      {(playbook?.brandId || campaign.playbookId || campaign.board || campaign.model || campaign.installationState) && (
         <dl className="workspace-facts">
           {playbook?.brandId && <div><dt>Brand</dt><dd>{brand ? <Link href={"/workspace/brands/" + brand.id}>{brand.name}</Link> : playbook.brandId}</dd></div>}
           {campaign.playbookId && <div><dt>Playbook</dt><dd>{playbook ? <Link href={"/workspace/playbooks/" + playbook.id}>{playbook.name}</Link> : campaign.playbookId}</dd></div>}
           {campaign.board && <div><dt>Board</dt><dd>{campaign.board}</dd></div>}
+          {campaign.installationState && <div><dt>Installation</dt><dd>{campaign.installationState === "installed" ? "Installed" : campaign.installationState === "installing" ? "Installing" : campaign.installationState}</dd></div>}
+          {campaign.model && <div><dt>Campaign model</dt><dd>{campaign.model}</dd></div>}
         </dl>
       )}
       {campaign.goals.length > 0 && (
@@ -64,12 +66,14 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
               const agent = workspace.agents.find((item) => item.id === id && item.campaignId === campaign.id);
               return (
                 <li key={id}>
-                  <h3>{agent?.name || id}{id === campaign.orchestrator && <span className="workspace-agent-role">Coordinator</span>}</h3>
+                  <h3>{agent ? <Link href={"/workspace/agents/" + agent.id}>{agent.name}<ArrowUpRight size={13} aria-hidden="true" /></Link> : id}{id === campaign.orchestrator && <span className="workspace-agent-role">Coordinator</span>}</h3>
                   {agent?.description && <p>{agent.description}</p>}
+                  {agent?.model && <p>Model · {agent.model}</p>}
+                  {!!agent?.skills?.length && <p>Skills · {agent.skills.join(", ")}</p>}
                   {!!agent?.toolsets.length && <p>Toolsets · {agent.toolsets.join(", ")}</p>}
                   {!!agent?.jobs.length && (
                     <ul className="workspace-copy-list">
-                      {agent.jobs.map((job, index) => <li key={index}>{job.name}{job.schedule && " · " + job.schedule}</li>)}
+                      {agent.jobs.map((job, index) => <li key={index}>{[job.name, job.schedule, job.timezone, job.repeat ? job.repeat + (job.repeat === 1 ? " run" : " runs") : ""].filter(Boolean).join(" · ")}</li>)}
                     </ul>
                   )}
                 </li>

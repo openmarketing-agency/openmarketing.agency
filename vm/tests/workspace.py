@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from hermes_yaml import safe_load
 
 sys.path.insert(0, "/opt/oma")
-from workspace import WorkspaceError, records, update_record
+from workspace import WorkspaceError, agent_profile, brand_document, brand_logo, records, update_knowledge, update_record
 
 
 def must_reject(status, *args):
@@ -109,5 +109,73 @@ with TemporaryDirectory() as temporary:
     must_reject(409, root, "playbooks", "launch", {
         "revision": current["playbooks"][0]["revision"], "strategy": "Stale plan",
     })
+
+    # File-backed brand knowledge, Markdown reports, and assets stay within the brand record.
+    knowledge = current_brand.parent / "knowledge-base.md"
+    knowledge.write_text("# What we make\n\n| Plan | Goal |\n| --- | --- |\n| Launch | Reach |\n\n<script>alert(1)</script>\n\n[Unsafe](javascript:alert%281%29)\n\n![tracking](https://example.test/pixel.png)")
+    current_brand.write_text(
+        "id: example\nname: Current brand\ndescription: Original details\n"
+        "knowledge_base_file: knowledge-base.md\n"
+        "design_system: {guidelines: design/DESIGN.md, source_url: 'https://example.test/design'}\n"
+        "website: {status: verified, url: 'https://example.test', feed_url: 'https://example.test/feed'}\n"
+        "research: {market_report: research/market.md, competitor_report: ../outside.md}\n"
+        "logos: {mark: logos/mark.png, unsafe: logos/unsafe.svg}\n"
+    )
+    (current_brand.parent / "research").mkdir()
+    (current_brand.parent / "research" / "market.md").write_text("## Market observations\n")
+    (current_brand.parent / "design").mkdir()
+    (current_brand.parent / "design" / "DESIGN.md").write_text("## Typography\n")
+    (current_brand.parent / "docs" / "repo").mkdir(parents=True)
+    (current_brand.parent / "docs" / "repo" / "architecture.md").write_text("## Architecture\n")
+    outside = root / "outside.md"
+    outside.write_text("Outside data")
+    os.symlink(outside, current_brand.parent / "docs" / "linked.md")
+    os.link(outside, current_brand.parent / "docs" / "hardlink.md")
+    (current_brand.parent / "logos").mkdir()
+    (current_brand.parent / "logos" / "mark.png").write_bytes(bytes.fromhex("89504e470d0a1a0a"))
+    (current_brand.parent / "logos" / "unsafe.svg").write_text("<svg/>")
+    (agent.parent / "SOUL.md").write_text("## Research role\n\nUse public sources.\n")
+
+    active = records(root)["brands"][0]
+    assert active["knowledge"] == knowledge.read_text()
+    assert "<table>" in active["knowledgeHtml"] and "<h3>" in active["knowledgeHtml"]
+    assert all(value not in active["knowledgeHtml"] for value in ("<script>", "<img", "href=\"javascript:"))
+    assert active["channels"] == [{
+        "label": "Website", "status": "verified", "url": "https://example.test",
+        "feedUrl": "https://example.test/feed", "signupUrl": "",
+    }]
+    docs = {doc["path"]: doc["id"] for doc in active["documents"]}
+    assert set(docs) == {"design/DESIGN.md", "research/market.md", "docs/repo/architecture.md", "docs/hardlink.md"}
+    assert "Market observations" in brand_document(root, "example", docs["research/market.md"])["html"]
+    def reject_call(status, operation, *args):
+        try:
+            operation(*args)
+        except WorkspaceError as error:
+            assert error.status == status, str(error)
+        else:
+            raise AssertionError(f"Workspace operation should have returned {status}")
+
+    reject_call(404, brand_document, root, "example", "ffff")
+    reject_call(422, brand_document, root, "example", docs["docs/hardlink.md"])
+    assert brand_logo(root, "example", "mark")["mediaType"] == "image/png"
+    reject_call(422, brand_logo, root, "example", "unsafe")
+    assert "<h4>Research role</h4>" in agent_profile(root, "seo__researcher")["html"]
+
+    update_record(root, "brands", "example", {
+        "revision": active["revision"], "name": "New brand", "description": "Updated details",
+    })
+    assert safe_load(current_brand.read_text())["knowledge_base_file"] == "knowledge-base.md"
+    active = records(root)["brands"][0]
+    content_edit = {"revision": active["knowledgeRevision"], "knowledge_base": "# Revised knowledge\n"}
+    original_yaml = current_brand.read_bytes()
+    update_knowledge(root, "example", content_edit)
+    assert knowledge.read_text() == "# Revised knowledge\n"
+    assert current_brand.read_bytes() == original_yaml
+    reject_call(409, update_knowledge, root, "example", content_edit)
+    knowledge.unlink()
+    os.symlink(outside, knowledge)
+    broken = records(root)["brands"][0]
+    assert broken["knowledge"] == "" and "knowledgeRevision" not in broken
+    assert outside.read_text() == "Outside data"
 
 print("Workspace record reads and edits passed")

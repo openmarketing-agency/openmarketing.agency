@@ -4,9 +4,12 @@ The Unix socket is shared with the console. All paths and editable fields are
 fixed by the service, and runtime configuration and credentials stay private.
 """
 
+from base64 import b64encode
 from contextlib import ExitStack, contextmanager
 from hashlib import sha256
 from http.server import BaseHTTPRequestHandler
+from io import StringIO
+from itertools import chain
 import json
 import os
 from pathlib import Path
@@ -14,6 +17,9 @@ import re
 from secrets import token_hex
 from socketserver import UnixStreamServer
 import stat
+from urllib.parse import urlsplit
+
+from markdown_it import MarkdownIt
 
 from hermes_yaml import YAMLError, roundtrip_yaml, safe_load
 from ruamel.yaml.scalarstring import LiteralScalarString
@@ -42,16 +48,53 @@ def open_directory(path, parent=None):
         os.close(fd)
 
 
-def read_file(directory):
+def read_file(directory, name="config.yaml"):
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
-    with os.fdopen(os.open("config.yaml", flags, dir_fd=directory), "rb") as file:
+    with os.fdopen(os.open(name, flags, dir_fd=directory), "rb") as file:
         info = os.fstat(file.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_FILE_SIZE:
-            raise WorkspaceError(422, "This workspace record is not a supported YAML file.")
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_FILE_SIZE or (name != "config.yaml" and info.st_nlink != 1):
+            raise WorkspaceError(422, "This workspace file is unsupported.")
         source = file.read(MAX_FILE_SIZE + 1)
         if len(source) > MAX_FILE_SIZE:
-            raise WorkspaceError(422, "This workspace record is too large.")
+            raise WorkspaceError(422, "This workspace file is too large.")
         return source, stat.S_IMODE(info.st_mode)
+
+
+def relative_path(value):
+    if not isinstance(value, str) or len(value) > 512:
+        return None
+    parts = value.split("/")
+    if len(parts) > 16 or any(
+        not part or part.startswith(".") or re.search(r"[\\:#?%\x00-\x1f\x7f]", part)
+        for part in parts
+    ):
+        return None
+    return parts
+
+
+def markdown_path(value):
+    return relative_path(value) if isinstance(value, str) and value.endswith(".md") else None
+
+
+@contextmanager
+def open_relative_file(directory, parts):
+    if parts is None:
+        raise WorkspaceError(422, "The workspace file has an invalid path.")
+    # Open every component relative to the record, with symlinks disabled.
+    with ExitStack() as handles:
+        for part in parts[:-1]:
+            directory = handles.enter_context(open_directory(part, directory))
+        yield directory, parts[-1]
+
+
+def read_markdown(directory, reference):
+    with open_relative_file(directory, markdown_path(reference)) as (parent, name):
+        content, mode = read_file(parent, name)
+        return content.decode("utf-8"), content, mode
+
+
+def knowledge_revision(config, content):
+    return sha256(config + b"\0" + content).hexdigest()
 
 
 def valid_id(record_id):
@@ -86,7 +129,177 @@ def string_map(value):
     return {key: item for key, item in mapping(value).items() if isinstance(key, str) and isinstance(item, str)}
 
 
-def project(collection, source, record_id=None):
+def objects(value):
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def http_url(value):
+    if not isinstance(value, str) or len(value) > 2048 or re.search(r"[\s\\]", value):
+        return ""
+    try:
+        url = urlsplit(value)
+        return value if url.scheme in ("https", "http") and url.hostname and url.username is None else ""
+    except ValueError:
+        return ""
+
+
+# Markdown files are authored by the agent. Disable raw HTML and embedded images
+# and allow only credential-free HTTP links before rendering anything in the console.
+workspace_markdown = MarkdownIt("commonmark", {"html": False, "maxNesting": 24}).enable("table").disable("image")
+workspace_markdown.validateLink = lambda value: bool(http_url(value))
+
+
+def render_markdown(text, page_title=""):
+    if not text.strip():
+        return ""
+    env = {}
+    tokens = workspace_markdown.parse(text, env)
+    if page_title and len(tokens) >= 3 and tokens[0].tag == "h1" and tokens[1].content.strip() == page_title:
+        tokens = tokens[3:]
+    for token in tokens:
+        if token.type in ("heading_open", "heading_close"):
+            # A saved document sits below the console page and its section heading.
+            token.tag = "h" + str(min(6, 2 + int(token.tag[1:])))
+    return workspace_markdown.renderer.render(tokens, workspace_markdown.options, env)
+
+
+def discovery(label, value):
+    data = mapping(value)
+    if data.get("status") not in ("not_checked", "not_found", "verified") or not label:
+        return None
+    return {
+        "label": label, "status": data["status"],
+        "url": http_url(data.get("url")), "feedUrl": http_url(data.get("feed_url")),
+        "signupUrl": http_url(data.get("signup_url")),
+    }
+
+
+def nested_brand_documents(directory):
+    remaining = 1024
+
+    def walk(parent, prefix, depth):
+        nonlocal remaining
+        if remaining <= 0:
+            return
+        try:
+            with open_directory(prefix[-1], parent) as current:
+                for name in sorted(os.listdir(current))[:256]:
+                    if remaining <= 0:
+                        return
+                    remaining -= 1
+                    if not relative_path(name):
+                        continue
+                    parts = [*prefix, name]
+                    try:
+                        mode = os.stat(name, dir_fd=current, follow_symlinks=False).st_mode
+                    except OSError:
+                        continue
+                    if stat.S_ISDIR(mode) and depth < 5:
+                        yield from walk(current, parts, depth + 1)
+                    elif stat.S_ISREG(mode) and name.endswith(".md"):
+                        yield (name.removesuffix(".md"), "/".join(parts))
+        except OSError:
+            return
+
+    for folder in ("docs", "research", "design"):
+        yield from walk(directory, [folder], 0)
+
+
+def brand_documents(data, directory):
+    research = mapping(data.get("research"))
+    candidates = [
+        ("Design guidelines", mapping(data.get("design_system")).get("guidelines")),
+        ("Market report", research.get("market_report")),
+        ("Competitor report", research.get("competitor_report")),
+        ("Internal documentation", mapping(mapping(data.get("documentation")).get("internal_reference")).get("index")),
+    ]
+    candidates.extend(
+        (string(item.get("name")) + " research", item.get("report"))
+        for item in objects(research.get("competitors")) if string(item.get("name"))
+    )
+    candidates.extend(
+        (string(item.get("id")) + " repository notes", item.get("internal_docs"))
+        for item in objects(data.get("repositories")) if string(item.get("id"))
+    )
+    candidates.extend(
+        (provider.replace("_", " ") + " evidence", evidence.partition("#")[0])
+        for provider, value in mapping(data.get("integrations")).items()
+        if isinstance(provider, str) and (evidence := string(mapping(value).get("evidence")))
+    )
+    documents = []
+    seen = set()
+    for title, reference in chain(candidates, nested_brand_documents(directory)):
+        if markdown_path(reference) and reference not in seen:
+            documents.append({
+                "id": sha256(reference.encode()).hexdigest()[:16], "title": title, "path": reference,
+            })
+            seen.add(reference)
+            if len(documents) == 64:
+                break
+    return documents
+
+
+def brand_metadata(data, directory):
+    channels = mapping(data.get("channels"))
+    design = mapping(data.get("design_system"))
+    research = mapping(data.get("research"))
+    presence = [
+        discovery("Website", data.get("website")),
+        discovery("Blog", channels.get("blog")),
+        discovery("Newsletter", channels.get("newsletter")),
+        discovery("Public documentation", mapping(data.get("documentation")).get("public")),
+        *(discovery(string(item.get("platform")), item) for item in objects(channels.get("social"))),
+    ]
+    launches = [discovery(string(item.get("platform")), item) for item in objects(data.get("launches"))]
+    signals = []
+    for provider, value in mapping(data.get("integrations")).items():
+        signal = mapping(value)
+        if isinstance(provider, str) and signal.get("status") in ("observed", "not_checked", "not_detected"):
+            signals.append({"label": provider, "status": signal["status"], "signal": string(signal.get("signal"))})
+    repositories = []
+    for item in objects(data.get("repositories")):
+        url, label = http_url(item.get("url")), string(item.get("id"))
+        if url and label:
+            commit = string(item.get("analyzed_commit"))
+            repositories.append({
+                "label": label, "url": url,
+                "commit": commit if re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", commit) else "",
+            })
+    competitors = [
+        {"label": item["name"], "url": http_url(item.get("website")),
+         "sources": list(filter(None, map(http_url, strings(item.get("sources")))))}
+        for item in objects(research.get("competitors")) if string(item.get("name"))
+    ]
+    return {
+        "channels": [item for item in presence if item],
+        "launches": [item for item in launches if item],
+        "signals": signals, "repositories": repositories, "competitors": competitors,
+        "designSource": http_url(design.get("source_url")),
+        "documents": brand_documents(data, directory),
+    }
+
+
+def brand_knowledge(data, source, directory):
+    if "knowledge_base_file" not in data:
+        text = string(data.get("knowledge_base"))
+        return {"knowledge": text, "knowledgeHtml": render_markdown(text)}
+    reference = data["knowledge_base_file"]
+    result = {"knowledge": "", "knowledgeFile": reference if markdown_path(reference) else ""}
+    try:
+        text, content, _ = read_markdown(directory, reference)
+    except (OSError, UnicodeError, WorkspaceError):
+        return result
+    return {
+        **result, "knowledge": text, "knowledgeHtml": render_markdown(text),
+        "knowledgeRevision": knowledge_revision(source, content),
+    }
+
+
+def model_name(value):
+    return string(value) or string(mapping(value).get("default"))
+
+
+def project(collection, source, directory, record_id=None):
     data = parse_record(source, record_id)
     record_id = data["id"]
     record = {
@@ -95,14 +308,16 @@ def project(collection, source, record_id=None):
     }
     if collection == "brands":
         return {
-            **record, "revision": sha256(source).hexdigest(), "knowledge": string(data.get("knowledge_base")),
+            **record, "revision": sha256(source).hexdigest(), **brand_knowledge(data, source, directory),
+            **brand_metadata(data, directory),
             "palette": string_map(data.get("palette")), "logos": string_map(data.get("logos")),
             "assets": {key: strings(data.get(key)) for key in ("fonts", "illustrations", "icons", "backgrounds", "images")},
         }
     if collection == "playbooks":
+        strategy = string(data.get("strategy"))
         return {
             **record, "revision": sha256(source).hexdigest(),
-            "brandId": string(data.get("brand_id")), "strategy": string(data.get("strategy")),
+            "brandId": string(data.get("brand_id")), "strategy": strategy, "strategyHtml": render_markdown(strategy),
         }
     if collection == "campaigns":
         return {
@@ -110,13 +325,20 @@ def project(collection, source, record_id=None):
             "orchestrator": string(data.get("orchestrator")), "agentIds": strings(data.get("agents")),
             "goals": strings(data.get("goals")), "plans": strings(data.get("plans")),
             "board": string(data.get("kanban_board_name")) or string(data.get("kanban_board")),
+            "installationState": string(data.get("installation_state")), "model": model_name(data.get("model")),
         }
     jobs = data.get("jobs")
     return {
         **record, "campaignId": string(data.get("campaign_id")),
         "toolsets": strings(mapping(data.get("agent")).get("enabled_toolsets")),
+        "skills": strings(data.get("oma_skills")),
+        "model": model_name(mapping(data.get("effective")).get("model")) or model_name(data.get("model")),
         "jobs": [
-            {"name": string(job.get("name")) or string(job.get("id")), "schedule": string(job.get("schedule"))}
+            {
+                "name": string(job.get("name")) or string(job.get("id")), "schedule": string(job.get("schedule")),
+                **({"timezone": job["timezone"]} if string(job.get("timezone")) else {}),
+                **({"repeat": job["repeat"]} if type(job.get("repeat")) is int and job["repeat"] > 0 else {}),
+            }
             for job in jobs if isinstance(job, dict)
         ] if isinstance(jobs, list) else [],
     }
@@ -132,7 +354,7 @@ def records(root):
                 try:
                     with open_directory(path, workspace) as record:
                         source, _ = read_file(record)
-                    singletons[collection] = project(collection, source)
+                        singletons[collection] = project(collection, source, record)
                 except FileNotFoundError:
                     continue
                 except (OSError, WorkspaceError):
@@ -146,7 +368,7 @@ def records(root):
                             try:
                                 with open_directory(record_id, directory) as record:
                                     source, _ = read_file(record)
-                                result[collection].append(project(collection, source, record_id))
+                                result[collection].append(project(collection, source, record, record_id))
                             except (OSError, WorkspaceError):
                                 skipped += 1
                 except FileNotFoundError:
@@ -183,10 +405,26 @@ def open_editable_record(workspace, collection, record_id):
         yield record, source, mode
 
 
-def update_record(root, collection, record_id, request):
-    fields = EDITABLE.get(collection)
-    if not fields or not valid_id(record_id):
-        raise WorkspaceError(404, "This workspace record was not found.")
+def replace_file(directory, name, mode, content, still_current):
+    temp = ".workspace-" + token_hex(12) + ".tmp"
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=directory)
+    try:
+        with os.fdopen(fd, "wb") as file:
+            file.write(content)
+            file.flush()
+            os.fchmod(file.fileno(), mode & 0o666)
+            os.fsync(file.fileno())
+        if not still_current():
+            raise WorkspaceError(409, "This record changed while you were editing. Reopen it and try again.")
+        os.replace(temp, name, src_dir_fd=directory, dst_dir_fd=directory)
+    finally:
+        try:
+            os.unlink(temp, dir_fd=directory)
+        except FileNotFoundError:
+            pass
+
+
+def validate_edit(request, fields):
     if not isinstance(request, dict) or set(request) != {"revision", *fields}:
         raise WorkspaceError(422, "Some workspace fields are missing or invalid.")
     for field in fields:
@@ -194,36 +432,99 @@ def update_record(root, collection, record_id, request):
         limit = 120 if field == "name" else 4_000 if field == "description" else 48_000
         if not isinstance(value, str) or len(value) > limit or "\0" in value or (field == "name" and not value.strip()):
             raise WorkspaceError(422, "Some workspace fields are missing or invalid.")
+
+
+@contextmanager
+def editable_record(root, collection, record_id):
+    if collection not in EDITABLE or not valid_id(record_id):
+        raise WorkspaceError(404, "This workspace record was not found.")
     try:
         with open_directory(root) as workspace, open_editable_record(workspace, collection, record_id) as entry:
-            record, source, mode = entry
-            if request["revision"] != sha256(source).hexdigest():
-                raise WorkspaceError(409, "This record changed while you were editing. Reopen it and try again.")
-            yaml = roundtrip_yaml()
-            data = yaml.load(source)
-            for field in fields:
-                value = request[field]
-                data[field] = LiteralScalarString(value) if "\n" in value else value
-            temp = ".config-" + token_hex(12) + ".tmp"
-            fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=record)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as file:
-                    yaml.dump(data, file)
-                    file.flush()
-                    os.fchmod(file.fileno(), mode & 0o666)
-                    os.fsync(file.fileno())
-                if read_file(record)[0] != source:
-                    raise WorkspaceError(409, "This record changed while you were editing. Reopen it and try again.")
-                os.replace(temp, "config.yaml", src_dir_fd=record, dst_dir_fd=record)
-            finally:
-                try:
-                    os.unlink(temp, dir_fd=record)
-                except FileNotFoundError:
-                    pass
+            yield entry
     except (FileNotFoundError, NotADirectoryError):
-        raise WorkspaceError(404, "This workspace record was not found.") from None
+        raise WorkspaceError(404, "This workspace record or file was not found.") from None
     except (UnicodeError, YAMLError, RecursionError):
-        raise WorkspaceError(422, "This workspace record contains invalid YAML.") from None
+        raise WorkspaceError(422, "This workspace record contains invalid text.") from None
+
+
+def update_record(root, collection, record_id, request):
+    with editable_record(root, collection, record_id) as (record, source, mode):
+        data = parse_record(source)
+        fields = ("name", "description") if collection == "brands" and "knowledge_base_file" in data else EDITABLE[collection]
+        validate_edit(request, fields)
+        if request["revision"] != sha256(source).hexdigest():
+            raise WorkspaceError(409, "This record changed while you were editing. Reopen it and try again.")
+        yaml = roundtrip_yaml()
+        document = yaml.load(source)
+        for field in fields:
+            value = request[field]
+            document[field] = LiteralScalarString(value) if "\n" in value else value
+        text = StringIO()
+        yaml.dump(document, text)
+        replace_file(record, "config.yaml", mode, text.getvalue().encode(), lambda: read_file(record)[0] == source)
+
+
+def update_knowledge(root, record_id, request):
+    validate_edit(request, ("knowledge_base",))
+    with editable_record(root, "brands", record_id) as (record, source, _):
+        reference = parse_record(source).get("knowledge_base_file")
+        with open_relative_file(record, markdown_path(reference)) as (parent, name):
+            content, mode = read_file(parent, name)
+            if request["revision"] != knowledge_revision(source, content):
+                raise WorkspaceError(409, "This record changed while you were editing. Reopen it and try again.")
+
+            def still_current():
+                if read_file(record)[0] != source:
+                    return False
+                with open_relative_file(record, markdown_path(reference)) as (current, current_name):
+                    before, after = os.fstat(parent), os.fstat(current)
+                    return (before.st_dev, before.st_ino) == (after.st_dev, after.st_ino) and read_file(current, current_name)[0] == content
+
+            replace_file(parent, name, mode, request["knowledge_base"].encode(), still_current)
+
+
+def brand_document(root, record_id, document_id):
+    with editable_record(root, "brands", record_id) as (record, source, _):
+        document = next((item for item in brand_documents(parse_record(source), record) if item["id"] == document_id), None)
+        if document is None:
+            raise WorkspaceError(404, "This brand document was not found.")
+        content = read_markdown(record, document["path"])[0]
+        return {**document, "content": content, "html": render_markdown(content)}
+
+
+def brand_logo(root, record_id, logo_id):
+    with editable_record(root, "brands", record_id) as (record, source, _):
+        reference = string_map(parse_record(source).get("logos")).get(logo_id)
+        parts = relative_path(reference)
+        if not parts or parts[0] != "logos":
+            raise WorkspaceError(404, "This brand logo was not found.")
+        with open_relative_file(record, parts) as (parent, name):
+            content, _ = read_file(parent, name)
+        if content.startswith(bytes.fromhex("89504e470d0a1a0a")):
+            media = "image/png"
+        elif content.startswith(bytes.fromhex("ffd8ff")):
+            media = "image/jpeg"
+        elif content.startswith((b"GIF87a", b"GIF89a")):
+            media = "image/gif"
+        elif content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+            media = "image/webp"
+        else:
+            raise WorkspaceError(422, "This brand logo does not have a supported preview format.")
+        return {"mediaType": media, "content": b64encode(content).decode("ascii")}
+
+
+def agent_profile(root, record_id):
+    if not valid_id(record_id):
+        raise WorkspaceError(404, "This agent profile was not found.")
+    try:
+        with open_directory(root) as workspace, open_directory("agents", workspace) as agents, open_directory(record_id, agents) as agent:
+            data = parse_record(read_file(agent)[0], record_id)
+            content = read_markdown(agent, "SOUL.md")[0]
+            return {"content": content, "html": render_markdown(content, string(data.get("name")))}
+    except (FileNotFoundError, NotADirectoryError):
+        raise WorkspaceError(404, "This agent profile was not found.") from None
+    except UnicodeError:
+        raise WorkspaceError(422, "This agent profile contains invalid text.") from None
 
 
 class WorkspaceHandler(BaseHTTPRequestHandler):
@@ -244,19 +545,32 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self):
-        if self.path != "/workspace":
-            self.reply(404, {"message": "Unknown workspace request."})
-            return
+        document = re.fullmatch(r"/workspace/brands/([^/]+)/documents/([a-f0-9]{16})", self.path)
+        logo = re.fullmatch(r"/workspace/brands/([^/]+)/logos/([A-Za-z0-9_-]{1,64})", self.path)
+        profile = re.fullmatch(r"/workspace/agents/([^/]+)/profile", self.path)
         try:
-            result = records(self.server.root)
+            if self.path == "/workspace":
+                result = records(self.server.root)
+            elif document:
+                result = brand_document(self.server.root, *document.groups())
+            elif logo:
+                result = brand_logo(self.server.root, *logo.groups())
+            elif profile:
+                result = agent_profile(self.server.root, profile[1])
+            else:
+                self.reply(404, {"message": "Unknown workspace request."})
+                return
+        except WorkspaceError as error:
+            self.reply(error.status, {"message": str(error)})
+            return
         except OSError:
             self.reply(503, {"message": "Could not read the agent workspace."})
             return
         self.reply(200, result)
 
     def do_PUT(self):
-        path = re.fullmatch(r"/workspace/([^/]+)/([^/]+)", self.path)
-        if not path:
+        path = re.fullmatch(r"/workspace/([^/]+)/([^/]+)(/knowledge)?", self.path)
+        if not path or (path[3] and path[1] != "brands"):
             self.reply(404, {"message": "Unknown workspace request."})
             return
         try:
@@ -264,7 +578,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if not 0 < length <= MAX_FILE_SIZE:
                 raise WorkspaceError(413, "The workspace update is too large.")
             request = json.loads(self.rfile.read(length))
-            update_record(self.server.root, *path.groups(), request)
+            if path[3]:
+                update_knowledge(self.server.root, path[2], request)
+            else:
+                update_record(self.server.root, path[1], path[2], request)
         except (ValueError, RecursionError):
             self.reply(400, {"message": "Invalid workspace update."})
         except WorkspaceError as error:
