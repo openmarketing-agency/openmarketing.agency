@@ -1,14 +1,29 @@
-/* Retains the cloud chat layout and uses the console’s existing colors and spacing. */
+/* Keeps the workspace chat focused on the transcript, current status, and composer. */
+.chat-page { max-width: 58rem; margin-inline: auto; }
 .chat-page .runtime-chat {
   display: flex;
   flex-direction: column;
-  min-height: 440px;
-  padding: 0;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
 }
-.runtime-chat .surface-heading {
-  padding: 20px 24px;
+.chat-page-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px 24px;
   border-bottom: 1px solid var(--border);
 }
+.chat-page-heading h1 {
+  font-size: 1.625rem;
+  line-height: 1.15;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.chat-page-heading .playbook-mark { width: 42px; height: 42px; }
 .chat-status {
   padding: 4px 9px;
   border-radius: 20px;
@@ -17,14 +32,14 @@
   font-size: 12px;
   font-weight: 600;
 }
-.chat-status.is-ready { background: #e7f5ed; color: #216344; }
+.chat-status.is-ready { background: var(--positive-soft); color: var(--positive); }
 .runtime-empty {
   display: grid;
   justify-items: center;
   align-content: center;
   flex: 1;
   gap: 10px;
-  min-height: 285px;
+  min-height: 190px;
   padding: 28px 20px;
   text-align: center;
 }
@@ -38,8 +53,8 @@
   flex-direction: column;
   flex: 1;
   gap: 13px;
-  min-height: 190px;
-  max-height: 32rem;
+  min-height: min(34vh, 18rem);
+  max-height: max(16rem, 49vh);
   overflow: auto;
   padding: 18px 24px;
 }
@@ -47,6 +62,8 @@
   margin: auto;
   text-align: center;
 }
+.runtime-conversation-empty h2, .runtime-empty h2 { font-size: 1.125rem; font-weight: 650; }
+.runtime-conversation-empty p { margin-top: 5px; }
 .runtime-working {
   display: flex;
   align-items: center;
@@ -110,7 +127,7 @@
 
 @media (max-width: 520px) {
   .chat-page { padding: 21px 15px; }
-  .runtime-chat .surface-heading,
+  .chat-page-heading,
   .runtime-messages,
   .runtime-composer { padding-inline: 15px; }
 }

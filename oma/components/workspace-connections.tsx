@@ -26,8 +26,8 @@ export function WorkspaceConnections({
     <div className="agent-library-page workspace-connections-page">
       <header className="agent-library-heading">
         <div>
-          <h1>Connections</h1>
-          <p>Find the tools for your work, from analytics to web search.</p>
+          <h1>Tool connections</h1>
+          <p>Connect an account here, then add the tool to any campaign that needs it.</p>
         </div>
       </header>
       {error && (
@@ -44,10 +44,9 @@ export function WorkspaceConnections({
         demoCatalog={demoCatalog}
         onChange={(next) => setCurrent(next)}
       />
-      <p className="connections-sharing-note">
-        Accounts can be used by multiple campaigns. Disconnecting an account
-        affects every campaign using it.
-      </p>
+      {(current.configured || demo) && (
+        <p className="connections-sharing-note">Disconnecting an account affects every campaign using it.</p>
+      )}
     </div>
   );
 }

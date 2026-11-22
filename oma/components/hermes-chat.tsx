@@ -1,10 +1,10 @@
-/** Renders the cloud chat interface with a connection to the local Hermes gateway. */
+/** Shows the default oma-agent conversation, clarifications, and run progress. */
 
 "use client";
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { LoaderCircle, MessageSquare, RefreshCw, Send } from "lucide-react";
+import { Bot, LoaderCircle, RefreshCw, Send } from "lucide-react";
 
 import { answerChatPrompt, readChatTurn, sendChatMessage } from "@/app/actions/chat";
 import { maxChatMessageLength, type AgentPrompt, type AgentStatus } from "@/lib/agent-chat";
@@ -46,9 +46,9 @@ export function HermesChat({ status }: { status: AgentStatus }) {
           }
           if (result.data.status === "completed") {
             const { answer } = result.data;
-            if (answer) setMessages((previous) => [...previous, { author: "Hermes", text: answer }]);
+            if (answer) setMessages((previous) => [...previous, { author: "oma-agent", text: answer }]);
           } else {
-            setError("Hermes couldn’t finish this turn. Send a message to continue.");
+            setError("oma-agent couldn’t finish this turn. Send a message to continue.");
           }
         } else {
           setError(result.message);
@@ -61,7 +61,7 @@ export function HermesChat({ status }: { status: AgentStatus }) {
         setHandle(undefined);
       } catch {
         if (cancelled) return;
-        setError("Reconnecting to Hermes…");
+        setError("Reconnecting to oma-agent…");
         retry = setTimeout(() => void poll(turn), 3000);
       }
     }
@@ -94,15 +94,22 @@ export function HermesChat({ status }: { status: AgentStatus }) {
   }
 
   return (
-    <section className="panel runtime-chat" aria-labelledby="chat-heading">
-      <header className="surface-heading">
-        <span className="playbook-mark"><MessageSquare size={21} aria-hidden="true" /></span>
-        <div><h2 id="chat-heading">Hermes</h2></div>
-        <span className={status.ready ? "chat-status is-ready" : "chat-status"}>{status.ready ? "Connected" : "Unavailable"}</span>
+    <section className="runtime-chat" aria-labelledby="chat-heading">
+      <header className="chat-page-heading">
+        <div className="surface-heading">
+          <span className="playbook-mark"><Bot size={24} aria-hidden="true" /></span>
+          <div><h1 id="chat-heading">Chat with oma-agent</h1><p>Default profile</p></div>
+        </div>
+        <span role="status" className={status.ready ? "chat-status is-ready" : "chat-status"}>{status.ready ? "Connected" : "Offline"}</span>
       </header>
       {status.ready ? <>
         <div className="runtime-messages" ref={transcript} role="log" aria-label="Conversation">
-          {!messages.length && !sending && <p className="runtime-conversation-empty">Tell Hermes what you’d like to work on.</p>}
+          {!messages.length && !sending && (
+            <div className="runtime-conversation-empty">
+              <h2>What would you like to work on?</h2>
+              <p>Ask about your workspace or get help planning your next campaign.</p>
+            </div>
+          )}
           {messages.map(({ author, text }, index) => (
             <div key={index} className={author === "You" ? "runtime-message from-user" : "runtime-message"}>
               <strong>{author}</strong><p>{text}</p>
@@ -110,7 +117,7 @@ export function HermesChat({ status }: { status: AgentStatus }) {
           ))}
           {sending && <div className="runtime-message from-user"><strong>You</strong><p>{message.trim()}</p></div>}
           {(sending || (handle && !prompt)) && <p className="runtime-working" role="status">
-            <LoaderCircle size={16} aria-hidden="true" /> Hermes is working…
+            <LoaderCircle size={16} aria-hidden="true" /> oma-agent is working…
           </p>}
         </div>
         {error && <p className="form-error chat-error" role="alert">{error}</p>}
@@ -119,15 +126,22 @@ export function HermesChat({ status }: { status: AgentStatus }) {
           const result = await answerChatPrompt(handle, { id, generation, kind, answer });
           return result.ok ? undefined : result.message;
         }} /> : <form className="runtime-form runtime-composer" onSubmit={(event) => { event.preventDefault(); void send(message.trim()); }}>
-          <label htmlFor="hermes-message">Message</label>
+          <label htmlFor="hermes-message" className="sr-only">Message oma-agent</label>
           <textarea id="hermes-message" value={message} onChange={(event) => setMessage(event.target.value)}
-            placeholder="Ask Hermes…" maxLength={maxChatMessageLength} rows={3} required disabled={sending || !!handle} />
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void send(message.trim());
+              }
+            }}
+            placeholder="Message oma-agent…" maxLength={maxChatMessageLength} rows={3} required disabled={sending || !!handle} />
           <button className="btn primary" disabled={sending || !!handle || !message.trim()}>
             <Send size={16} aria-hidden="true" /> Send message
           </button>
         </form>}
       </> : (
         <div className="runtime-empty">
+          <h2>Connect to your agent</h2>
           <p>{status.message}</p>
           <button className="btn secondary" disabled={refreshing} onClick={() => startTransition(() => router.refresh())}>
             <RefreshCw size={16} aria-hidden="true" /> {refreshing ? "Checking…" : "Check connection"}

@@ -5,7 +5,7 @@
 import { ArrowRight, GitFork, Globe } from "lucide-react";
 import { useActionState, useState } from "react";
 
-import { submitProjectSetup, type ProjectSetupFormState } from "@/app/actions/project-setup";
+import { skipProjectSetup, submitProjectSetup, type ProjectSetupFormState } from "@/app/actions/project-setup";
 import type { ProjectLinks } from "@/lib/server/project-setup";
 
 const emptyState: ProjectSetupFormState = {};
@@ -32,7 +32,7 @@ export function ProjectForm({ initialLinks, needsRetry }: { initialLinks?: Proje
         {errors?.websiteUrl && <p className="project-setup-error" id="project-website-error" role="alert">{errors.websiteUrl}</p>}
       </div>
       <div className="project-setup-field">
-        <label htmlFor="project-github">GitHub URL</label>
+        <label htmlFor="project-github">GitHub repository URL</label>
         <div className="project-setup-input">
           <GitFork size={18} aria-hidden="true" />
           <input id="project-github" name="githubUrl" inputMode="url" autoComplete="off"
@@ -43,10 +43,13 @@ export function ProjectForm({ initialLinks, needsRetry }: { initialLinks?: Proje
         {errors?.githubUrl && <p className="project-setup-error" id="project-github-error" role="alert">{errors.githubUrl}</p>}
       </div>
       {state.message && <p className="project-setup-error" role="alert">{state.message}</p>}
-      <button type="submit" className="project-setup-submit" disabled={pending}>
-        {pending ? "Sending to oma-agent…" : needsRetry || state.saved ? "Retry sending" : "Open workspace"}
-        <ArrowRight size={19} aria-hidden="true" />
-      </button>
+      <div className="project-setup-actions">
+        <button type="submit" className="btn primary" disabled={pending}>
+          {pending ? "Sending to oma-agent…" : needsRetry || state.saved ? "Retry setup" : "Start setup"}
+          <ArrowRight size={16} aria-hidden="true" />
+        </button>
+        <button type="submit" className="btn ghost" formAction={skipProjectSetup} formNoValidate disabled={pending}>Skip setup</button>
+      </div>
     </form>
   );
 }

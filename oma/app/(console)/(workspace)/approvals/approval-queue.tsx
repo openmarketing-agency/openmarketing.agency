@@ -24,6 +24,7 @@ export function ApprovalQueue({ userId }: { userId: string }) {
       items: approvals.filter((item) => item.campaign === group.id && (status === "all" || status === item.status)),
     }))
     .filter((group) => group.items.length > 0);
+  const shown = groups.reduce((count, group) => count + group.items.length, 0);
 
   return (
     <div className="page-content approvals-page">
@@ -37,18 +38,19 @@ export function ApprovalQueue({ userId }: { userId: string }) {
 
       <div className="approvals-toolbar">
         <p className="approvals-count" aria-live="polite">
-          <ClipboardCheck size={17} aria-hidden="true" /> {pending} pending review
+          <ClipboardCheck size={17} aria-hidden="true" /> {shown} {shown === 1 ? "draft" : "drafts"} shown
+          <span className="approvals-pending">{pending} pending review</span>
         </p>
         <div className="approvals-filters">
           <label>
-            <span className="sr-only">Campaign</span>
+            <span>Campaign</span>
             <select value={campaign} onChange={(event) => setCampaign(event.target.value)}>
               <option value="all">All campaigns</option>
               {approvalCampaigns.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
             </select>
           </label>
           <label>
-            <span className="sr-only">Approval status</span>
+            <span>Status</span>
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="all">All statuses</option>
               {Object.entries(approvalStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

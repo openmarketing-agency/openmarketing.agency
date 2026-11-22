@@ -1,4 +1,4 @@
-/** Shows the signed-in user’s chat and the local gateway connection state. */
+/** Opens the signed-in user’s conversation with oma-agent’s default profile. */
 
 import { Suspense } from "react";
 
@@ -14,11 +14,7 @@ export const metadata = { title: "Chat" };
 async function Chat() {
   await requireUser();
   return (
-    <div className="workspace-page chat-page">
-      <header className="workspace-heading">
-        <h1>Chat</h1>
-        <p>Talk with your Hermes agent.</p>
-      </header>
+    <div className="agent-library-page chat-page">
       <HermesChat status={await agentStatus("default")} />
     </div>
   );

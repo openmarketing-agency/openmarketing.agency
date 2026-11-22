@@ -304,6 +304,8 @@
 .campaign-planner[hidden] { display: none; }
 .campaign-plan-heading { align-items: center; justify-content: space-between; }
 .campaign-reading .campaign-plan-heading h2 { margin: 0; }
+.campaign-plan-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.campaign-plan-feedback { margin-top: 12px; }
 
 .campaign-plan-form { margin-top: 18px; max-width: none; }
 .campaign-plan-form .campaign-plan-items { gap: 7px; min-inline-size: 0; }
@@ -331,6 +333,7 @@
 }
 .campaign-chat-heading svg { color: var(--accent); }
 .campaign-chat-heading h2 { font-size: 1rem; font-weight: 650; }
+.campaign-chat-heading p { font-size: 0.8125rem; }
 .campaign-plan-messages {
   display: flex;
   flex-direction: column;

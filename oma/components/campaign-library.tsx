@@ -12,6 +12,7 @@ type SavedCampaignSummary = {
   description: string;
   version: string;
   agentCount: number;
+  status?: string;
   playbook?: { id: string; name: string };
   brand?: { id: string; name: string };
 };
@@ -52,7 +53,7 @@ export function CampaignLibrary({ setup, sidebar, notice, saved }: {
           )}
           {filtered.length > 0 && (
             <ul className="campaign-list">
-              {filtered.map(({ id, name, description, version, brand, playbook, agentCount }) => (
+              {filtered.map(({ id, name, description, version, brand, playbook, agentCount, status }) => (
                 <li className="campaign-entry" key={id}>
                   <h2>
                     <Link className="campaign-entry-link" href={"/campaigns/" + id}>
@@ -61,6 +62,7 @@ export function CampaignLibrary({ setup, sidebar, notice, saved }: {
                   </h2>
                   {description && <p>{description}</p>}
                   <div className="campaign-entry-context">
+                    {status && <span className="campaign-deployment-status" data-state={status}>{status}</span>}
                     <span className="campaign-agent-count"><Users size={14} aria-hidden="true" />{agentCount} {agentCount === 1 ? "agent" : "agents"}</span>
                     {brand && <Link href={"/workspace/brands/" + brand.id}>{brand.name}</Link>}
                     {playbook && <Link href={"/workspace/playbooks/" + playbook.id}>{playbook.name}</Link>}

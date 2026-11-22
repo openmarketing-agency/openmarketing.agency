@@ -167,9 +167,9 @@ export function CampaignDetail({
               <aside className="campaign-context">
                 <h3>Campaign summary</h3>
                 <dl>
-                  <div><dt>Plan</dt><dd>{goals.length} {goals.length === 1 ? "goal" : "goals"} · {plans.length} {plans.length === 1 ? "step" : "steps"}</dd></div>
-                  <div><dt>Agents</dt><dd>{agentCount}</dd></div>
-                  <div><dt>Selected tools</dt><dd>{selected.length}</dd></div>
+                  <div><dt>Plan</dt><dd><Link {...viewLink("overview")}>{goals.length} {goals.length === 1 ? "goal" : "goals"} · {plans.length} {plans.length === 1 ? "step" : "steps"}</Link></dd></div>
+                  <div><dt>Agents</dt><dd><Link {...viewLink("agents")}>{agentCount} {agentCount === 1 ? "agent" : "agents"}</Link></dd></div>
+                  <div><dt>Tools</dt><dd><Link {...viewLink("tools")}>{selected.length} selected</Link></dd></div>
                 </dl>
               </aside>
               <CampaignSettings key="deploy" deploy campaignId={campaign.id} configuration={configuration} modelDefaults={modelDefaults} />

@@ -41,6 +41,8 @@ async function Dashboard() {
     const brand = records.brands.find((item) => item.id === playbook?.brandId);
     return {
       id: campaign.id, name: campaign.name, description: campaign.description, version: campaign.version,
+      status: campaign.installationState === "installed" ? "Installed" : campaign.installationState === "installing" ? "Installation incomplete"
+        : campaign.board ? undefined : "Draft",
       agentCount: campaignAgentIds(records, campaign).length, playbook: playbook && { id: playbook.id, name: playbook.name },
       brand: brand && { id: brand.id, name: brand.name },
     };

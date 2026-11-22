@@ -1,26 +1,16 @@
+/** Provides persistent workspace navigation and orientation across the console. */
+
 "use client";
-import { Suspense, useState, type ReactNode } from "react";
-import Image from "next/image";
+
+import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  ArrowUpRight,
-  BookOpen,
-  ChevronRight,
-  Cable,
-  ClipboardCheck,
-  LogOut,
-  Menu,
-  MessageSquare,
-  X,
-} from "lucide-react";
+import { ArrowUpRight, ChevronRight, ClipboardCheck, LogOut, Megaphone, MessageSquare, Plug } from "lucide-react";
+
 import { logoutAction } from "@/app/actions/auth";
 import { Brand } from "@/components/brand";
-type ConsoleProps = {
-  email?: string;
-  demo?: boolean;
-  children: ReactNode;
-};
+
+type ConsoleProps = { email?: string; demo?: boolean; children: ReactNode };
 
 export function ConsoleShell(props: ConsoleProps) {
   return (
@@ -34,108 +24,69 @@ function PathAwareConsole(props: ConsoleProps) {
   return <ConsoleFrame {...props} pathname={usePathname()} />;
 }
 
-function ConsoleFrame({
-  email,
-  demo = false,
-  children,
-  pathname,
-}: ConsoleProps & { pathname: string }) {
-  const [open, setOpen] = useState(false);
+function AccountAction({ demo }: { demo: boolean }) {
+  return demo ? (
+    <Link href="/login" className="icon-button" aria-label="Go to sign in"><LogOut size={17} aria-hidden="true" /></Link>
+  ) : (
+    <form action={logoutAction}>
+      <button className="icon-button" aria-label="Sign out"><LogOut size={17} aria-hidden="true" /></button>
+    </form>
+  );
+}
+
+function ConsoleFrame({ email, demo = false, children, pathname }: ConsoleProps & { pathname: string }) {
   const home = demo ? "/demo" : "/dashboard";
-  const isCampaignDetail = pathname.startsWith(demo ? "/demo/campaigns/" : "/campaigns/");
-  const isApprovalDetail = !demo && pathname.startsWith("/approvals/");
-  const recordCollection = !demo && pathname.match(/^\/workspace\/(brands|playbooks|agents)\//)?.[1];
+  const campaignDetail = pathname.startsWith(demo ? "/demo/campaigns/" : "/campaigns/");
+  const approvalDetail = !demo && pathname.startsWith("/approvals/");
+  const record = !demo && pathname.match(/^\/workspace\/(brands|playbooks|agents)\//)?.[1];
   const nav = [
-    { href: home, label: "Campaigns", icon: BookOpen },
-    ...(!demo ? [{ href: "/approvals", label: "Approvals", icon: ClipboardCheck }] : []),
-    {
-      href: demo ? "/demo/connections" : "/connections",
-      label: "Connections",
-      icon: Cable,
-    },
-    ...(!demo ? [{ href: "/chat", label: "Chat", icon: MessageSquare }] : []),
+    { href: home, label: "Campaigns", icon: Megaphone, active: pathname === home || campaignDetail || Boolean(record) },
+    ...(!demo ? [{ href: "/approvals", label: "Approvals", icon: ClipboardCheck, active: pathname === "/approvals" || approvalDetail }] : []),
+    { href: demo ? "/demo/connections" : "/connections", label: "Tools", icon: Plug, active: pathname === (demo ? "/demo/connections" : "/connections") },
+    ...(!demo ? [{ href: "/chat", label: "Chat", icon: MessageSquare, active: pathname === "/chat" }] : []),
   ];
+  const current = campaignDetail ? "Campaign details"
+    : record === "brands" ? "Brand details"
+      : record === "playbooks" ? "Playbook details"
+        : record === "agents" ? "Agent profile"
+          : approvalDetail ? "Review draft" : nav.find(({ active }) => active)?.label ?? "Campaigns";
+
   return (
     <div className="console-frame">
       <header className="mobile-header">
         <Brand href={home} />
-        <button
-          className="icon-button"
-          onClick={() => setOpen(!open)}
-          aria-label={open ? "Close navigation" : "Open navigation"}
-          aria-expanded={open}
-          aria-controls="console-navigation"
-        >
-          {open ? <X size={20} /> : <Menu size={20} />}
-        </button>
+        {email && <AccountAction demo={demo} />}
       </header>
-      <aside
-        className={`sidebar ${open ? "is-open" : ""}`}
-        id="console-navigation"
-        aria-label="Main navigation"
-      >
-        <div className="sidebar-brand">
-          <Brand href={home} />
-        </div>
+      <aside className="sidebar" aria-label="Main navigation">
+        <div className="sidebar-brand"><Brand href={home} /></div>
         <nav className="sidebar-navigation" aria-label="Workspace">
-          <div className="nav-label">Workspace</div>
-          {nav.map(({ href, label: name, icon: Icon }) => {
-            const active = pathname === href || (href === home && isCampaignDetail) || (href === "/approvals" && isApprovalDetail);
-            return (
-              <Link key={href} href={href} onClick={() => setOpen(false)}
-                className={`nav-link${active ? " active" : ""}`}
-                aria-current={pathname === href ? "page" : undefined}>
-                <Icon size={18} aria-hidden="true" /> {name}
-              </Link>
-            );
-          })}
+          {nav.map(({ href, label, icon: Icon, active }) => (
+            <Link key={href} href={href} className={`nav-link${active ? " active" : ""}`}
+              aria-current={pathname === href ? "page" : undefined}>
+              <Icon size={19} aria-hidden="true" /> <span>{label}</span>
+            </Link>
+          ))}
         </nav>
-        <div className="sidebar-bottom">
-          <Image className="sidebar-mascot" src="/orca-mascot.webp" alt="" width={480} height={480} unoptimized />
-          {email && <div className="account">
-            <span className="avatar">{email.slice(0, 1).toUpperCase()}</span>
-            <div>
-              <strong title={email}>{demo ? "Demo workspace" : email}</strong>
-            </div>
-            {demo ? (
-              <Link
-                href="/login"
-                className="icon-button"
-                aria-label="Go to sign in"
-              >
-                <LogOut size={16} />
-              </Link>
-            ) : (
-              <form action={logoutAction}>
-                <button className="icon-button" aria-label="Sign out">
-                  <LogOut size={16} />
-                </button>
-              </form>
-            )}
-          </div>}
-        </div>
+        {email && <div className="sidebar-bottom">
+          <div className="account">
+            <span className="avatar" aria-hidden="true">{email.slice(0, 1).toUpperCase()}</span>
+            <div><strong title={email}>{demo ? "Demo workspace" : email}</strong></div>
+            <AccountAction demo={demo} />
+          </div>
+        </div>}
       </aside>
       <div className="console-body">
         <header className="console-topbar">
-          <div>
-            Workspace <ChevronRight size={13} aria-hidden="true" />
-            <span>
-              {isCampaignDetail
-                ? "Campaign details"
-                : recordCollection === "brands" ? "Brand details"
-                : recordCollection === "playbooks" ? "Playbook details"
-                : recordCollection === "agents" ? "Agent profile"
-                : isApprovalDetail ? "Approvals" : nav.find(({ href }) => href === pathname)?.label ?? "Campaigns"}
-            </span>
-          </div>
+          <nav aria-label="Breadcrumb">
+            <Link href={home}>Workspace</Link><ChevronRight size={14} aria-hidden="true" />
+            <span aria-current="page">{current}</span>
+          </nav>
         </header>
         <main id="main-content" className="console-sheet">
           {demo && (
             <div className="demo-banner">
-              Demo mode · Connections are simulated.{" "}
-              <Link href="/register">
-                Create your workspace <ArrowUpRight size={12} />
-              </Link>
+              Demo mode · Connections are simulated.
+              <Link href="/register">Create your workspace <ArrowUpRight size={12} aria-hidden="true" /></Link>
             </div>
           )}
           {children}

@@ -59,13 +59,16 @@ export function ToolkitBrowser({
   ) => void;
 }) {
   const isCampaign = !isWorkspaceScope(scope);
-  const [tab, setTab] = useState(isCampaign ? (recommendations.length ? "suggested" : "assigned") : "connected");
+  const startingTab = isCampaign ? (recommendations.length ? "suggested" : "assigned")
+    : initialSnapshot.configured && !initialSnapshot.connected.length ? "all" : "connected";
+  const [tab, setTab] = useState(startingTab);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<{ id: string; name: string }[]>(
     [],
   );
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const canBrowseCatalog = snapshot.configured || demo;
   const [selected, setSelected] = useState(initialSelected);
   const [metadata, setMetadata] = useState<Toolkit[]>(initialMetadata);
   const [page, setPage] = useState<CatalogPage>({
@@ -73,7 +76,7 @@ export function ToolkitBrowser({
     total: 0,
     nextCursor: null,
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(startingTab === "all");
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(initialSnapshot.error ?? "");
   const [catalogError, setCatalogError] = useState("");
@@ -85,7 +88,7 @@ export function ToolkitBrowser({
   const [retry, setRetry] = useState(0);
   const showCategories = !isCampaign || tab === "all";
   useEffect(() => {
-    if (demo || !showCategories) return;
+    if (demo || !showCategories || !snapshot.configured) return;
     let live = true;
     toolCategoriesAction()
       .then((result) => {
@@ -103,11 +106,11 @@ export function ToolkitBrowser({
     return () => {
       live = false;
     };
-  }, [demo, showCategories]);
+  }, [demo, showCategories, snapshot.configured]);
   useEffect(() => {
     const counter = revision;
     const current = ++counter.current;
-    if (tab !== "all") return;
+    if (tab !== "all" || !canBrowseCatalog) return;
     const timer = setTimeout(async () => {
       setLoading(true);
       setPage({ items: [], total: 0, nextCursor: null });
@@ -148,7 +151,7 @@ export function ToolkitBrowser({
       clearTimeout(timer);
       if (counter.current === current) counter.current++;
     };
-  }, [tab, search, category, retry, demo, demoCatalog]);
+  }, [tab, search, category, retry, demo, demoCatalog, canBrowseCatalog]);
   // Keep no-auth tools and active accounts visible even if the catalog is temporarily unavailable.
   const merged = new Map(
     [...metadata, ...page.items].map((tool) => [
@@ -350,8 +353,7 @@ export function ToolkitBrowser({
     <div className={`tool-browser ${isCampaign ? "for-campaign" : "for-workspace"}`}>
       <div className="tool-browser-heading">
         <div>
-          <h2>{isCampaign ? "Campaign tools" : "Your tools"}</h2>
-          {!isCampaign && <p>Connect accounts once and add them to your campaigns.</p>}
+          <h2>{isCampaign ? "Campaign tools" : "Tool catalog"}</h2>
           {tab === "suggested" && <p>Based on the brand’s verified channels and launches.</p>}
         </div>
         <button
@@ -368,6 +370,7 @@ export function ToolkitBrowser({
           <button
             key={item.id}
             aria-pressed={tab === item.id}
+            disabled={item.id === "all" && !canBrowseCatalog}
             className={tab === item.id ? "selected" : ""}
             onClick={() => {
               if (item.id === "all" && tab !== "all") setLoading(true);
@@ -384,15 +387,15 @@ export function ToolkitBrowser({
           <input
             aria-label="Search tools"
             placeholder={
-              tab === "all" || isCampaign
-                ? "Search all tools, including web search…"
-                : "Search connected tools…"
+              canBrowseCatalog && (tab === "all" || isCampaign)
+                ? "Search tools…"
+                : tab === "connected" ? "Search connected tools…" : "Search campaign tools…"
             }
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
-              if (isCampaign) setTab("all");
-              if (tab === "all" || isCampaign) setLoading(true);
+              if (isCampaign && canBrowseCatalog) setTab("all");
+              if (canBrowseCatalog && (tab === "all" || isCampaign)) setLoading(true);
             }}
           />
           {search && (
@@ -407,15 +410,15 @@ export function ToolkitBrowser({
             </button>
           )}
         </label>
-        {showCategories && <label className="tool-category-filter">
+        {showCategories && canBrowseCatalog && <label className="tool-category-filter">
           <span className="sr-only">Tool category</span>
           <select
             aria-label="Tool category"
             value={category}
             onChange={(event) => {
               setCategory(event.target.value);
-              if (isCampaign) setTab("all");
-              if (tab === "all" || isCampaign) setLoading(true);
+              if (isCampaign && canBrowseCatalog) setTab("all");
+              if (canBrowseCatalog && (tab === "all" || isCampaign)) setLoading(true);
             }}
           >
             <option value="">All categories</option>
@@ -439,8 +442,8 @@ export function ToolkitBrowser({
       </div>
       {!snapshot.configured && !demo && (
         <p className="notice">
-          To enable tool connections, set <code>COMPOSIO_API_KEY</code> in the
-          root <code>.env</code> file and run <code>docker compose up -d</code>.
+          <span>Tool connections need a Composio API key. Set <code>COMPOSIO_API_KEY</code> in the
+            root <code>.env</code> file, then run <code>docker compose up -d</code>.</span>
         </p>
       )}
       {notice && (
@@ -587,7 +590,7 @@ export function ToolkitBrowser({
             );
           })
         )}
-        {!catalogLoading && !visible.length && !catalogError && (
+        {canBrowseCatalog && !catalogLoading && !visible.length && !catalogError && (
           <div className="tool-catalog-empty">
             <Search size={24} />
             <h3>

@@ -100,9 +100,16 @@ export function CampaignPlanEditor({ campaignId, saved, active, onDirtyChange }:
       <section className="campaign-reading" aria-labelledby="campaign-plan-editor-heading">
         <header className="campaign-plan-heading">
           <h2 id="campaign-plan-editor-heading">Edit campaign plan</h2>
-          <a className="campaign-chat-jump" href="#campaign-plan-chat">Edit with chat <ArrowDown size={14} aria-hidden="true" /></a>
+          <div className="campaign-plan-actions">
+            <a className="campaign-chat-jump" href="#campaign-plan-chat">Edit with chat <ArrowDown size={14} aria-hidden="true" /></a>
+            <button className="btn primary" form="campaign-plan-fields" type="submit" disabled={!working || saving}>
+              {saving ? "Saving…" : "Save plan"}
+            </button>
+          </div>
         </header>
-        <form className="workspace-editor campaign-plan-form" onSubmit={(event) => void save(event)}>
+        {saveError && <p className="form-error campaign-plan-feedback" role="alert">{saveError}</p>}
+        {savedMessage && <p className="workspace-save-status" role="status">{savedMessage}</p>}
+        <form id="campaign-plan-fields" className="workspace-editor campaign-plan-form" onSubmit={(event) => void save(event)}>
           <fieldset disabled={saving}>
             <label>Campaign name<input ref={editor} value={plan.name} required maxLength={120}
               onChange={(event) => update({ ...plan, name: event.target.value })} /></label>
@@ -134,10 +141,7 @@ export function CampaignPlanEditor({ campaignId, saved, active, onDirtyChange }:
                 </fieldset>
               );
             })}
-            {saveError && <p className="form-error" role="alert">{saveError}</p>}
-            {savedMessage && <p className="workspace-save-status" role="status">{savedMessage}</p>}
             <div className="workspace-editor-actions">
-              <button className="btn primary" disabled={!working || saving}>{saving ? "Saving…" : "Save plan"}</button>
               {working && <button className="btn secondary" type="button" onClick={() => {
                 setWorking(undefined);
                 setSaveError("");
@@ -150,7 +154,7 @@ export function CampaignPlanEditor({ campaignId, saved, active, onDirtyChange }:
       <section id="campaign-plan-chat" className="campaign-plan-chat" aria-labelledby="campaign-plan-chat-heading">
         <header className="campaign-chat-heading">
           <MessageSquare size={18} aria-hidden="true" />
-          <h2 id="campaign-plan-chat-heading">Edit with oma-agent</h2>
+          <div><h2 id="campaign-plan-chat-heading">Edit with oma-agent</h2><p>Default profile</p></div>
         </header>
         <div className="campaign-plan-messages" role="log" aria-label="Campaign conversation">
           {!history.length && <p className="campaign-chat-hint">Ask for changes to this campaign’s goals, description, or plan. Review suggestions in the editor before saving.</p>}
