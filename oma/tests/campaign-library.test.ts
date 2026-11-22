@@ -6,7 +6,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { CampaignLibrary } from "../components/campaign-library";
-import { campaignAgentIds, CampaignAgents, CampaignOverview } from "../components/workspace-records";
+import { campaignAgentIds, campaignLifecycleLabel, CampaignAgents, CampaignOverview } from "../components/workspace-records";
 import { type AgentWorkspace, type SavedCampaign } from "../lib/server/agent-workspace";
 
 test("shows an empty campaign list when the agent has saved none", () => {
@@ -29,6 +29,18 @@ const campaign: SavedCampaign = {
   orchestrator: "seo__orchestrator", agentIds: [], goals: [], plans: [], board: "",
 };
 const workspace: AgentWorkspace = { campaigns: [campaign], agents: [], brands: [], playbooks: [], skipped: 0 };
+
+test("shows running, stopped, and stopping states without treating drafts as running", () => {
+  for (const [lifecycleState, expected] of [["resumed", "Running"], ["paused", "Stopped"], ["pausing", "Stopping…"]]) {
+    const installed = { ...campaign, installationState: "installed", lifecycleState };
+    assert.equal(campaignLifecycleLabel(installed), expected);
+    const overview = renderToStaticMarkup(createElement(CampaignOverview, { workspace, campaign: installed }));
+    assert.ok(overview.includes(`<dt>Status</dt><dd>${expected}</dd>`));
+  }
+  assert.equal(campaignLifecycleLabel(campaign), "Stopped");
+  assert.equal(campaignLifecycleLabel({ ...campaign, installationState: "installed" }), "Running");
+  assert.equal(campaignLifecycleLabel({ ...campaign, installationState: "installing", lifecycleState: "resumed" }), "Stopped");
+});
 
 test("leaves campaign details empty when records are absent", () => {
   const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace, campaign }));

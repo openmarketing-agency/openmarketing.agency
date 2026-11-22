@@ -75,7 +75,7 @@ def verify(home):
     agent.parent.mkdir(parents=True)
     agent.write_text(json.dumps({
         "id": agent_id, "name": "Coordinator", "campaign_id": campaign_id, "description": "Coordinates the campaign.",
-        "oma_skills": [],
+        "oma_skills": [], "agent": {"enabled_toolsets": ["kanban"]},
     }))
     agent.with_name("SOUL.md").write_text("You coordinate fixture tasks.")
     source = record.read_bytes()
@@ -107,6 +107,7 @@ def verify(home):
     result = sync_campaign_configuration(root, campaign_id, {"revision": saved["revision"], "env": {}}, deploy=True)
     deployed = safe_load(record.read_bytes())
     assert _status(home, campaign_id, deployed)["state"] == "installed"
+    assert deployed["lifecycle_state"] == "paused"
     assert deployed["plans"] == suggestion["plans"]
     assert kanban_db.board_exists(board)
     profile = home / "profiles" / agent_id

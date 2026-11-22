@@ -4,8 +4,9 @@ import { Suspense } from "react";
 
 import { AgentActivity } from "@/components/agent-activity";
 import { CampaignLibrary } from "@/components/campaign-library";
+import { StandaloneModelSettings } from "@/components/standalone-model-settings";
 import { Loading } from "@/components/ui";
-import { campaignAgentIds, WorkspaceIndex } from "@/components/workspace-records";
+import { campaignAgentIds, campaignLifecycleLabel, WorkspaceIndex } from "@/components/workspace-records";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace } from "@/lib/server/agent-workspace";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
@@ -41,8 +42,7 @@ async function Dashboard() {
     const brand = records.brands.find((item) => item.id === playbook?.brandId);
     return {
       id: campaign.id, name: campaign.name, description: campaign.description, version: campaign.version,
-      status: campaign.installationState === "installed" ? "Installed" : campaign.installationState === "installing" ? "Installation incomplete"
-        : campaign.board ? undefined : "Draft",
+      status: campaignLifecycleLabel(campaign),
       agentCount: campaignAgentIds(records, campaign).length, playbook: playbook && { id: playbook.id, name: playbook.name },
       brand: brand && { id: brand.id, name: brand.name },
     };
@@ -53,7 +53,9 @@ async function Dashboard() {
       setup={<SetupLink />}
       notice={error ? <p className="form-error" role="alert">{error}</p>
         : !records && <p className="notice">Start the full Docker stack to see saved campaigns.</p>}
-      sidebar={<><AgentActivity />{records && <WorkspaceIndex workspace={records} />}</>}
+      sidebar={<><AgentActivity />{records && <WorkspaceIndex workspace={records} modelSettings={
+        records.standaloneModels && <StandaloneModelSettings models={records.standaloneModels} />
+      } />}</>}
     />
   );
 }

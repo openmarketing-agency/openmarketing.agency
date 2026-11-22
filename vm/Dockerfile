@@ -1,22 +1,7 @@
-ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.14@sha256:2a46de99c1d38a15d097465f590df21b713875e74e327fd0476bac2f9a275b3e
-FROM docker.io/oven/bun:1.4.4 AS bun
+ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.18@sha256:6c4f4b40d8ec8ef45c1400cede685e64879415c0f929fd4705260912cf70e5b3
 
 FROM ${OMA_AGENT_IMAGE} AS agent
 USER root
-
-FROM agent AS campaign-build
-COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
-WORKDIR /opt/oma
-COPY vm/installer/package.json vm/installer/bun.lock ./installer/
-RUN cd installer && bun install --frozen-lockfile --production
-COPY vm/installer/src ./installer/src
-COPY vm/installer/schemas ./installer/schemas
-COPY campaigns ./campaigns
-COPY skills ./skills
-COPY vm/prepare-seed.sh vm/oma-soul.md ./
-RUN install -d -o hermes -g hermes -m 0700 /opt/oma/seed
-USER hermes
-RUN --network=none bash /opt/oma/prepare-seed.sh
 
 FROM agent AS omactl-package
 ARG OMACTL_TAG=v0.1.0
@@ -36,9 +21,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=omactl-package /tmp/omactl/bin/omactl /usr/local/bin/omactl
 COPY --from=omactl-package /tmp/omactl/catalog /opt/omactl/catalog
 COPY --from=omactl-package /tmp/omactl/LICENSE /opt/omactl/LICENSE
-COPY --from=campaign-build /opt/oma/campaigns /opt/oma/campaigns
-COPY --from=campaign-build /opt/oma/skills /opt/oma/skills
-COPY --from=campaign-build --chown=hermes:hermes /opt/oma/seed /opt/oma/seed
 COPY vm/bootstrap.py vm/start.sh vm/workspace.py /opt/oma/
 
 ARG OMA_AGENT_IMAGE

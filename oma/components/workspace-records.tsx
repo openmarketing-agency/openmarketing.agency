@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { ArrowRight, BookOpen, Tag } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { AgentWorkspace, SavedCampaign } from "@/lib/server/agent-workspace";
 
-export function WorkspaceIndex({ workspace }: { workspace: AgentWorkspace }) {
+export function WorkspaceIndex({ workspace, modelSettings }: { workspace: AgentWorkspace; modelSettings?: ReactNode }) {
   return (
     <div className="workspace-index">
+      {modelSettings}
       {(["brands", "playbooks"] as const).map((collection) => (
         <section key={collection} aria-labelledby={"workspace-" + collection}>
           <h2 id={"workspace-" + collection}>{collection === "brands" ? <><Tag size={16} aria-hidden="true" />Brands</> : <><BookOpen size={16} aria-hidden="true" />Playbooks</>}</h2>
@@ -39,11 +41,18 @@ export function campaignAgentIds(workspace: AgentWorkspace, campaign: SavedCampa
   ])];
 }
 
+export function campaignLifecycleLabel(campaign: SavedCampaign) {
+  if (campaign.installationState === "installing") return "Stopped";
+  if (campaign.lifecycleState === "pausing") return "Stopping…";
+  if (campaign.lifecycleState === "resumed" || (!campaign.lifecycleState && campaign.installationState === "installed")) return "Running";
+  return "Stopped";
+}
+
 export function CampaignOverview({ workspace, campaign }: { workspace: AgentWorkspace; campaign: SavedCampaign }) {
   const playbook = workspace.playbooks.find((item) => item.id === campaign.playbookId);
   const brand = workspace.brands.find((item) => item.id === playbook?.brandId);
   const hasPlan = campaign.goals.length > 0 || campaign.plans.length > 0;
-  const hasDetails = Boolean(playbook?.brandId || campaign.playbookId || campaign.board || campaign.model || campaign.installationState);
+  const hasDetails = Boolean(playbook?.brandId || campaign.playbookId || campaign.board || campaign.model || campaign.installationState || campaign.lifecycleState);
   return (
     <div className="campaign-overview">
       {hasPlan && (
@@ -66,6 +75,7 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
         <aside className="campaign-context" aria-labelledby="campaign-context-heading">
           <h2 id="campaign-context-heading">Campaign details</h2>
           <dl>
+            <div><dt>Status</dt><dd>{campaignLifecycleLabel(campaign)}</dd></div>
             {playbook?.brandId && <div><dt>Brand</dt><dd>{brand ? (
               <Link href={"/workspace/brands/" + brand.id}>{brand.name}<ArrowRight size={15} aria-hidden="true" /></Link>
             ) : playbook.brandId}</dd></div>}
