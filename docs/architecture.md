@@ -130,29 +130,33 @@ sequenceDiagram
     User->>Next: Open /dashboard
     Next->>WS: Initial GET /workspace for saved records
     WS->>Disk: Read current inventory
-    loop While the dashboard is visible
+    loop While a workspace page is visible
         User->>Next: GET /api/agent/activity
         Next->>Runs: GET /v1/runs/{id} and GET /health/detailed
         Runs-->>Next: Run status, reported usage, and gateway activity
-        Next-->>User: Update Agent activity
+        Next-->>User: Update Agent activity in the right-side chat
     end
     opt While setup is active
         User->>Next: Open activity event stream
         Next->>Runs: GET /v1/runs/{id}/events
         Next-->>User: Stream public agent messages
     end
+    opt When setup waits for a response
+        User->>Next: Respond to the prompt in chat
+        Next->>Runs: POST /v1/runs/{id}/clarify or /approval
+    end
     Agent->>Disk: Save brand, playbook, campaigns, and agent records
     User->>Next: Next activity poll
     Next->>Runs: GET /v1/runs/{id}
     Runs-->>Next: Completed, failed, or cancelled
     Next-->>User: Return terminal status
-    User->>Next: Dashboard calls router.refresh
+    User->>Next: Chat refreshes the active workspace view
     Next->>WS: Reload workspace inventory and campaign Kanban summaries
     WS->>Disk: Read updated inventory
     Next-->>User: Render the saved records and run status
 ```
 
-The app treats a saved run handle as successful submission and allows the user into Campaigns. It tracks execution separately with Hermes. Agent activity polls about every 2.5 seconds during active work and every 12 seconds when idle. The dashboard gets live messages from `GET /api/agent/activity?stream=1`. It refreshes after it sees an active run reach a terminal state. Opening or reloading the dashboard also reads the current workspace. The dashboard can show partial records if the run saved them before a failure.
+The app treats a saved run handle as successful submission and allows the user into Campaigns. It tracks execution separately with Hermes. Agent activity polls about every 2.5 seconds during active work and every 12 seconds when idle. The shared chat panel gets live messages from `GET /api/agent/activity?stream=1`. It refreshes the active workspace view after it sees an active run reach a terminal state. Opening or reloading the dashboard also reads the current workspace. The dashboard can show partial records if the run saved them before a failure.
 
 **Retry setup** starts a new run with the saved links after a confirmed failure or cancellation. If a submission response is lost, retry reuses that attempt’s saved idempotency key. **Skip setup** records a skip and opens Campaigns without starting a run. The older interactive flow remains at **Onboarding backup**.
 
@@ -167,7 +171,7 @@ flowchart TD
     Board["GET /workspace/campaigns/{id}/kanban"]
     Stats["VM reads board ID from config.yaml and calls Kanban stats"]
     Tabs["Plan, Agents, Tools, Settings"]
-    Chat["Campaign chat panel"]
+    Chat["Shared chat panel"]
     Action["Authenticated chat server action"]
     Context["Validate saved campaign ID and append it to the message"]
     Runs["Hermes Runs API · default profile"]
@@ -180,9 +184,9 @@ flowchart TD
 
 The campaign page reads the saved campaign, related agent records, required integrations, and current board summary. Board lookup prefers `kanban_board` and falls back to a unique `kanban_board_name` for older records. The Next.js server receives counts from the private workspace service.
 
-The chat panel stays beside the campaign tabs. It keeps the selected conversation while the operator switches tabs. oma-agent stores each conversation in a Hermes session scoped by account and campaign. The console loads the native transcript and resumes that session when it is reopened. The workspace Chat page has its own history. The server validates the campaign ID and appends it to each new message before sending it to the default profile. The global **Chat** page uses the same profile without campaign context. Chat polls `GET /v1/runs/{id}` and posts clarification answers or tool approval decisions to `POST /v1/runs/{id}/clarify` or `POST /v1/runs/{id}/approval`. These tool approvals belong to the current run.
+The console layout renders the right-side chat panel through the `@conversation` parallel route. The panel shows the workspace conversation or the conversation for the campaign on the current detail page. It keeps the selected conversation while the operator switches campaign tabs. oma-agent stores each conversation in a Hermes session scoped by account and campaign. The console loads the native transcript and resumes that session when it is reopened. Both scopes use the default profile. The server appends the campaign ID to each message sent from a campaign. Chat polls `GET /v1/runs/{id}` and posts clarification answers or tool approval decisions to `POST /v1/runs/{id}/clarify` or `POST /v1/runs/{id}/approval`. These tool approvals belong to the current run.
 
-**Code to read** · [Campaign route](<../oma/app/(console)/(workspace)/campaigns/[id]/page.tsx>) · [Campaign tabs](../oma/components/campaign-detail.tsx) · [Chat UI](../oma/components/hermes-chat.tsx) · [Chat actions](../oma/app/actions/chat.ts) · [Hermes gateway client](../oma/lib/server/agent-chat.ts)
+**Code to read** · [Campaign route](<../oma/app/(console)/(workspace)/campaigns/[id]/page.tsx>) · [Campaign tabs](../oma/components/campaign-detail.tsx) · [Conversation route](<../oma/app/(console)/@conversation/[...section]/page.tsx>) · [Chat UI](../oma/components/hermes-chat.tsx) · [Chat actions](../oma/app/actions/chat.ts) · [Hermes gateway client](../oma/lib/server/agent-chat.ts)
 
 ## 5. Tool catalog and authorization
 

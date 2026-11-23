@@ -26,7 +26,7 @@ npm run build
 
 The database tests create isolated SQLite files in a temporary directory. First sign-in on the full stack opens agent setup, where the user provides a provider API key, an HTTPS base URL, and a shared reasoning effort for the built-in agents. The console forwards the key in both private agent sync requests. Hermes stores it with the profiles. Project setup at `/onboarding` accepts a website, a GitHub repository, or both. It saves the supplied links and forwards the questions and answers through the configured oma-agent gateway. Failed deliveries can be retried with the saved links. In development, loading `/onboarding-backup` directly or refreshing it resets the backed-up agent conversation so it can be tested again.
 
-The Campaigns dashboard shows live oma-agent activity counts and the status of the submitted project setup, including its current tool when the gateway reports one.
+The right-side chat panel appears across the signed-in workspace. It shows live project setup progress and the gateway’s public updates, reported usage, and errors. The panel accepts responses to setup prompts and can retry failed or cancelled runs using the saved links. Chat history is loaded from Hermes and scoped to the workspace or current campaign.
 
 ## Campaign publishing and approvals
 
