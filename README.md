@@ -41,6 +41,15 @@ Use **Deploy campaign** to review the saved plan, agent roster, selected tools, 
 
 The full stack shows brands, playbooks, campaigns, and agent records from the default oma-agent profile's `/opt/data/oma/` directory. Current agent versions save the shared brand and playbook in `brand/config.yaml` and `playbook/config.yaml` under that directory. Brand pages render file-backed knowledge, research and documentation, channels, palette, and supported logo previews from the workspace. Campaign overviews show the shared brand and playbook, goals, plans, and saved agents. Open a campaign’s **Agents** tab to see the team, assigned models and tools, and scheduled work. Select an agent to open its profile. Brand details and playbook strategy edits update their YAML. Brand knowledge edits update the referenced Markdown file when the brand declares one. The dashboard lists campaigns once oma-agent has saved them.
 
+The campaign's `mode` is separate from Start/Stop. With a compatible agent image, stop an installed campaign before changing its mode using `python -m hermes_cli.oma_campaigns mode <id> yolo|approve|control` from the default agent profile. `yolo` auto-approves new publication rows. `approve` and `control` require human approval. `control` removes live cron registrations until the campaign leaves that mode. The console exposes the mode in its workspace read; changing it from the console is not part of this API.
+
+Campaign publications live in the agent's `/opt/data/oma/campaigns/<id>/publications.sqlite3`. The authenticated Next.js server actions use the private workspace socket:
+
+- `GET /workspace/campaigns/<id>/publications?before=<next_cursor>&limit=30` returns `{campaign_id, mode, publications, next_cursor}`. Omit `before` on the first page. Each entry includes the exact revision, account, content, media references, and an optional reply-target preview.
+- `POST /workspace/campaigns/<id>/publications/<publication-id>/approve` accepts `{revision, approver}`. The server action derives the approver from the signed-in user's session. A stale revision returns `409`. Approval queues the publisher agent; the endpoint does not call a provider.
+
+These endpoints support a publication review UI but do not replace the console's existing approvals screen. The publisher's workflow does not restrict direct writes through separately configured connectors or browsers.
+
 The console serves [API documentation](http://localhost:3000/docs) and a [database readiness endpoint](http://localhost:3000/health/ready).
 
 The console and bundled agent both run under Docker. Quitting Docker Engine stops both. Run `make dev` or `make production` to start them together again. Press Ctrl+C in the `make dev` terminal, or run `docker compose -f compose.yaml -f compose.vm.yaml down`, to stop the full stack. Use the same environment file for Compose commands. The console stores SQLite and its signing key in `.oma-data/`. The VM volume holds Hermes profiles, gateway keys, the nested Docker engine, and catalog app data. Stop the stack before taking filesystem backups. Keep a secure copy of any configured signing or integration encryption keys.
