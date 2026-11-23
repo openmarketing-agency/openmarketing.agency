@@ -206,6 +206,10 @@ def verify(home):
     synced = sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}})
     assert synced["modelId"] == "" and "model" not in safe_load(record.read_bytes())
     assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "rotated-model"
+    assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == default_key
+    synced = sync_campaign_configuration(root, campaign_id, {
+        "revision": synced["revision"], "env": {"OPENROUTER_API_KEY": rotated_key},
+    })
     assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == rotated_key
 
     override = {
