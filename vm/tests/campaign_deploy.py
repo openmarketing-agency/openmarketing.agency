@@ -195,8 +195,8 @@ def verify(home):
     if jobs.exists():
         assert not json.loads(jobs.read_bytes())["jobs"]
     assert "model" not in deployed and result["modelId"] == ""
-    assert "model" not in safe_load(agent.read_bytes())
-    assert safe_load(agent.read_bytes())["effective"]["model"]["default"] == "default-model"
+    saved_agent = safe_load(agent.read_bytes())
+    assert "model" not in saved_agent and "model" not in saved_agent.get("effective", {})
     assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "default-model"
     assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == default_key
     assert sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}}, deploy=True) == result
@@ -226,7 +226,8 @@ def verify(home):
     })
     synced = sync_campaign_configuration(root, campaign_id, {"revision": staged["revision"], "env": {}})
     assert synced["modelId"] == "" and "model" not in safe_load(record.read_bytes())
-    assert safe_load(agent.read_bytes())["effective"]["model"]["default"] == "rotated-model"
+    saved_agent = safe_load(agent.read_bytes())
+    assert "model" not in saved_agent and "model" not in saved_agent.get("effective", {})
     assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "rotated-model"
     assert safe_load(reviewer.read_bytes())["model"] == reviewer_model
     assert safe_load((home / "profiles" / reviewer_id / "config.yaml").read_bytes())["model"] == reviewer_model
