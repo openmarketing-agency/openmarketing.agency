@@ -1,4 +1,4 @@
-/** Opens the installation's SQLite database and initializes identity storage on fresh installations. */
+/** Opens the installation's SQLite database and migrates local identity and integration storage. */
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync };
 
-export const sqliteSchemaVersion = 5;
+export const sqliteSchemaVersion = 7;
 export const legacyToolSelectionsSchemaVersion = 3;
 
 export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
@@ -26,6 +26,11 @@ function initializeSchema(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
     if (version === sqliteSchemaVersion) return;
+    if (version === 5 || version === 6) {
+      // Existing transcript copies are left intact. Only legacy session IDs are used to reopen chats.
+      db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
+      return;
+    }
     if (version === 4 || version === legacyToolSelectionsSchemaVersion) {
       if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'agent_setup_complete'").get()) {
         db.exec("ALTER TABLE users ADD COLUMN agent_setup_complete INTEGER NOT NULL DEFAULT 0 CHECK (agent_setup_complete IN (0, 1))");
@@ -69,9 +74,8 @@ function initializeSchema(db: DatabaseSync): void {
         updated_at INTEGER NOT NULL,
         UNIQUE (user_id, url)
       ) STRICT;
-
-      PRAGMA user_version = ${sqliteSchemaVersion};
     `);
+    db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
   });
 }
 

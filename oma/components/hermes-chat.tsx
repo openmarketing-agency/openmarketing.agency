@@ -1,91 +1,149 @@
-/** Shows the default oma-agent conversation, clarifications, and run progress. */
+/** Displays Hermes-native history and keeps in-progress run handles in the current browser tab. */
 
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
-import { Bot, LoaderCircle, RefreshCw, Send } from "lucide-react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { Bot, LoaderCircle, Plus, RefreshCw, Send } from "lucide-react";
 
-import { answerChatPrompt, readChatTurn, sendChatMessage } from "@/app/actions/chat";
-import { maxChatMessageLength, type AgentPrompt, type AgentStatus } from "@/lib/agent-chat";
+import { answerChatPrompt, readChatTurn, readOlderChatMessages, sendChatMessage } from "@/app/actions/chat";
+import { maxChatMessageLength, type AgentPrompt, type AgentStatus, type ChatHistory, type ChatMessage } from "@/lib/agent-chat";
 import { HermesPrompt } from "./hermes-prompt";
+import "./hermes-chat.css";
 
-export function HermesChat({ status }: { status: AgentStatus }) {
+function runKey(threadId: string, campaignId?: string) {
+  return "oma:run:" + (campaignId ?? "workspace") + ":" + threadId;
+}
+
+function runInTab(key: string | undefined) {
+  try {
+    return key ? window.sessionStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberRun(key: string, handle: string | null) {
+  try {
+    if (handle) window.sessionStorage.setItem(key, handle);
+    else window.sessionStorage.removeItem(key);
+  } catch {
+    // The conversation remains in Hermes even when browser storage is unavailable.
+  }
+}
+
+const subscribeToTab = (notify: () => void) => {
+  window.addEventListener("storage", notify);
+  return () => window.removeEventListener("storage", notify);
+};
+
+export function HermesChat({
+  status, history, campaignId,
+}: {
+  status: AgentStatus;
+  history: ChatHistory;
+  campaignId?: string;
+}) {
   const router = useRouter();
-  const [refreshing, startTransition] = useTransition();
+  const headingId = useId();
+  const [navigating, startTransition] = useTransition();
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<Array<{ author: string; text: string }>>([]);
+  const [older, setOlder] = useState<ChatMessage[]>([]);
+  const [nextOffset, setNextOffset] = useState<number | null | undefined>(undefined);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [sending, setSending] = useState(false);
-  const [handle, setHandle] = useState<string>();
+  const [pending, setPending] = useState<{ id: string; text: string }>();
+  const [currentHandle, setCurrentHandle] = useState<string | null>();
   const [prompt, setPrompt] = useState<AgentPrompt>();
   const [error, setError] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
-  const session = useRef<string | undefined>(undefined);
-  const unsentTurn = useRef<{ message: string; id: string } | undefined>(undefined);
+  const scrollDistanceFromEnd = useRef<number | undefined>(undefined);
+  const thread = useRef(history.active?.id);
+  const storageKey = history.active ? runKey(history.active.id, campaignId) : undefined;
+  const storedHandle = useSyncExternalStore(subscribeToTab, () => runInTab(storageKey), () => null);
+  const handle = currentHandle === undefined ? storedHandle : currentHandle;
+  const canSend = status.ready && !handle && !pending && !sending && !navigating;
+  const offset = nextOffset === undefined ? history.active?.nextOffset : nextOffset;
+  const recent = history.active?.messages;
+  const recentIds = new Set(recent?.map(({ id }) => id));
+  const messages = [...older.filter(({ id }) => !recentIds.has(id)), ...(recent ?? [])];
 
   useEffect(() => {
     const log = transcript.current;
-    if (log) log.scrollTop = log.scrollHeight;
-  }, [messages, sending, prompt]);
+    if (log) {
+      log.scrollTop = log.scrollHeight - (scrollDistanceFromEnd.current ?? 0);
+      scrollDistanceFromEnd.current = undefined;
+    }
+  }, [older, recent, pending, prompt]);
 
   useEffect(() => {
-    if (!handle) return;
+    if (!handle || !status.ready) return;
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout>;
-    async function poll(turn: string) {
+    async function poll(run: string) {
       try {
-        const result = await readChatTurn(turn);
+        const result = await readChatTurn(run);
         if (cancelled) return;
-        if (result.ok) {
-          setError("");
-          if (result.data.status === "running") {
-            const next = result.data.prompt;
-            setPrompt((current) => current?.id === next?.id && current?.generation === next?.generation ? current : next);
-            retry = setTimeout(() => void poll(turn), 1500);
-            return;
-          }
-          if (result.data.status === "completed") {
-            const { answer } = result.data;
-            if (answer) setMessages((previous) => [...previous, { author: "oma-agent", text: answer }]);
-          } else {
-            setError("oma-agent couldn’t finish this turn. Send a message to continue.");
-          }
-        } else {
+        if (!result.ok && ![401, 403, 404].includes(result.status)) {
           setError(result.message);
-          if (![401, 403, 404].includes(result.status)) {
-            retry = setTimeout(() => void poll(turn), 3000);
-            return;
-          }
+          retry = setTimeout(() => void poll(run), 3000);
+          return;
         }
+        if (result.ok && result.data.status === "running") {
+          setError("");
+          const next = result.data.prompt;
+          setPrompt((current) => current?.id === next?.id && current?.generation === next?.generation ? current : next);
+          retry = setTimeout(() => void poll(run), 1500);
+          return;
+        }
+        if (thread.current) rememberRun(runKey(thread.current, campaignId), null);
+        setCurrentHandle(null);
+        setPending(undefined);
         setPrompt(undefined);
-        setHandle(undefined);
+        setError(result.ok ? (result.data.status === "failed" ? "oma-agent couldn’t finish this turn." : "") : result.message);
+        router.refresh();
       } catch {
         if (cancelled) return;
         setError("Reconnecting to oma-agent…");
-        retry = setTimeout(() => void poll(turn), 3000);
+        retry = setTimeout(() => void poll(run), 3000);
       }
     }
     void poll(handle);
     return () => { cancelled = true; clearTimeout(retry); };
-  }, [handle]);
+  }, [campaignId, handle, router, status.ready]);
 
-  async function send(text: string) {
-    if (!text || !status.ready || sending || handle) return;
-    setMessage(text);
+  function openChat(id: string) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("chat", id);
+    startTransition(() => router.push(url.pathname + url.search + url.hash, { scroll: false }));
+  }
+
+  async function send(text: string, retry = false) {
+    if (!text || !status.ready || sending || navigating || (retry ? !pending || !!handle : !canSend)) return;
+    thread.current ??= crypto.randomUUID();
+    const threadId = thread.current;
+    if (!history.active) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("chat", threadId);
+      window.history.replaceState(null, "", url);
+    }
+    const turn = retry && pending ? pending : { id: crypto.randomUUID(), text };
+    setPending(turn);
+    setMessage("");
     setSending(true);
     setError("");
     try {
-      session.current ??= crypto.randomUUID();
-      if (unsentTurn.current?.message !== text) unsentTurn.current = { message: text, id: crypto.randomUUID() };
-      const result = await sendChatMessage(session.current, unsentTurn.current.id, text);
+      const result = await sendChatMessage(threadId, turn.id, turn.text, campaignId);
       if (!result.ok) {
         setError(result.message);
+        if ([401, 403, 404, 409, 422].includes(result.status)) {
+          setPending(undefined);
+          setMessage(turn.text);
+        }
         return;
       }
-      setMessages((previous) => [...previous, { author: "You", text }]);
-      setHandle(result.data.handle);
-      unsentTurn.current = undefined;
-      setMessage("");
+      rememberRun(runKey(threadId, campaignId), result.data.handle);
+      setCurrentHandle(result.data.handle);
     } catch {
       setError("The connection was interrupted. Your message is ready to retry.");
     } finally {
@@ -93,61 +151,101 @@ export function HermesChat({ status }: { status: AgentStatus }) {
     }
   }
 
+  async function loadOlder() {
+    if (!history.active || offset == null || loadingOlder) return;
+    setLoadingOlder(true);
+    setError("");
+    try {
+      const result = await readOlderChatMessages(history.active.id, offset, campaignId);
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+      const log = transcript.current;
+      if (log) scrollDistanceFromEnd.current = log.scrollHeight - log.scrollTop;
+      setOlder((previous) => {
+        const seen = new Set(previous.map(({ id }) => id));
+        return [...result.data.messages.filter(({ id }) => !seen.has(id)), ...previous];
+      });
+      setNextOffset(result.data.nextOffset);
+    } catch {
+      setError("Couldn’t load older messages. Try again.");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  const selectionListed = history.chats.some(({ id }) => id === history.active?.id);
   return (
-    <section className="runtime-chat" aria-labelledby="chat-heading">
+    <section className="runtime-chat" aria-labelledby={headingId} aria-busy={navigating || undefined}>
       <header className="chat-page-heading">
         <div className="surface-heading">
           <span className="playbook-mark"><Bot size={24} aria-hidden="true" /></span>
-          <div><h2 id="chat-heading">Default profile</h2></div>
+          <div>
+            <h2 id={headingId}>{campaignId ? "Campaign chat" : "Default profile"}</h2>
+            {campaignId && <p>Default profile</p>}
+          </div>
         </div>
         <span role="status" className={status.ready ? "chat-status is-ready" : "chat-status"}>{status.ready ? "Connected" : "Offline"}</span>
       </header>
-      {status.ready ? <>
-        <div className="runtime-messages" ref={transcript} role="log" aria-label="Conversation">
-          {!messages.length && !sending && (
-            <div className="runtime-conversation-empty">
-              <h3>What would you like to work on?</h3>
-              <p>Send a message to start a conversation.</p>
-            </div>
-          )}
-          {messages.map(({ author, text }, index) => (
-            <div key={index} className={author === "You" ? "runtime-message from-user" : "runtime-message"}>
-              <strong>{author}</strong><p>{text}</p>
-            </div>
-          ))}
-          {sending && <div className="runtime-message from-user"><strong>You</strong><p>{message.trim()}</p></div>}
-          {(sending || (handle && !prompt)) && <p className="runtime-working" role="status">
-            <LoaderCircle size={16} aria-hidden="true" /> oma-agent is working…
-          </p>}
-        </div>
-        {error && <p className="form-error chat-error" role="alert">{error}</p>}
-        {prompt && handle ? <HermesPrompt key={`${prompt.id}:${prompt.generation}`} prompt={prompt} onAnswer={async (answer) => {
-          const { id, generation, kind } = prompt;
-          const result = await answerChatPrompt(handle, { id, generation, kind, answer });
-          return result.ok ? undefined : result.message;
-        }} /> : <form className="runtime-form runtime-composer" onSubmit={(event) => { event.preventDefault(); void send(message.trim()); }}>
-          <label htmlFor="hermes-message" className="sr-only">Message oma-agent</label>
-          <textarea id="hermes-message" value={message} onChange={(event) => setMessage(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                void send(message.trim());
-              }
-            }}
-            placeholder="Message oma-agent…" maxLength={maxChatMessageLength} rows={3} required disabled={sending || !!handle} />
-          <button className="btn primary" disabled={sending || !!handle || !message.trim()}>
-            <Send size={16} aria-hidden="true" /> Send message
-          </button>
-        </form>}
-      </> : (
-        <div className="runtime-empty">
-          <h3>Connect to your agent</h3>
+      <div className="runtime-chat-history">
+        <select aria-label="Chat history" value={selectionListed ? history.active?.id : ""}
+          disabled={navigating || sending || !history.chats.length} onChange={(event) => openChat(event.target.value)}>
+          {!selectionListed && <option value="" disabled>{history.chats.length ? "New conversation" : "No saved chats"}</option>}
+          {history.chats.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
+        <button type="button" className="btn secondary" disabled={navigating || sending || !(history.active || pending)}
+          onClick={() => openChat("new")}><Plus size={15} aria-hidden="true" /> New chat</button>
+      </div>
+      <div className="runtime-messages" ref={transcript} role="log" aria-label="Conversation">
+        {offset != null && <button type="button" className="btn secondary runtime-load-older" disabled={loadingOlder}
+          onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : "Load older messages"}</button>}
+        {!messages.length && !pending && !history.error && (
+          <div className="runtime-conversation-empty">
+            <h3>{campaignId ? "What would you like to do with this campaign?" : "What would you like to work on?"}</h3>
+          </div>
+        )}
+        {messages.map(({ id, role, text }) => (
+          <div key={id} className={role === "user" ? "runtime-message from-user" : "runtime-message"}>
+            <strong>{role === "user" ? "You" : "oma-agent"}</strong><p>{text}</p>
+          </div>
+        ))}
+        {pending && <div className="runtime-message from-user"><strong>You</strong><p>{pending.text}</p></div>}
+        {status.ready && (sending || (handle && !prompt && !error)) && <p className="runtime-working" role="status">
+          <LoaderCircle size={16} aria-hidden="true" /> oma-agent is working…
+        </p>}
+      </div>
+      {(error || history.error) && <p className="form-error chat-error" role="alert">{error || history.error}</p>}
+      {!status.ready ? (
+        <div className="runtime-composer runtime-chat-offline">
           <p>{status.message}</p>
-          <button className="btn secondary" disabled={refreshing} onClick={() => startTransition(() => router.refresh())}>
-            <RefreshCw size={16} aria-hidden="true" /> {refreshing ? "Checking…" : "Check connection"}
+          <button className="btn secondary" disabled={navigating} onClick={() => startTransition(() => router.refresh())}>
+            <RefreshCw size={16} aria-hidden="true" /> {navigating ? "Checking…" : "Check connection"}
           </button>
         </div>
-      )}
+      ) : pending && !handle ? (
+        <div className="runtime-composer runtime-chat-offline">
+          <button type="button" className="btn primary" disabled={sending || navigating}
+            onClick={() => void send(pending.text, true)}>{sending ? "Sending…" : "Retry message"}</button>
+        </div>
+      ) : prompt && handle ? <HermesPrompt key={prompt.id + ":" + prompt.generation} prompt={prompt} onAnswer={async (answer) => {
+        const { id, generation, kind } = prompt;
+        const result = await answerChatPrompt(handle, { id, generation, kind, answer });
+        return result.ok ? undefined : result.message;
+      }} /> : <form className="runtime-form runtime-composer" onSubmit={(event) => { event.preventDefault(); void send(message.trim()); }}>
+        <label className="sr-only" htmlFor={headingId + "-message"}>Message oma-agent</label>
+        <textarea id={headingId + "-message"} value={message} onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void send(message.trim());
+            }
+          }}
+          placeholder="Message oma-agent…" maxLength={maxChatMessageLength} rows={3} required disabled={!canSend} />
+        <button className="btn primary" disabled={!canSend || !message.trim()}>
+          <Send size={16} aria-hidden="true" /> {campaignId ? "Send" : "Send message"}
+        </button>
+      </form>}
     </section>
   );
 }

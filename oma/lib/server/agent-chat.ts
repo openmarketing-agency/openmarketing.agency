@@ -7,13 +7,16 @@ import { z } from "zod";
 import type { AgentRunProgress } from "@/lib/agent-activity";
 import { maxChatMessageLength, type AgentPrompt, type AgentRun, type AgentStatus } from "@/lib/agent-chat";
 import { previewAgentMessage, projectActivityEvents } from "./agent-activity-events";
+import { loadAgentWorkspace, workspaceId } from "./agent-workspace";
 import { loadSettings } from "./settings";
 
 const runId = z.string().regex(/^run_[A-Za-z0-9_-]{1,128}$/);
+export const scopedAgentSessionId = /^oma_[a-f0-9]{32}_([a-f0-9-]{36})$/;
 const turnInput = z.object({
-  sessionId: z.uuid(),
+  sessionId: z.union([z.uuid(), z.string().regex(scopedAgentSessionId)]),
   turnId: z.uuid(),
   message: z.string().trim().min(1).max(maxChatMessageLength),
+  campaignId: workspaceId.optional(),
 });
 const promptId = z.string().regex(/^[a-zA-Z0-9_-]{1,256}$/);
 const generation = z.number().int().nonnegative();
@@ -176,6 +179,16 @@ function projectRun(payload: unknown, key: string): AgentRun {
   return { status: "running" };
 }
 
+/** Read the default profile's native Sessions API through the same private gateway as Runs. */
+export async function readAgentSessionApi(path: string) {
+  const config = await gateway("default");
+  const response = await sendRequest({ ...config, baseUrl: config.baseUrl.slice(0, -"/v1".length) }, "/api/sessions" + path);
+  return {
+    payload: await readJson(response),
+    redact: (text: string) => text.replaceAll(config.key, "[redacted]"),
+  };
+}
+
 export async function agentStatus(scope?: ProfileScope): Promise<AgentStatus> {
   try {
     const response = await sendRequest(await gateway(scope), "/models");
@@ -190,10 +203,18 @@ export async function agentStatus(scope?: ProfileScope): Promise<AgentStatus> {
 export async function startAgentRun(userId: string, input: unknown, scope?: ProfileScope) {
   const parsed = turnInput.safeParse(input);
   if (!parsed.success) throw new AgentChatError(422, "Enter a valid chat message and try again.");
-  const config = await gateway(scope);
-  const { sessionId, turnId, message } = parsed.data;
+  const { sessionId, turnId, message, campaignId } = parsed.data;
+  let agentMessage = message;
+  if (campaignId) {
+    const { records } = await loadAgentWorkspace();
+    if (!records) throw new AgentChatError(503, "The campaign workspace is unavailable. Try again.");
+    const campaign = records.campaigns.find(({ id }) => id === campaignId);
+    if (!campaign) throw new AgentChatError(404, "This campaign was not found.");
+    agentMessage += "\n\nCampaign ID: " + campaign.id;
+  }
+  const config = await gateway(campaignId ? "default" : scope);
   const response = await sendRequest(config, "/runs", {
-    turnId, body: { session_id: sessionId, input: message },
+    turnId, body: { session_id: sessionId, input: agentMessage },
   });
   const result = z.object({ run_id: runId }).safeParse(await readJson(response));
   if (!result.success) throw new AgentChatError(502, "oma-agent didn’t return a valid run identifier.");

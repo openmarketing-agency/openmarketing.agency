@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
@@ -77,6 +78,57 @@ test("starts and polls a scoped run, submits its clarification, and redacts the 
   assert.deepEqual(run.prompt.choices, ["SEO"]);
   await answerAgentPrompt(account, handle, { ...run.prompt, answer: "SEO" });
   assert.deepEqual(await getAgentRun(account, handle), { status: "completed", answer: "Done. [redacted]" });
+});
+
+test("appends the saved campaign ID to every turn sent to the default profile", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "oma-campaign-chat-"));
+  const socket = join(directory, "workspace.sock");
+  useGateway(t, { OMA_WORKSPACE_SOCKET: socket });
+  const campaignId = "social-community";
+  const server = createServer((request, response) => {
+    assert.equal(request.url, "/workspace");
+    response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({
+      skipped: 0, brands: [], playbooks: [], agents: [],
+      campaigns: [{
+        id: campaignId, name: "Social & Community", description: "", playbookId: "",
+        version: "", orchestrator: "", agentIds: [], goals: [], plans: [], board: "",
+      }],
+    }));
+  });
+  t.after(async () => {
+    if (server.listening) {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+    rmSync(directory, { recursive: true, force: true });
+  });
+  await new Promise<void>((resolve, reject) => server.once("error", reject).listen(socket, resolve));
+
+  const requests = t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    assert.equal(url, "http://vm:8642/p/default/v1/runs");
+    assert.equal(new Headers(options.headers).get("authorization"), "Bearer " + key);
+    return Response.json({ run_id: "run_campaign" }, { status: 202 });
+  });
+  const followUp = {
+    ...message, turnId: "c7198822-7690-4c2e-9b20-22027d530bfa", message: "What’s next?",
+  };
+  for (const turn of [message, followUp]) {
+    const { handle } = await startAgentRun(account, { ...turn, campaignId });
+    assert.match(handle, /^run_campaign\./);
+  }
+  assert.equal(requests.mock.callCount(), 2);
+  requests.mock.calls.forEach(({ arguments: [, options] }, index) => {
+    assert.ok(options);
+    const turn = [message, followUp][index];
+    assert.equal(new Headers(options.headers).get("idempotency-key"), turn.turnId);
+    assert.deepEqual(JSON.parse(String(options.body)), {
+      session_id: turn.sessionId, input: turn.message + "\n\nCampaign ID: " + campaignId,
+    });
+  });
+  await assert.rejects(startAgentRun(account, { ...message, campaignId: "missing" }),
+    (error: unknown) => error instanceof AgentChatError && error.status === 404);
+  await assert.rejects(startAgentRun(account, { ...message, campaignId: "../invalid" }),
+    (error: unknown) => error instanceof AgentChatError && error.status === 422);
+  assert.equal(requests.mock.callCount(), 2);
 });
 
 test("uses the private key file for the bundled gateway and reports unreachable gateways", async (t) => {

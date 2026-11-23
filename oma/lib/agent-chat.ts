@@ -16,3 +16,17 @@ export type AgentRun =
   | { status: "running"; prompt?: AgentPrompt }
   | { status: "completed"; answer: string }
   | { status: "failed" };
+
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+};
+
+export type ChatMessagePage = { messages: ChatMessage[]; nextOffset: number | null };
+
+export type ChatHistory = {
+  chats: Array<{ id: string; title: string }>;
+  active?: ChatMessagePage & { id: string };
+  error?: string;
+};

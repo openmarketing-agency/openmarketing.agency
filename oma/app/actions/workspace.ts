@@ -10,7 +10,7 @@ import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
 import { approveCampaignPublication } from "@/lib/server/agent-publications";
 import { completeAgentSetup, needsAgentSetup, requireAgentSetup } from "@/lib/server/agent-setup";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
-import { approveWorkspacePublication, listWorkspacePublications, publicationRevision, brandUpdate, knowledgeUpdate, playbookUpdate, previewCampaignPlan, saveCampaignConfiguration, saveCampaignMode, saveCampaignPlan, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { approveWorkspacePublication, listWorkspacePublications, publicationRevision, brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveCampaignMode, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -106,29 +106,6 @@ export async function saveStandaloneModelAction(
     if (setup) redirect(isProjectSetupComplete(readProjectSetup(user.id)) ? "/dashboard" : "/onboarding", "replace");
   }
   return result;
-}
-
-export async function saveCampaignPlanAction(id: string, input: unknown) {
-  await requireUser();
-  try {
-    const saved = await saveCampaignPlan(id, input);
-    revalidatePath("/campaigns/" + id);
-    revalidatePath("/dashboard");
-    return { ok: true as const, ...saved };
-  } catch (error) {
-    if (error instanceof WorkspaceRequestError) return { ok: false as const, message: error.message };
-    throw error;
-  }
-}
-
-export async function askCampaignPlanAction(id: string, input: unknown) {
-  await requireUser();
-  try {
-    return { ok: true as const, ...(await previewCampaignPlan(id, input)) };
-  } catch (error) {
-    if (error instanceof WorkspaceRequestError) return { ok: false as const, message: error.message };
-    throw error;
-  }
 }
 
 export async function deployCampaignAction(

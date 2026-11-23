@@ -5,10 +5,9 @@
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, Megaphone, Pencil, Rocket } from "lucide-react";
+import { ArrowLeft, Megaphone, Rocket } from "lucide-react";
 
 import { CampaignKanban } from "@/components/campaign-kanban";
-import { CampaignPlanEditor } from "@/components/campaign-plan-editor";
 import { CampaignModeSettings } from "@/components/campaign-mode-settings";
 import { CampaignSettings } from "@/components/campaign-settings";
 import { ToolkitBrowser } from "@/components/toolkit-browser";
@@ -24,7 +23,7 @@ const views = [
   { id: "settings", label: "Settings" },
 ] as const;
 
-type View = typeof views[number]["id"] | "edit" | "deploy";
+type View = typeof views[number]["id"] | "deploy";
 
 export function CampaignDetail({
   campaign,
@@ -47,13 +46,12 @@ export function CampaignDetail({
 }) {
   const query = useSearchParams();
   const requestedView = query.get("view");
-  const view: View = requestedView === "edit" || requestedView === "deploy" ? requestedView
+  const view: View = requestedView === "deploy" ? requestedView
     : views.find(({ id }) => id === requestedView)?.id
       ?? (requestedView === "mcp" ? "settings" : requestedView === "team" || query.has("agent") ? "tools" : "overview");
   const path = "/campaigns/" + campaign.id;
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [metadata, setMetadata] = useState(initialMetadata);
-  const [planDirty, setPlanDirty] = useState(false);
   const lifecycleLabel = campaign.lifecycleState === "pausing" ? "Stopping…"
     : campaign.lifecycleState === "paused" ? "Stopped" : "Running";
   const deploymentState = campaign.installationState === "installed" ? lifecycleLabel
@@ -111,11 +109,8 @@ export function CampaignDetail({
           <CampaignKanban status={kanban} />
         </header>
         <div className="campaign-header-actions">
-          {configuration && view === "overview" && (
-            <Link className="btn secondary" {...viewLink("edit")}><Pencil size={15} aria-hidden="true" /> Edit plan</Link>
-          )}
           {view !== "deploy" && !settingsLinkToDeployment && (
-            <Link className={view === "edit" || view === "settings" ? "btn secondary" : "btn primary"} {...viewLink("deploy")}>
+            <Link className={view === "settings" ? "btn secondary" : "btn primary"} {...viewLink("deploy")}>
               <Rocket size={16} aria-hidden="true" /> {needsDeployment ? "Deploy campaign" : "Review deployment"}
             </Link>
           )}
@@ -124,7 +119,7 @@ export function CampaignDetail({
       <nav className="campaign-tabs" aria-label="Campaign sections">
         {views.map(({ id, label }) => (
           <Link key={id} {...viewLink(id)}
-            aria-current={view === id || (id === "overview" && view === "edit") ? "page" : undefined}>
+            aria-current={view === id ? "page" : undefined}>
             {label}{id === "agents" && agentCount > 0 && <span className="campaign-tab-count">{agentCount}</span>}
           </Link>
         ))}
@@ -133,10 +128,6 @@ export function CampaignDetail({
       {error && view === "tools" && <p role="alert" className="form-error">{error}</p>}
 
       {view === "overview" && overview}
-      {configuration
-        ? <CampaignPlanEditor campaignId={campaign.id} active={view === "edit"} onDirtyChange={setPlanDirty}
-          saved={{ revision: configuration.revision, plan: { name, description, goals, plans } }} />
-        : view === "edit" && <p className="notice">Plan editing requires the current oma-agent workspace service.</p>}
       {view === "agents" && agents}
       {view === "tools" && (
         <div className="campaign-tools">
@@ -167,12 +158,7 @@ export function CampaignDetail({
         <section className="campaign-deploy" aria-labelledby="campaign-deploy-heading">
           <h2 id="campaign-deploy-heading">Review deployment</h2>
           <p>Connect the required tools, review the optional model settings, then deploy and start the campaign.</p>
-          {planDirty ? (
-            <div className="campaign-next-action">
-              <p>Save or discard the open plan edits before deploying.</p>
-              <Link className="btn secondary" {...viewLink("edit")}>Return to the plan editor</Link>
-            </div>
-          ) : configuration ? (
+          {configuration ? (
             <div className="campaign-deploy-layout">
               <aside className="campaign-context">
                 <h3>Campaign summary</h3>

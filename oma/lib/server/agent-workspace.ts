@@ -3,7 +3,6 @@
 import { request } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { campaignPlanChatSchema, campaignPlanResponseSchema, campaignPlanSchema } from "../campaign-plan";
 import { validToolkitSlug } from "../tool-catalog";
 import type { LegacyToolSelections } from "./legacy-tool-selections";
 
@@ -270,32 +269,6 @@ export async function saveWorkspaceRecord(collection: WorkspaceEdit, id: string,
   if (!workspaceId.safeParse(id).success) throw new WorkspaceRequestError(404, "This workspace record was not found.");
   const path = collection === "brand-knowledge" ? "brands/" + id + "/knowledge" : collection + "/" + id;
   await workspaceRequest("/workspace/" + path, update);
-}
-
-const campaignPlanUpdate = campaignPlanSchema.extend({ revision });
-
-/** Save only the reviewed fields using the revision the user opened. */
-export async function saveCampaignPlan(id: string, input: unknown) {
-  const parsed = campaignPlanUpdate.safeParse(input);
-  if (!workspaceId.safeParse(id).success || !parsed.success) {
-    throw new WorkspaceRequestError(422, "Enter a campaign name and check the plan’s field lengths.");
-  }
-  const result = await workspaceRequest("/workspace/campaigns/" + id + "/plan", parsed.data);
-  const saved = z.object({ revision }).safeParse(result);
-  if (!saved.success) throw new WorkspaceRequestError(502, "Couldn’t confirm the saved campaign plan. Refresh to check it.");
-  return saved.data;
-}
-
-/** Ask for a draft revision without giving the model a write or deploy operation. */
-export async function previewCampaignPlan(id: string, input: unknown) {
-  const parsed = campaignPlanChatSchema.safeParse(input);
-  if (!workspaceId.safeParse(id).success || !parsed.success) {
-    throw new WorkspaceRequestError(422, "Check the draft and enter a shorter message.");
-  }
-  const result = await workspaceRequest("/workspace/campaigns/" + id + "/plan-chat", parsed.data, "POST");
-  const reply = campaignPlanResponseSchema.safeParse(result);
-  if (!reply.success) throw new WorkspaceRequestError(502, "oma-agent returned an unreadable suggestion. Try again.");
-  return reply.data;
 }
 
 const requiredModelBaseUrl = z.string().max(2048).refine((value) => {

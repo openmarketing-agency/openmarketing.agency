@@ -1,12 +1,14 @@
-/* Keeps the workspace chat focused on the transcript, current status, and composer. */
+/* Styles the transcript and composer for the shared workspace and campaign chat. */
 .chat-page { max-width: 70rem; margin-inline: auto; }
-.chat-page .runtime-chat {
+.runtime-chat {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  background: var(--surface);
+}
+.chat-page .runtime-chat {
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface);
 }
 .chat-page-heading {
   display: flex;
@@ -23,6 +25,7 @@
   font-weight: 650;
   letter-spacing: -0.025em;
 }
+.chat-page-heading p { margin-top: 4px; color: var(--muted); font-size: 0.8125rem; }
 .chat-page-heading .playbook-mark { width: 42px; height: 42px; }
 .chat-status {
   padding: 4px 9px;
@@ -33,20 +36,29 @@
   font-weight: 600;
 }
 .chat-status.is-ready { background: var(--positive-soft); color: var(--positive); }
-.runtime-empty {
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  flex: 1;
-  gap: 10px;
-  min-height: 240px;
-  padding: 28px 20px;
-  text-align: center;
+.runtime-chat-history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
 }
-
+.runtime-chat-history select {
+  flex: 1 1 10rem;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--control);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+.runtime-chat-history .btn { flex: 0 0 auto; }
+.runtime-load-older { align-self: center; }
 .runtime-working svg { animation: spin 1.3s linear infinite; }
-.runtime-empty p { max-width: 43ch; }
-.runtime-empty .btn { margin-top: 7px; }
 
 .runtime-messages {
   display: flex;
@@ -62,7 +74,7 @@
   margin: auto;
   text-align: center;
 }
-.runtime-conversation-empty h3, .runtime-empty h3 { font-size: 1.125rem; font-weight: 650; }
+.runtime-conversation-empty h3 { font-size: 1.125rem; font-weight: 650; }
 .runtime-conversation-empty p { margin-top: 5px; }
 .runtime-working {
   display: flex;
@@ -105,6 +117,13 @@
   border-top: 1px solid var(--border);
 }
 .runtime-composer > .btn { justify-self: end; }
+.runtime-chat-offline {
+  display: grid;
+  gap: 8px;
+  max-height: 50%;
+  overflow: auto;
+}
+.runtime-chat-offline p { color: var(--muted); font-size: 0.875rem; }
 .runtime-prompt fieldset { display: grid; gap: 10px; border: 0; margin: 0; padding: 0; min-width: 0; }
 .runtime-prompt legend { font-weight: 600; overflow-wrap: anywhere; white-space: pre-wrap; margin-bottom: 8px; }
 .runtime-prompt .runtime-choice { display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; }
@@ -128,6 +147,7 @@
 @media (max-width: 520px) {
   .chat-page { padding: 21px 15px; }
   .chat-page-heading,
+  .runtime-chat-history,
   .runtime-messages,
   .runtime-composer { padding-inline: 15px; }
 }

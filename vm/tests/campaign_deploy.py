@@ -53,7 +53,12 @@ def verify_model_request(home, ask, root, request, reply):
     assert auth == "Bearer synthetic-key-for-test-only"
     assert body["model"] == "fixture-model"
     assert not body.get("tools")
-    assert body["messages"][-1] == request["history"][-1]
+    context, *history = body["messages"]
+    assert context["role"] == "system"
+    assert json.loads(context["content"].split("\nCampaign context:\n", 1)[1]) == {
+        "campaign_id": "fixture", "draft": request["draft"],
+    }
+    assert history == request["history"]
 
 
 def verify(home):
@@ -135,8 +140,21 @@ def verify(home):
         assert ask_campaign_plan(root, campaign_id, {"draft": plan, "history": [message]}) == reply
         assert model.call_args.kwargs["tools"] == []
         assert model.call_args.kwargs["messages"][-1] == message
-    verify_model_request(home, ask_campaign_plan, root, {"draft": plan, "history": [message]}, reply)
+    verify_model_request(home, ask_campaign_plan, root, {"draft": plan, "history": [
+        message, {"role": "assistant", "content": reply["reply"]},
+        {"role": "user", "content": "Keep the original goal and suggest another step."},
+    ]}, reply)
     assert record.read_bytes() == source
+    record.write_text(json.dumps({**data, "id": "different-campaign"}))
+    with patch("agent.auxiliary_client.call_llm") as model:
+        try:
+            ask_campaign_plan(root, campaign_id, {"draft": plan, "history": [message]})
+        except WorkspaceError as error:
+            assert error.status == 422
+        else:
+            raise AssertionError("Campaign chat must reject mismatched saved IDs.")
+        model.assert_not_called()
+    record.write_bytes(source)
     saved = update_campaign_plan(root, campaign_id, {**suggestion, "revision": initial_revision})
     assert safe_load(record.read_bytes()) == {**data, **suggestion}
     for status, update in [(409, {"revision": initial_revision}), (422, {"agents": []})]:

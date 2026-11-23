@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test, type TestContext } from "node:test";
 
-import { getDb } from "../lib/db";
+import { getDb, sqliteSchemaVersion } from "../lib/db";
 import { migrateLegacyToolSelections, type LegacyToolSelections } from "../lib/server/legacy-tool-selections";
 
 const owner = "85a44d44-317d-4790-aa12-7b542a144284";
@@ -53,11 +53,11 @@ function hasLegacyTable(db: DatabaseSync) {
   return Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'tool_assignments'").get());
 }
 
-test("fresh SQLite installs use version 5 without a selection table", async (t) => {
+test("fresh SQLite installs use the current schema without a selection table", async (t) => {
   const { db } = database(t);
   const importSelections = t.mock.fn(async () => {});
   await migrateLegacyToolSelections(importSelections);
-  assert.equal(version(db), 5);
+  assert.equal(version(db), sqliteSchemaVersion);
   assert.equal(hasLegacyTable(db), false);
   assert.equal(importSelections.mock.callCount(), 0);
 });
@@ -70,7 +70,7 @@ test("upgrades a version 4 account and leaves its agent setup pending", (t) => {
   delete processScope.omaDatabase;
 
   const upgraded = getDb();
-  assert.equal(version(upgraded), 5);
+  assert.equal(version(upgraded), sqliteSchemaVersion);
   assert.deepEqual({ ...upgraded.prepare("SELECT id, agent_setup_complete FROM users").get() }, {
     id: owner, agent_setup_complete: 0,
   });
@@ -81,7 +81,7 @@ test("retires an empty version 3 table without reaching the workspace", async (t
   assert.equal(version(db), 3);
   assert.equal(hasLegacyTable(db), true);
   await migrateLegacyToolSelections(async () => assert.fail("Empty SQLite selections do not need an import"));
-  assert.equal(version(db), 5);
+  assert.equal(version(db), sqliteSchemaVersion);
   assert.equal(hasLegacyTable(db), false);
   assert.equal(db.prepare("SELECT id FROM users").get()?.id, owner);
 });
@@ -90,7 +90,7 @@ test("upgrades version 3 when its legacy table is already absent", async (t) => 
   const { db } = legacyDatabase(t);
   db.exec("DROP TABLE tool_assignments");
   await migrateLegacyToolSelections(async () => assert.fail("There are no selections to import"));
-  assert.equal(version(db), 5);
+  assert.equal(version(db), sqliteSchemaVersion);
 });
 
 test("merges saved campaign and specialist selections and preserves account data", async (t) => {
@@ -116,7 +116,7 @@ test("merges saved campaign and specialist selections and preserves account data
   await migrateLegacyToolSelections(importSelections);
   await migrateLegacyToolSelections(importSelections);
   assert.equal(importSelections.mock.callCount(), 1);
-  assert.equal(version(db), 5);
+  assert.equal(version(db), sqliteSchemaVersion);
   assert.equal(hasLegacyTable(db), false);
   assert.equal(db.prepare("SELECT email FROM users WHERE id = ?").get(owner)?.email, "test@example.test");
   assert.equal(db.prepare("SELECT id FROM mcp_integrations WHERE user_id = ?").get(owner)?.id, "fixture");
@@ -133,7 +133,7 @@ test("keeps the old table after a refused import and retries the same snapshot",
   assert.equal(version(db), 3);
   assert.equal(hasLegacyTable(db), true);
   await migrateLegacyToolSelections(async ({ migrationId }) => assert.equal(migrationId, firstId));
-  assert.equal(version(db), 5);
+  assert.equal(version(db), sqliteSchemaVersion);
   assert.equal(hasLegacyTable(db), false);
 });
 
@@ -159,7 +159,7 @@ test("shares pending work and keeps changed rows written from a separate SQLite 
   assert.equal(version(db), 3);
   assert.equal(db.prepare("SELECT count(*) AS count FROM tool_assignments").get()?.count, 2);
   await migrateLegacyToolSelections(async ({ campaigns }) => assert.deepEqual(campaigns.seo, ["notion", "slack"]));
-  assert.equal(version(db), 5);
+  assert.equal(version(db), sqliteSchemaVersion);
 });
 
 test("accepts a concurrent completion from a separate SQLite connection", async (t) => {
@@ -170,12 +170,12 @@ test("accepts a concurrent completion from a separate SQLite connection", async 
     const other = new DatabaseSync(path);
     try {
       // Completion by another console after acknowledging the same workspace receipt.
-      other.exec("BEGIN IMMEDIATE; DROP TABLE tool_assignments; PRAGMA user_version = 5; COMMIT");
+      other.exec(`BEGIN IMMEDIATE; DROP TABLE tool_assignments; PRAGMA user_version = ${sqliteSchemaVersion}; COMMIT`);
     } finally {
       other.close();
     }
   });
-  assert.equal(version(db), 5);
+  assert.equal(version(db), sqliteSchemaVersion);
   assert.equal(hasLegacyTable(db), false);
 });
 

@@ -1,9 +1,10 @@
-/** Authenticates chat actions before sending messages and prompt responses to the gateway. */
+/** Authenticates conversation reads and run controls before forwarding them to oma-agent. */
 
 "use server";
 
 import { requireUser } from "@/lib/dal";
-import { AgentChatError, answerAgentPrompt, getAgentRun, startAgentRun } from "@/lib/server/agent-chat";
+import { AgentChatError, answerAgentPrompt, getAgentRun } from "@/lib/server/agent-chat";
+import { loadOlderChatMessages, sendNativeChatTurn } from "@/lib/server/chat-history";
 
 async function withUser<T>(operation: (userId: string) => Promise<T>) {
   const user = await requireUser();
@@ -18,8 +19,12 @@ async function withUser<T>(operation: (userId: string) => Promise<T>) {
   }
 }
 
-export async function sendChatMessage(sessionId: string, turnId: string, message: string) {
-  return withUser((userId) => startAgentRun(userId, { sessionId, turnId, message }, "default"));
+export async function sendChatMessage(threadId: string, turnId: string, message: string, campaignId?: string) {
+  return withUser((userId) => sendNativeChatTurn(userId, { threadId, turnId, message, campaignId }));
+}
+
+export async function readOlderChatMessages(threadId: string, offset: number, campaignId?: string) {
+  return withUser((userId) => loadOlderChatMessages(userId, threadId, offset, campaignId));
 }
 
 export async function readChatTurn(handle: string) {
