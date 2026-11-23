@@ -1,15 +1,16 @@
-/** Polls the authenticated activity endpoint while the dashboard is visible. */
+/** Streams public project setup activity into chat and lets the user respond or retry. */
 
 "use client";
 
 import { Activity } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 
-import { retryProjectSetup } from "@/app/actions/project-setup";
+import { answerProjectSetupPrompt, retryProjectSetup } from "@/app/actions/project-setup";
 
 import type { AgentActivity as Snapshot, AgentActivityUpdate } from "@/lib/agent-activity";
 
+import { HermesPrompt } from "./hermes-prompt";
 import "./agent-activity.css";
 
 type SetupStatus = NonNullable<Snapshot["setup"]>["status"];
@@ -33,10 +34,11 @@ const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-d
 
 export function AgentActivity() {
   const router = useRouter();
+  const headingId = useId();
   const [retryResult, retryAction, retrying] = useActionState(retryProjectSetup, {});
   const [data, setData] = useState<Snapshot>();
   const [error, setError] = useState("");
-  const [update, setUpdate] = useState<AgentActivityUpdate>();
+  const [updates, setUpdates] = useState<AgentActivityUpdate[]>([]);
 
   useEffect(() => {
     let disposed = false;
@@ -57,7 +59,13 @@ export function AgentActivity() {
       stream.onmessage = ({ data }) => {
         if (disposed) return;
         const next = JSON.parse(data) as AgentActivityUpdate;
-        setUpdate((previous) => ({ ...next, message: next.message ?? previous?.message }));
+        setUpdates((previous) => {
+          const last = previous.at(-1);
+          if (last?.phase === next.phase && last.message === next.message) return previous;
+          // Deltas grow one reply. Keep completed public updates as separate messages.
+          if (last?.phase === "writing") return [...previous.slice(0, -1), next];
+          return [...previous.slice(-9), next];
+        });
       };
     }
 
@@ -72,7 +80,7 @@ export function AgentActivity() {
         if (response.status === 401) {
           signedOut = true;
           closeStream();
-          setUpdate(undefined);
+          setUpdates([]);
           setData(undefined);
           setError("Sign in to view agent activity.");
           return;
@@ -89,7 +97,7 @@ export function AgentActivity() {
           openStream();
         } else {
           closeStream();
-          if (status === "not_sent" || !status) setUpdate(undefined);
+          if (status === "not_sent" || !status) setUpdates([]);
         }
         if (status && sawActiveSetup && finishedSetup.has(status)) {
           sawActiveSetup = false;
@@ -126,17 +134,19 @@ export function AgentActivity() {
   const status = gateway ? (busy ? "Working" : "Idle") : data || error ? "Activity unavailable" : "Checking…";
   const tool = setup && "tool" in setup ? setup.tool : undefined;
   const failureReason = setup && "failureReason" in setup ? setup.failureReason : undefined;
-  const message = setup?.status === "failed" ? undefined
-    : (setup && "message" in setup && setup.message) || update?.message;
+  const prompt = setup && "prompt" in setup ? setup.prompt : undefined;
+  const finalMessage = setup && "message" in setup ? setup.message : undefined;
+  const publicMessages = updates.flatMap(({ message }) => message ? [message] : []);
+  if (finalMessage && publicMessages.at(-1) !== finalMessage) publicMessages.push(finalMessage);
   const outputTokens = setup && "outputTokens" in setup ? setup.outputTokens : undefined;
   const reasoningTokens = setup && "reasoningTokens" in setup ? setup.reasoningTokens : undefined;
-  const setupLabel = setup?.status === "running" && update?.phase === "writing" && !tool
+  const setupLabel = setup?.status === "running" && updates.at(-1)?.phase === "writing" && !tool
     ? "Writing a reply" : setup ? setupStatus[setup.status] : "";
 
   return (
-    <section className="agent-activity" aria-labelledby="agent-activity-heading">
+    <section className="agent-activity" aria-labelledby={headingId}>
       <header className="agent-activity-header">
-        <h2 id="agent-activity-heading"><Activity size={17} aria-hidden="true" /> Agent activity</h2>
+        <h2 id={headingId}><Activity size={17} aria-hidden="true" /> Agent activity</h2>
         <span className="agent-activity-state" data-working={busy} role="status">{status}</span>
       </header>
       {gateway && busy && (
@@ -163,12 +173,15 @@ export function AgentActivity() {
         </dl>
       )}
       {failureReason && <p className="agent-activity-error" role="alert">{failureReason}</p>}
-      {setup && message && (
-        <div className="agent-activity-message">
-          <p className="agent-activity-message-label">{setup.status === "completed" ? "Agent reply" : "Latest agent message"}</p>
-          <p>{message}</p>
+      {setup && publicMessages.length > 0 && (
+        <div className="agent-activity-messages">
+          {publicMessages.map((message, index) => (
+            <div className="runtime-message" key={index}><strong>oma-agent</strong><p>{message}</p></div>
+          ))}
         </div>
       )}
+      {prompt && <HermesPrompt key={prompt.id + ":" + prompt.generation} prompt={prompt} autoFocus={false}
+        onAnswer={(answer) => answerProjectSetupPrompt({ id: prompt.id, generation: prompt.generation, kind: prompt.kind, answer })} />}
       {(outputTokens !== undefined || reasoningTokens !== undefined) && (
         <p className="agent-activity-counts agent-activity-tokens">
           {outputTokens !== undefined && <span>{outputTokens.toLocaleString()} output tokens</span>}
@@ -176,7 +189,7 @@ export function AgentActivity() {
         </p>
       )}
       {(canRetry || retrying) && (
-        <form action={retryAction} className="agent-activity-retry" onSubmit={() => setUpdate(undefined)}>
+        <form action={retryAction} className="agent-activity-retry" onSubmit={() => setUpdates([])}>
           <button type="submit" className="btn secondary" disabled={retrying}>
             {retrying ? "Retrying setup…" : "Retry setup"}
           </button>

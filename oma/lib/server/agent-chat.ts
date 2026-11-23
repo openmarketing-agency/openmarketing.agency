@@ -164,24 +164,27 @@ function readHandle(userId: string, config: Gateway, handle: unknown) {
   return id;
 }
 
+function pendingRunPrompt(controls: unknown[] | undefined, key: string, kind?: AgentPrompt["kind"]): AgentPrompt | undefined {
+  const redact = (value: string) => value.replaceAll(key, "[redacted]");
+  for (const item of controls ?? []) {
+    const pending = controlSchema.safeParse(item);
+    if (!pending.success || (kind && pending.data.kind !== kind)) continue;
+    const control = pending.data;
+    const identity = { id: control.prompt_id, generation: control.execution_generation };
+    return control.kind === "clarify"
+      ? { ...identity, kind: "clarify", question: redact(control.question), choices: control.choices.map(redact), multiSelect: control.multi_select }
+      : { ...identity, kind: "approval", description: redact(control.description), command: redact(control.command) };
+  }
+}
+
 function projectRun(payload: unknown, key: string): AgentRun {
   const parsed = statusSchema.safeParse(payload);
   if (!parsed.success) throw new AgentChatError(502, "oma-agent returned an invalid run status.");
-  const redact = (value: string) => value.replaceAll(key, "[redacted]");
   const run = parsed.data;
-  if (run.status === "completed") return { status: "completed", answer: redact(run.output ?? "") };
+  if (run.status === "completed") return { status: "completed", answer: (run.output ?? "").replaceAll(key, "[redacted]") };
   if (!runningStatuses.has(run.status)) return { status: "failed" };
-  for (const item of run.pending_controls ?? []) {
-    const pending = controlSchema.safeParse(item);
-    if (!pending.success) continue;
-    const control = pending.data;
-    const identity = { id: control.prompt_id, generation: control.execution_generation };
-    const prompt: AgentPrompt = control.kind === "clarify"
-      ? { ...identity, kind: "clarify", question: redact(control.question), choices: control.choices.map(redact), multiSelect: control.multi_select }
-      : { ...identity, kind: "approval", description: redact(control.description), command: redact(control.command) };
-    return { status: "running", prompt };
-  }
-  return { status: "running" };
+  const prompt = pendingRunPrompt(run.pending_controls, key);
+  return prompt ? { status: "running", prompt } : { status: "running" };
 }
 
 /** Read the default profile's native Sessions API through the same private gateway as Runs. */
@@ -286,12 +289,15 @@ export async function getAgentRunProgress(userId: string, handle: unknown): Prom
     if (kinds?.includes("approval")) status = "waiting_for_approval";
     else if (kinds?.includes("clarify")) status = "waiting_for_answer";
   }
+  const prompt = status === "waiting_for_approval" ? pendingRunPrompt(controls, config.key, "approval")
+    : status === "waiting_for_answer" ? pendingRunPrompt(controls, config.key, "clarify") : undefined;
   const message = status === "completed" && output ? previewAgentMessage(output, config.key) : "";
   const outputTokens = usage?.output_tokens ?? usage?.completion_tokens;
   const reasoningTokens = usage?.reasoning_tokens;
   return {
     status,
     ...(message ? { message } : {}),
+    ...(prompt ? { prompt } : {}),
     ...(status === "failed" ? { failureReason: describeRunFailure(parsed.data) } : {}),
     ...(outputTokens === undefined ? {} : { outputTokens }),
     ...(reasoningTokens === undefined ? {} : { reasoningTokens }),

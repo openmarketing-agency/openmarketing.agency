@@ -6,14 +6,18 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { AgentPrompt as Prompt } from "@/lib/agent-chat";
 
-export function HermesPrompt({ prompt, onAnswer }: { prompt: Prompt; onAnswer: (answer: string) => Promise<string | undefined> }) {
+export function HermesPrompt({ prompt, onAnswer, autoFocus = true }: {
+  prompt: Prompt;
+  onAnswer: (answer: string) => Promise<string | undefined>;
+  autoFocus?: boolean;
+}) {
   const [otherSelected, setOtherSelected] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
   const question = useRef<HTMLLegendElement>(null);
 
-  useEffect(() => { question.current?.focus(); }, []);
+  useEffect(() => { if (autoFocus) question.current?.focus(); }, [autoFocus]);
 
   async function answer(value: string) {
     if (submitting || submitted) return;

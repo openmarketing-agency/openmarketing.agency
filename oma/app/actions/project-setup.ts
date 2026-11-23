@@ -6,8 +6,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
+import { AgentChatError, answerAgentPrompt } from "@/lib/server/agent-chat";
 import { requireAgentSetup } from "@/lib/server/agent-setup";
-import { retrySavedProjectSetup, sendProjectSetup, skipSavedProjectSetup, validateProjectLinks, type ProjectFields } from "@/lib/server/project-setup";
+import { readProjectSetup, retrySavedProjectSetup, sendProjectSetup, skipSavedProjectSetup, validateProjectLinks, type ProjectFields } from "@/lib/server/project-setup";
 
 export type ProjectSetupFormState = { errors?: Partial<Record<ProjectFields, string>>; message?: string; saved?: boolean };
 
@@ -49,6 +50,21 @@ export async function retryProjectSetup() {
   } catch (error) {
     console.error("Project setup retry failed", error instanceof Error ? error.name : "Unknown error");
     return { error: "Couldn’t retry project setup. Try again." };
+  }
+}
+
+/** Answers a prompt for the account's current saved setup run. */
+export async function answerProjectSetupPrompt(input: unknown) {
+  const user = await requireUser();
+  requireAgentSetup(user.id);
+  const handle = readProjectSetup(user.id)?.delivery?.runHandle;
+  if (!handle) return "This project setup run is no longer available.";
+  try {
+    await answerAgentPrompt(user.id, handle, input);
+  } catch (error) {
+    if (error instanceof AgentChatError) return error.message;
+    console.error("Project setup response failed", error instanceof Error ? error.name : "Unknown error");
+    return "Couldn’t send your response to project setup. Try again.";
   }
 }
 

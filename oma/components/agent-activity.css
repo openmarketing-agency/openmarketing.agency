@@ -1,11 +1,9 @@
-/* Presents live activity as a compact dashboard panel using the console palette. */
+/* Fits live setup status and public replies into the chat transcript. */
 
 .agent-activity {
-  margin-block: 0 20px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--raised);
+  flex-shrink: 0;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--border);
 }
 
 .agent-activity-header,
@@ -58,16 +56,6 @@
 .agent-activity-error { color: var(--negative); }
 .agent-activity-retry { margin-top: 12px; }
 
-.agent-activity-message {
-  margin-top: 10px;
-  padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  font-size: 0.8125rem;
-  overflow-wrap: anywhere;
-}
-.agent-activity-message p { margin: 0; }
-.agent-activity-message p + p { margin-top: 4px; }
-.agent-activity-message-label { color: var(--muted); font-weight: 600; }
+.agent-activity-messages { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; font-size: 0.875rem; }
+.workbench-chat .agent-activity .runtime-prompt { margin-top: 12px; padding: 0; border: 0; }
 .agent-activity-tokens { display: flex; flex-wrap: wrap; gap: 4px 12px; }

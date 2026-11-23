@@ -1,4 +1,6 @@
-/** Describes the live gateway counts and saved onboarding run state shown on the dashboard. */
+/** Describes the live gateway counts and saved onboarding run state shown in workspace chat. */
+
+import type { AgentPrompt } from "./agent-chat";
 
 export type AgentRunProgress = {
   status: "queued" | "running" | "waiting_for_answer" | "waiting_for_approval" | "stopping"
@@ -7,6 +9,7 @@ export type AgentRunProgress = {
   updatedAt?: string;
   message?: string;
   failureReason?: string;
+  prompt?: AgentPrompt;
   outputTokens?: number;
   reasoningTokens?: number;
 };
