@@ -174,10 +174,29 @@ test("projects authorized run progress with sanitized public replies and reporte
   payload = { status: "running", pending_controls: [{ kind: "clarify" }, { kind: "approval", command: "private command" }] };
   assert.deepEqual(await getAgentRunProgress(account, handle), { status: "waiting_for_approval" });
 
-  for (const status of ["waiting_for_approval", "stopping", "failed", "cancelled", "unknown"]) {
-    payload = { status, output: "private output", progress_at: null };
+  for (const status of ["waiting_for_approval", "stopping", "cancelled", "unknown"]) {
+    payload = { status, output: "OpenRouter HTTP 401", progress_at: null };
     assert.deepEqual(await getAgentRunProgress(account, handle), { status });
   }
+
+  // The installed gateway may provide the reason only in output, or as a structured error on other versions.
+  payload = { status: "failed", output: "OpenRouter HTTP 401. Credential: " + key, usage: { output_tokens: 0 } };
+  assert.deepEqual(await getAgentRunProgress(account, handle), {
+    status: "failed", failureReason: "The model provider rejected authentication. Check the provider API key in Settings.",
+    outputTokens: 0,
+  });
+  payload = { status: "failed", error: { code: 429, message: "Private provider details " + key } };
+  assert.deepEqual(await getAgentRunProgress(account, handle), {
+    status: "failed", failureReason: "The model provider rate-limited the request. Wait a moment and retry setup.",
+  });
+  payload = { status: "failed", turn_exit_reason: "max_iterations_reached(8/8)" };
+  assert.deepEqual(await getAgentRunProgress(account, handle), {
+    status: "failed", failureReason: "oma-agent reached its iteration limit before setup finished.",
+  });
+  payload = { status: "failed", error: { message: "Private details " + key }, output: "private output" };
+  assert.deepEqual(await getAgentRunProgress(account, handle), {
+    status: "failed", failureReason: "oma-agent did not report a recognizable cause. Check the oma-agent logs for details.",
+  });
   payload = {
     status: "completed", output: "Setup ready. " + key, reasoning: "private analysis",
     usage: { input_tokens: 200, output_tokens: 42, reasoning_tokens: 12, cost_usd: 0.01 },

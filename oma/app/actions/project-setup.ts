@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
 import { requireAgentSetup } from "@/lib/server/agent-setup";
-import { sendProjectSetup, skipSavedProjectSetup, validateProjectLinks, type ProjectFields } from "@/lib/server/project-setup";
+import { retrySavedProjectSetup, sendProjectSetup, skipSavedProjectSetup, validateProjectLinks, type ProjectFields } from "@/lib/server/project-setup";
 
 export type ProjectSetupFormState = { errors?: Partial<Record<ProjectFields, string>>; message?: string; saved?: boolean };
 
@@ -36,6 +36,20 @@ export async function submitProjectSetup(
     return { message: "Couldn’t finish project setup. Try again." };
   }
   goToWorkspace();
+}
+
+export async function retryProjectSetup() {
+  const user = await requireUser();
+  requireAgentSetup(user.id);
+  try {
+    const result = await retrySavedProjectSetup(user.id);
+    revalidatePath("/dashboard");
+    revalidatePath("/onboarding");
+    return result;
+  } catch (error) {
+    console.error("Project setup retry failed", error instanceof Error ? error.name : "Unknown error");
+    return { error: "Couldn’t retry project setup. Try again." };
+  }
 }
 
 export async function skipProjectSetup() {

@@ -6,6 +6,7 @@ export type AgentRunProgress = {
   tool?: string;
   updatedAt?: string;
   message?: string;
+  failureReason?: string;
   outputTokens?: number;
   reasoningTokens?: number;
 };

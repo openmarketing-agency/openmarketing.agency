@@ -4,7 +4,9 @@
 
 import { Activity } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
+
+import { retryProjectSetup } from "@/app/actions/project-setup";
 
 import type { AgentActivity as Snapshot, AgentActivityUpdate } from "@/lib/agent-activity";
 
@@ -31,6 +33,7 @@ const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-d
 
 export function AgentActivity() {
   const router = useRouter();
+  const [retryResult, retryAction, retrying] = useActionState(retryProjectSetup, {});
   const [data, setData] = useState<Snapshot>();
   const [error, setError] = useState("");
   const [update, setUpdate] = useState<AgentActivityUpdate>();
@@ -114,14 +117,17 @@ export function AgentActivity() {
       closeStream();
       document.removeEventListener("visibilitychange", resume);
     };
-  }, [router]);
+  }, [retryResult, router]);
 
   const gateway = data?.gateway;
   const setup = data?.setup;
+  const canRetry = setup?.status === "failed" || setup?.status === "cancelled" || setup?.status === "not_sent";
   const busy = isBusy(gateway);
   const status = gateway ? (busy ? "Working" : "Idle") : data || error ? "Activity unavailable" : "Checking…";
   const tool = setup && "tool" in setup ? setup.tool : undefined;
-  const message = (setup && "message" in setup && setup.message) || update?.message;
+  const failureReason = setup && "failureReason" in setup ? setup.failureReason : undefined;
+  const message = setup?.status === "failed" ? undefined
+    : (setup && "message" in setup && setup.message) || update?.message;
   const outputTokens = setup && "outputTokens" in setup ? setup.outputTokens : undefined;
   const reasoningTokens = setup && "reasoningTokens" in setup ? setup.reasoningTokens : undefined;
   const setupLabel = setup?.status === "running" && update?.phase === "writing" && !tool
@@ -156,6 +162,7 @@ export function AgentActivity() {
           )}
         </dl>
       )}
+      {failureReason && <p className="agent-activity-error" role="alert">{failureReason}</p>}
       {setup && message && (
         <div className="agent-activity-message">
           <p className="agent-activity-message-label">{setup.status === "completed" ? "Agent reply" : "Latest agent message"}</p>
@@ -168,6 +175,14 @@ export function AgentActivity() {
           {reasoningTokens !== undefined && <span>{reasoningTokens.toLocaleString()} reasoning tokens</span>}
         </p>
       )}
+      {(canRetry || retrying) && (
+        <form action={retryAction} className="agent-activity-retry" onSubmit={() => setUpdate(undefined)}>
+          <button type="submit" className="btn secondary" disabled={retrying}>
+            {retrying ? "Retrying setup…" : "Retry setup"}
+          </button>
+        </form>
+      )}
+      {retryResult.error && <p className="agent-activity-error" role="alert">{retryResult.error}</p>}
       {error && <p className="agent-activity-error" role="status">{error}</p>}
     </section>
   );

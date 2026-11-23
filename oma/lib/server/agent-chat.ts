@@ -45,6 +45,11 @@ const progressSchema = z.object({
   progress_at: z.number().positive().max(8.64e12).optional().catch(undefined),
   pending_controls: z.array(z.unknown()).optional(),
   output: z.string().optional().catch(undefined),
+  error: z.union([z.string(), z.object({
+    code: z.union([z.string(), z.number()]).optional().catch(undefined),
+    message: z.string().optional().catch(undefined),
+  })]).optional().catch(undefined),
+  turn_exit_reason: z.string().optional().catch(undefined),
   usage: z.object({
     output_tokens: tokenCount, completion_tokens: tokenCount, reasoning_tokens: tokenCount,
   }).optional().catch(undefined),
@@ -237,6 +242,37 @@ export async function getAgentActivityCounts() {
   return { activeRuns: parsed.data.api_server.active_runs, activeAgents: parsed.data.active_agents };
 }
 
+function describeRunFailure(progress: z.infer<typeof progressSchema>) {
+  const { error, output, turn_exit_reason: exitReason } = progress;
+  const fields = typeof error === "string" ? [error] : [error?.code, error?.message];
+  // Provider errors can embed credentials and internal data. Match known failure signals and return fixed copy.
+  const details = [...fields, exitReason, output].join("\n");
+  const reasons: ReadonlyArray<readonly [RegExp, string]> = [
+    [/\b401\b|authentication[_ -](?:error|failed|required)|unauthorized|invalid[_ -]api[_ -]key|incorrect api key|missing api key/i,
+      "The model provider rejected authentication. Check the provider API key in Settings."],
+    [/\b403\b|(?:provider|model).{0,30}(?:permission denied|forbidden)/i,
+      "The model provider denied access. Check that the API key can use the selected model."],
+    [/\b402\b|insufficient[_ -](?:quota|credits?|funds|balance)|payment required|budget exceeded/i,
+      "The model provider reported a billing or quota issue. Check your balance and usage limits."],
+    [/\b429\b|rate[_ -]limit|too many requests/i,
+      "The model provider rate-limited the request. Wait a moment and retry setup."],
+    [/model[_ -]not[_ -]found|no such model|invalid[_ -]model|no endpoints found/i,
+      "The model provider could not serve the selected model. Check the model ID in Settings."],
+    [/context[_ -](?:length|compression[_ -]exhausted)|maximum context|prompt is too long/i,
+      "The run exceeded the model’s context limit."],
+    [/max[_ -]iterations|iteration[_ -](?:budget|limit)|maximum iterations/i,
+      "oma-agent reached its iteration limit before setup finished."],
+    [/timed? ?out|timeout/i,
+      "The agent or model provider timed out. Retry setup."],
+    [/\b(?:502|503|504)\b|service unavailable|overloaded/i,
+      "The model provider was temporarily unavailable. Retry setup."],
+    [/connection[_ -](?:refused|reset|failed|error)/i,
+      "oma-agent could not connect to the model provider. Check the provider base URL in Settings."],
+  ];
+  return reasons.find(([pattern]) => pattern.test(details))?.[1]
+    ?? "oma-agent did not report a recognizable cause. Check the oma-agent logs for details.";
+}
+
 export async function getAgentRunProgress(userId: string, handle: unknown): Promise<AgentRunProgress> {
   const config = await gateway();
   const id = readHandle(userId, config, handle);
@@ -256,6 +292,7 @@ export async function getAgentRunProgress(userId: string, handle: unknown): Prom
   return {
     status,
     ...(message ? { message } : {}),
+    ...(status === "failed" ? { failureReason: describeRunFailure(parsed.data) } : {}),
     ...(outputTokens === undefined ? {} : { outputTokens }),
     ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
     ...(status === "running" && tool && !tool.includes(config.key) ? { tool } : {}),

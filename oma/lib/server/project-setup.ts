@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { getDb } from "@/lib/db";
-import { AgentChatError, startAgentRun } from "./agent-chat";
+import { AgentChatError, getAgentRunProgress, startAgentRun } from "./agent-chat";
 
 const projectLinks = z.object({ websiteUrl: z.string().nullable(), githubUrl: z.string().nullable() });
 const setupSchema = z.discriminatedUnion("status", [
@@ -102,6 +102,37 @@ export async function sendProjectSetup(userId: string, answers: CompletedAnswers
       AND json_extract(onboarding_state, '$.delivery.runHandle') IS NULL
   `).run(handle, userId, turnId);
   return { ok: true };
+}
+
+/** Retry delivery or replace a confirmed terminal run, keeping the saved answers and backup transcript. */
+export async function retrySavedProjectSetup(userId: string): Promise<{ error?: string }> {
+  const project = readProjectSetup(userId);
+  if (project?.setup.status !== "done") return { error: "Add your project links before retrying setup." };
+
+  const previous = project.delivery;
+  if (previous?.runHandle) {
+    try {
+      const { status } = await getAgentRunProgress(userId, previous.runHandle);
+      if (status !== "failed" && status !== "cancelled") {
+        return { error: "Project setup can be restarted after a failed or cancelled run." };
+      }
+    } catch (error) {
+      if (!(error instanceof AgentChatError)) throw error;
+      return { error: "Couldn’t verify the last setup run. Check the oma-agent connection." };
+    }
+
+    const delivery = { sessionId: randomUUID(), turnId: randomUUID() };
+    // A concurrent retry must not replace the attempt that already took over.
+    const result = getDb().prepare(`
+      UPDATE users SET onboarding_state = json_set(onboarding_state, '$.delivery', json(?))
+      WHERE id = ? AND json_extract(onboarding_state, '$.delivery.turnId') = ?
+        AND json_extract(onboarding_state, '$.delivery.runHandle') = ?
+    `).run(JSON.stringify(delivery), userId, previous.turnId, previous.runHandle);
+    if (!result.changes) return {};
+  }
+
+  const delivery = await sendProjectSetup(userId, project.setup);
+  return delivery.ok ? {} : { error: "Your links are saved. Check the oma-agent connection and retry setup." };
 }
 
 export type ProjectFields = "websiteUrl" | "githubUrl";

@@ -9,7 +9,7 @@ import { after, beforeEach, test } from "node:test";
 import { getDb } from "../lib/db";
 import { readDashboardAgentActivity } from "../lib/server/agent-activity";
 import { beginOnboarding, readOnboarding, resetOnboarding, skipOnboarding } from "../lib/server/onboarding";
-import { isProjectSetupComplete, readProjectSetup, sendProjectSetup, skipSavedProjectSetup, validateProjectLinks } from "../lib/server/project-setup";
+import { isProjectSetupComplete, readProjectSetup, retrySavedProjectSetup, sendProjectSetup, skipSavedProjectSetup, validateProjectLinks } from "../lib/server/project-setup";
 
 const folder = mkdtempSync(join(tmpdir(), "oma-project-setup-"));
 process.env.OMA_DATA_DIR = folder;
@@ -192,4 +192,49 @@ test("reads the saved setup run independently of aggregate gateway metrics", asy
   runStatus = 503;
   assert.deepEqual(await readDashboardAgentActivity(id), { gateway: null, setup: { status: "connection_lost" } });
   assert.deepEqual(await readDashboardAgentActivity("other-account"), { gateway: null, setup: null });
+});
+
+test("restarts a failed setup once, preserving its links and retrying a lost delivery with the same turn", async (t) => {
+  const id = "retry-owner";
+  const setup = { status: "done" as const, websiteUrl: "https://example.com/", githubUrl: null };
+  const backup = { status: "skipped", history: [] };
+  db.prepare("INSERT INTO users (id, email, hashed_password, onboarding_state) VALUES (?, ?, ?, ?)")
+    .run(id, "retry@example.test", "fixture-hash", JSON.stringify({ kind: "project-setup", setup, agent: backup }));
+
+  let oldStatus = "running";
+  let statusCode = 200;
+  const submissions: { key: string | null; input: string; session: string }[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    if (url.endsWith("/runs/run_original")) return Response.json({ status: oldStatus }, { status: statusCode });
+    assert.equal(url, "http://vm:8642/v1/runs");
+    const body = JSON.parse(String(options.body));
+    submissions.push({ key: new Headers(options.headers).get("idempotency-key"), input: body.input, session: body.session_id });
+    if (submissions.length === 2) throw new TypeError("Lost setup response");
+    return Response.json({ run_id: submissions.length === 1 ? "run_original" : "run_retry" }, { status: 202 });
+  });
+
+  assert.deepEqual(await sendProjectSetup(id, setup), { ok: true });
+  assert.match((await retrySavedProjectSetup(id)).error ?? "", /after a failed or cancelled run/);
+  oldStatus = "completed";
+  assert.match((await retrySavedProjectSetup(id)).error ?? "", /after a failed or cancelled run/);
+  statusCode = 503;
+  assert.match((await retrySavedProjectSetup(id)).error ?? "", /verify the last setup run/);
+  assert.equal(submissions.length, 1);
+
+  statusCode = 200;
+  oldStatus = "failed";
+  const results = await Promise.all([retrySavedProjectSetup(id), retrySavedProjectSetup(id)]);
+  assert.equal(results.filter(({ error }) => error?.includes("Your links are saved")).length, 1);
+  assert.equal(submissions.length, 2);
+  assert.notEqual(submissions[0].key, submissions[1].key);
+  assert.notEqual(submissions[0].session, submissions[1].session);
+  assert.equal(submissions[0].input, submissions[1].input);
+  assert.equal(readProjectSetup(id)?.delivery?.runHandle, undefined);
+
+  assert.deepEqual(await retrySavedProjectSetup(id), {});
+  assert.deepEqual(submissions[2], submissions[1]);
+  const saved = readProjectSetup(id);
+  assert.deepEqual(saved?.setup, setup);
+  assert.deepEqual(saved?.agent, backup);
+  assert.match(saved?.delivery?.runHandle ?? "", /^run_retry[.]/);
 });
