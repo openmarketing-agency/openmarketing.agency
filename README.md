@@ -2,6 +2,8 @@
 
 OMA is a self-hosted workspace for marketing campaigns and tool connections. The full stack includes the Next.js console, OMA Agent (Hermes), and `omactl` with its app catalog and Traefik. The VM no longer preinstalls repository campaign templates or skills. Existing workspace records and profiles are kept, and OMA Agent still supplies its own starter profiles and skills.
 
+New to the codebase? See the [architecture and workflow diagrams](docs/architecture.md).
+
 ## Run the full stack locally
 
 Use Docker Engine with Compose 2.24.4+ on an x86-64 Linux host or VM that supports privileged containers and nested Docker. No model API key is needed to start. To supply OpenRouter credentials at startup, set `OPENROUTER_API_KEY` in a private `.env` using [`.env.example`](.env.example) as a reference. If you already have a private environment file elsewhere, set `COMPOSE_ENV_FILES` to its path, then start the stack from this checkout.
@@ -20,9 +22,9 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm omactl d
 docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes chat
 ```
 
-On [Campaigns](http://localhost:3000/dashboard), **Agent activity** shows live public messages from the signed-in account’s project setup run. It shows output or reasoning token totals when the gateway reports them.
+On [Campaigns](http://localhost:3000/dashboard), **Agent activity** shows live public messages from the signed-in account’s project setup run. It shows output or reasoning token totals when the gateway reports them. If project setup fails, Agent activity shows the reported cause when it recognizes one. Choose **Retry setup** after a failure or cancellation to start a fresh attempt with the saved links.
 
-Open [Chat](http://localhost:3000/chat) to talk with oma-agent’s default profile. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available.
+Open [Chat](http://localhost:3000/chat) to talk with oma-agent’s default profile. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available. Use **Chat history** to reopen a saved conversation and **New chat** to start another. The workspace Chat page and each campaign have separate histories in oma-agent. The console loads transcripts from the Hermes Sessions API.
 
 Open **Settings → Default and maintenance agents** to change the model or provider base URL, rotate the API key, or set the shared reasoning effort. The console writes `agent.reasoning_effort` to both saved records and syncs it to their Hermes profiles. **Provider default** leaves effort selection to Hermes and the model, while **None** asks Hermes to disable reasoning. The console forwards a submitted API key to both profiles over the private workspace socket. Hermes stores it in each profile’s credential file. The YAML uses a `model.api_key` reference such as `${OPENROUTER_API_KEY}`. The console needs no key in its `.env`. Start a new chat after changing the model or reasoning effort.
 
@@ -35,7 +37,7 @@ A campaign uses the default agent’s model when its model fields are blank. Dep
 
 **Save and sync** creates a Composio connection from the campaign’s configured integrations. It then writes the model and generated MCP URL to `campaigns/<id>/config.yaml` in the mounted workspace and uses the private `POST /workspace/campaigns/<id>/sync` endpoint to update installed campaign profiles. For bundled campaigns created by earlier Docker images, the first sync creates the campaign board and adds missing routing to the existing profiles. Saving a campaign with no configured integrations clears its generated Composio connection. YAML stores only key references. The model and MCP settings support per-agent overrides. Rebuild and recreate the console and VM after updating the stack.
 
-Open **Edit plan** inside a campaign to change its name, description, goals, or steps. Campaign chat uses oma-agent’s default profile to suggest revisions for the draft. **Review suggestion** fills the editor and **Save plan** writes the reviewed fields to the workspace.
+The campaign chat stays open on the right as you move between campaign sections. Use it to discuss the plan or request changes. Every message is sent to oma-agent’s default profile with the saved campaign ID.
 
 With a compatible agent image, trusted local processes can edit `/opt/data/oma/agents/{default,maintenance}/config.yaml` and then call `POST /workspace/agents/<id>/sync` over the private workspace Unix socket with JSON `{}` or `{"revision":"<sha256 of saved YAML>"}`. To apply an API key with a staged provider selection, include `"env": {"HERMES_MODEL_API_KEY": "<provider API key>"}` alongside the exact saved revision. The endpoint applies the saved model and reasoning settings. Trusted socket callers can also supply named profile credentials explicitly in `env` for agent or campaign sync. Values are passed to the native sync process over standard input. `409` means the saved file changed before it could be applied.
 
