@@ -26,8 +26,6 @@ const routes: Record<string, Operation[]> = {
   "/users/me": [["get", "Read your profile"], ["patch", "Update your profile", { fields: registration }]],
   "/mcp-integrations": [["get", "List your MCP integrations"], ["post", "Add an MCP integration", { status: 201, fields: integration, required: ["name", "url"] }]],
   "/mcp-integrations/{integrationId}": [["get", "Read an MCP integration"], ["patch", "Update an MCP integration", { fields: integration }], ["delete", "Remove an MCP integration", { status: 204 }]],
-  "/tool-assignments": [["get", "List your tool assignments"]],
-  "/tool-assignments/{playbook}/{agent}/{toolkit}": [["put", "Add a toolkit to a scope (use campaign for the entire campaign)", { status: 204 }], ["delete", "Remove a toolkit from the specified scope", { status: 204 }]],
 };
 
 function operations(path: string, entries: Operation[]) {

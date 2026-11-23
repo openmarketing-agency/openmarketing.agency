@@ -5,7 +5,7 @@
 import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ClipboardCheck, LogOut, Megaphone, MessageSquare, Plug } from "lucide-react";
+import { ClipboardCheck, LogOut, Megaphone, MessageSquare, Plug, Settings } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
 import { Brand } from "@/components/brand";
@@ -17,6 +17,7 @@ const destinations = [
   { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/connections", label: "Tools", icon: Plug },
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 type ConsoleProps = { email?: string; children: ReactNode };

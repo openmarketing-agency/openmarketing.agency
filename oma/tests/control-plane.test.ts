@@ -50,16 +50,25 @@ test("cross-origin preflight permits configured origins only", async () => {
   }
 });
 
-test("OpenAPI discovers account and tool endpoints with OAuth2 login", () => {
+test("OpenAPI discovers account and MCP integration endpoints with OAuth2 login", () => {
   const document = openApiDocument();
   assert.equal(document.components.securitySchemes.OAuth2PasswordBearer.flows.password.tokenUrl, "/api/v1/auth/jwt/login");
   for (const path of [
     "/health",
     "/api/v1/users/me",
     "/api/v1/mcp-integrations",
-    "/api/v1/tool-assignments",
   ]) {
     assert.ok(Object.hasOwn(document.paths, path), path);
+  }
+});
+
+test("tool selections are unavailable through the retired bearer API and absent from OpenAPI", async () => {
+  const prefix = "/api/v1/tool-assignments";
+  assert.ok(!Object.keys(openApiDocument().paths).some((path) => path.startsWith(prefix)));
+  assert.equal((await request(prefix)).status, 404);
+  const formerSelection = `${prefix}/seo/campaign/googleanalytics`;
+  for (const method of ["PUT", "DELETE"]) {
+    assert.equal((await request(formerSelection, { method })).status, 404);
   }
 });
 

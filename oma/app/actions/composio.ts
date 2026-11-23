@@ -1,7 +1,7 @@
 "use server";
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
-import { requireUser, requireAccessToken } from "@/lib/dal";
+import { requireUser } from "@/lib/dal";
 import {
   appOrigin,
   connectionSnapshot,
@@ -9,13 +9,13 @@ import {
   toolCatalog,
 } from "@/lib/composio";
 import {
-  CAMPAIGN_SCOPE,
+  CAMPAIGN_CATALOG_SCOPE,
   connectionScope,
   isWorkspaceScope,
   WORKSPACE_SCOPE,
   type ToolConnectionScope,
 } from "@/lib/agent-connections";
-import { listToolAssignments, saveToolAssignment } from "@/lib/backend";
+import { changeToolSelection, readSelectedToolSlugs, selectionError } from "@/lib/tool-workspace";
 import { accessCookieOptions } from "@/lib/cookies";
 import {
   CONNECTION_COOKIE,
@@ -24,11 +24,19 @@ import {
 } from "@/lib/connection-attempt";
 import { type CatalogQuery, toolkitSlug } from "@/lib/tool-catalog";
 import { ToolConnectionConfigurationError } from "@/lib/tool-connection-service";
-import { loadAgentWorkspace } from "@/lib/server/agent-workspace";
+import { loadAgentWorkspace, WorkspaceRequestError } from "@/lib/server/agent-workspace";
 
-export async function refreshConnectionsAction() {
+export async function refreshConnectionsAction(scope: ToolConnectionScope = WORKSPACE_SCOPE) {
   const user = await requireUser();
-  return connectionSnapshot(user.id);
+  connectionScope(user.id, scope);
+  const [snapshot, selections] = await Promise.all([
+    connectionSnapshot(user.id),
+    (isWorkspaceScope(scope) ? readSelectedToolSlugs() : Promise.resolve(undefined)).then(
+      (selected) => ({ selected, error: undefined }),
+      (error: unknown) => ({ selected: undefined, error: selectionError(error) }),
+    ),
+  ]);
+  return { snapshot, ...selections };
 }
 export async function searchToolCatalogAction(query: CatalogQuery) {
   await requireUser();
@@ -48,28 +56,6 @@ export async function toolCategoriesAction() {
     };
   }
 }
-export async function assignToolAction(
-  slug: string,
-  scope: ToolConnectionScope,
-  assigned: boolean,
-) {
-  const user = await requireUser();
-  try {
-    connectionScope(user.id, scope);
-    const tool = assigned ? await (await toolCatalog()).get(slug) : undefined;
-    const result = await saveToolAssignment(
-      await requireAccessToken(),
-      scope.playbookId,
-      scope.agentId,
-      slug,
-      assigned,
-    );
-    if (!result.ok) return { error: result.error.message };
-    return { tool };
-  } catch {
-    return { error: "We couldn’t update this tool selection. Try again." };
-  }
-}
 export async function connectToolAction(
   toolId: string,
   scope: ToolConnectionScope = WORKSPACE_SCOPE,
@@ -77,12 +63,19 @@ export async function connectToolAction(
   const user = await requireUser();
   try {
     const context = connectionScope(user.id, scope);
-    if (scope.agentId === CAMPAIGN_SCOPE) {
+    const campaignId = isWorkspaceScope(scope) ? null : scope.playbookId;
+    const slug = toolkitSlug(toolId);
+    if (campaignId !== null) {
       const { records, error } = await loadAgentWorkspace();
       if (error) return { error };
-      if (!records?.campaigns.some((campaign) => campaign.id === scope.playbookId)) return { error: "Campaign not found." };
+      const campaign = records?.campaigns.find((item) => item.id === campaignId);
+      if (!campaign) return { error: "Campaign not found." };
+      // The catalog authorizes a shared account while keeping the campaign routing unchanged.
+      if (scope.agentId !== CAMPAIGN_CATALOG_SCOPE
+          && !campaign.requiredIntegrations?.some((required) => required.slug === slug)) {
+        return { error: "This toolkit is not configured for the campaign." };
+      }
     }
-    const slug = toolkitSlug(toolId);
     const tool = await (await toolCatalog()).get(slug);
     const nonce = randomBytes(32).toString("hex");
     const callbackUrl = new URL(CONNECTION_CALLBACK_PATH, appOrigin());
@@ -92,16 +85,12 @@ export async function connectToolAction(
       slug,
       callbackUrl.toString(),
     );
-    // Save selection after a successful link creation; consent may still be pending.
-    if (!isWorkspaceScope(scope) || tool.noAuth) {
-      const saved = await saveToolAssignment(
-        await requireAccessToken(),
-        scope.playbookId,
-        scope.agentId,
-        slug,
-        true,
-      );
-      if (!saved.ok) return { error: saved.error.message };
+    if (campaignId === null && tool.noAuth) {
+      try {
+        await changeToolSelection(slug, true);
+      } catch (error) {
+        return { error: selectionError(error) };
+      }
     }
     if (result.connected) return { connected: true };
     const attempt = {
@@ -134,31 +123,11 @@ export async function disconnectToolAction(slug: string) {
   const user = await requireUser();
   try {
     const tool = await (await toolCatalog()).get(slug);
-    if (tool.noAuth) {
-      const token = await requireAccessToken();
-      const saved = await listToolAssignments(token);
-      if (!saved.ok) return { error: saved.error.message };
-      const results = await Promise.all(
-        saved.data
-          .filter((item) => item.toolkit_slug === slug)
-          .map((item) =>
-            saveToolAssignment(
-              token,
-              item.playbook_id,
-              item.agent_id,
-              slug,
-              false,
-            ),
-          ),
-      );
-      if (results.some((result) => !result.ok))
-        return {
-          error:
-            "We couldn’t remove all selections for this tool. Refresh and try again.",
-        };
-    } else await (await toolConnections()).disconnect(user.id, slug);
-    return { snapshot: await connectionSnapshot(user.id) };
-  } catch {
-    return { error: "We couldn’t disconnect this tool. Please try again." };
+    if (!tool.noAuth) await (await toolConnections()).disconnect(user.id, slug);
+    const selected = tool.noAuth ? await changeToolSelection(slug, false) : undefined;
+    return { snapshot: await connectionSnapshot(user.id), selected };
+  } catch (error) {
+    return { error: error instanceof WorkspaceRequestError
+      ? selectionError(error) : "We couldn’t disconnect this tool. Please try again." };
   }
 }

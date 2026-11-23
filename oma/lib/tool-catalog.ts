@@ -5,6 +5,7 @@ export type Toolkit = {
   slug: string;
   name: string;
   description: string;
+  logoUrl?: string;
   categories: { id: string; name: string }[];
   noAuth: boolean;
   toolCount: number;
@@ -37,7 +38,26 @@ export function suggestedToolkit(id: keyof typeof tools): Toolkit {
     toolCount: 0,
   };
 }
-export function createToolCatalog(client: ReturnType<Composio["getClient"]>) {
+type CatalogClient = ReturnType<Composio["getClient"]>;
+type CatalogItem = Awaited<ReturnType<CatalogClient["toolkits"]["list"]>>["items"][number];
+
+function toToolkit(item: CatalogItem): Toolkit {
+  const logo = typeof item.meta.logo === "string" ? URL.parse(item.meta.logo) : null;
+  const logoUrl = logo?.protocol === "https:" && !logo.username && !logo.password ? logo.href : undefined;
+  return {
+    slug: item.slug,
+    name: item.name,
+    description: item.meta.description,
+    ...(logoUrl && { logoUrl }),
+    categories: item.meta.categories,
+    noAuth: Boolean(item.no_auth),
+    toolCount: item.meta.tools_count,
+    managedAuth: Boolean(item.composio_managed_auth_schemes?.length),
+    authSchemes: item.auth_schemes ?? [],
+  };
+}
+
+export function createToolCatalog(client: CatalogClient) {
   const cache = new Map<string, { tool: Toolkit; expiresAt: number }>();
   async function list(query: CatalogQuery = {}): Promise<CatalogPage> {
     const page = await client.toolkits.list({
@@ -48,16 +68,7 @@ export function createToolCatalog(client: ReturnType<Composio["getClient"]>) {
       category: query.category || undefined,
       cursor: query.cursor || undefined,
     });
-    const items = page.items.map((item) => ({
-      slug: item.slug,
-      name: item.name,
-      description: item.meta.description,
-      categories: item.meta.categories,
-      noAuth: Boolean(item.no_auth),
-      toolCount: item.meta.tools_count,
-      managedAuth: Boolean(item.composio_managed_auth_schemes?.length),
-      authSchemes: item.auth_schemes ?? [],
-    }));
+    const items = page.items.map(toToolkit);
     items.forEach((item) =>
       cache.set(item.slug, { tool: item, expiresAt: Date.now() + 300_000 }),
     );
@@ -78,16 +89,7 @@ export function createToolCatalog(client: ReturnType<Composio["getClient"]>) {
     });
     const item = page.items.find((item) => item.slug === slug);
     if (!item) throw new Error("This tool is no longer available.");
-    const toolkit = {
-      slug: item.slug,
-      name: item.name,
-      description: item.meta.description,
-      categories: item.meta.categories,
-      noAuth: Boolean(item.no_auth),
-      toolCount: item.meta.tools_count,
-      managedAuth: Boolean(item.composio_managed_auth_schemes?.length),
-      authSchemes: item.auth_schemes ?? [],
-    };
+    const toolkit = toToolkit(item);
     cache.set(slug, { tool: toolkit, expiresAt: Date.now() + 300_000 });
     return toolkit;
   }

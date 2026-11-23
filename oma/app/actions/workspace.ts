@@ -7,7 +7,9 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
 import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
-import { brandUpdate, knowledgeUpdate, playbookUpdate, previewCampaignPlan, saveCampaignConfiguration, saveCampaignPlan, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { completeAgentSetup, needsAgentSetup, requireAgentSetup } from "@/lib/server/agent-setup";
+import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
+import { brandUpdate, knowledgeUpdate, playbookUpdate, previewCampaignPlan, saveCampaignConfiguration, saveCampaignMode, saveCampaignPlan, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -47,14 +49,43 @@ export async function saveCampaignSettingsAction(
   form: FormData,
 ): Promise<CampaignConfigurationResult> {
   const user = await requireUser();
-  const result = await saveCampaignConfiguration(id, Object.fromEntries(form), () => generateCampaignMcpUrl(id, user.id));
+  requireAgentSetup(user.id);
+  const result = await saveCampaignConfiguration(id, Object.fromEntries(form), (required) => generateCampaignMcpUrl(user.id, required));
   if (result.configuration) revalidatePath("/campaigns/" + id);
   return result;
 }
 
-export async function saveStandaloneModelAction(_previous: StandaloneModelResult, form: FormData) {
-  await requireUser();
-  return saveStandaloneModel({ revision: form.get("revision"), modelId: form.get("modelId") });
+export async function saveCampaignModeAction(
+  id: string, _previous: { error?: string; saved?: boolean }, form: FormData,
+): Promise<{ error?: string; saved?: boolean }> {
+  const user = await requireUser();
+  requireAgentSetup(user.id);
+  try {
+    await saveCampaignMode(id, { revision: form.get("revision"), mode: form.get("mode") });
+    revalidatePath("/campaigns/" + id);
+    return { saved: true };
+  } catch (error) {
+    revalidatePath("/campaigns/" + id);
+    return { error: error instanceof WorkspaceRequestError ? error.message : "Couldn’t save the campaign mode." };
+  }
+}
+
+export async function saveStandaloneModelAction(
+  setup: boolean, _previous: StandaloneModelResult, form: FormData,
+): Promise<StandaloneModelResult> {
+  const user = await requireUser();
+  const result = await saveStandaloneModel({
+    revision: form.get("revision"), provider: form.get("provider"), modelId: form.get("modelId"), baseUrl: form.get("baseUrl"),
+    modelKey: form.get("modelKey"),
+    reasoningEffort: form.get("reasoningEffort"),
+  }, { requireKey: setup || needsAgentSetup(user.id) });
+  if (result.models && !result.error) {
+    completeAgentSetup(user.id);
+    revalidatePath("/settings");
+    revalidatePath("/dashboard");
+    if (setup) redirect(isProjectSetupComplete(readProjectSetup(user.id)) ? "/dashboard" : "/onboarding", "replace");
+  }
+  return result;
 }
 
 export async function saveCampaignPlanAction(id: string, input: unknown) {
@@ -86,7 +117,8 @@ export async function deployCampaignAction(
   form: FormData,
 ): Promise<CampaignConfigurationResult> {
   const user = await requireUser();
-  const result = await saveCampaignConfiguration(id, Object.fromEntries(form), () => generateCampaignMcpUrl(id, user.id), true);
+  requireAgentSetup(user.id);
+  const result = await saveCampaignConfiguration(id, Object.fromEntries(form), (required) => generateCampaignMcpUrl(user.id, required), true);
   if (result.configuration) {
     revalidatePath("/campaigns/" + id);
     revalidatePath("/dashboard");

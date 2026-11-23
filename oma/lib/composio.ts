@@ -15,6 +15,11 @@ let current: {
 
 const configuredKey = () => process.env.COMPOSIO_API_KEY?.trim();
 
+/** Check catalog availability without fetching accounts or exposing the credential. */
+export function toolCatalogConfigured(): boolean {
+  return Boolean(configuredKey());
+}
+
 function services() {
   const key = configuredKey();
   if (!key) {
@@ -54,7 +59,7 @@ export async function connectionSnapshot(
   userId: string,
 ): Promise<ConnectionSnapshot> {
   try {
-    if (!configuredKey()) return { configured: false, connected: [] };
+    if (!toolCatalogConfigured()) return { configured: false, connected: [] };
     return await services().connections.snapshot(userId);
   } catch {
     return {

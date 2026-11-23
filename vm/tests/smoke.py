@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from dotenv import dotenv_values
 from hermes_yaml import safe_load
 from tools.clarify_gateway import resolve_clarify_timeout
+from tools.skills_tool import skill_view
 
 root = Path("/opt/data")
 gateway_seed = root / ".oma" / "gateway-seed"
@@ -57,6 +58,9 @@ if os.environ["OMA_INIT_CATALOG"] == "1":
 state_file = root / ".oma-smoke-test.json"
 member_file = root / "profiles" / "maintenance" / "skills" / "member-smoke" / "SKILL.md"
 if sys.argv[1] == "fresh":
+    skill = json.loads(skill_view("oma-campaigns", preprocess=False))
+    content = skill.get("content", "")
+    assert all(rule in content for rule in ("## Campaign Integrations", "integrations: []", "canonical OMA catalog IDs"))
     assert config["model"]["default"] == "oma-image-smoke"
     assert not dotenv_values(root / ".env", interpolate=False).get("OPENROUTER_API_KEY")
     member_file.parent.mkdir(parents=True)

@@ -11,8 +11,6 @@ function dispatch(request: Request, segments: string[]): Promise<Response> {
       return import("./identity/http").then(({ handleIdentity }) => handleIdentity(request, segments));
     case "mcp-integrations":
       return import("./integrations/http").then(({ handleIntegrations }) => handleIntegrations(request, segments));
-    case "tool-assignments":
-      return import("./tool-assignments/http").then(({ handleToolAssignments }) => handleToolAssignments(request, segments));
     default:
       throw notFound();
   }

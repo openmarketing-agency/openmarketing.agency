@@ -58,18 +58,48 @@ def verify_model_request(home, ask, root, request, reply):
 
 def verify(home):
     sys.path.insert(0, "/opt/oma")
+    from agent.secret_scope import load_env_file
     from hermes_cli import kanban_db
     from hermes_cli.oma_campaigns.install import _status
+    from hermes_cli.oma_campaigns.publications import save_publication
+    from hermes_cli.oma_campaigns.schema import validate_record
     from hermes_yaml import safe_load
-    from workspace import WorkspaceError, ask_campaign_plan, sync_campaign_configuration, update_campaign_plan
+    from workspace import (
+        WorkspaceError, approve_campaign_publication, ask_campaign_plan, campaign_configuration, campaign_publications,
+        change_campaign_lifecycle, sync_campaign_configuration,
+        update_campaign_configuration, update_campaign_mode, update_campaign_plan,
+    )
 
     root = home / "oma"
     campaign_id = "fixture"
     agent_id = "fixture__orchestrator"
+    reviewer_id = "fixture__reviewer"
+    publisher_id = "fixture__publisher"
     record = root / "campaigns" / campaign_id / "config.yaml"
     record.parent.mkdir(parents=True)
     plan = {"name": "Fixture campaign", "description": "Fixture plan.", "goals": ["Reach developers"], "plans": ["Review current docs"]}
-    data = {"id": campaign_id, **plan, "orchestrator": agent_id, "agents": [agent_id]}
+    tool_suggestions = ["google_analytics", "github"]
+    data = {
+        "id": campaign_id, **plan, "orchestrator": agent_id, "agents": [agent_id, reviewer_id, publisher_id],
+        "tool_suggestions": tool_suggestions,
+    }
+    validate_record("campaign", data, record)
+    validate_record("campaign", {**data, "integrations": ["discord", "facebook"]}, record)
+    for invalid in ("discord", {"discord": True}, [42], [{"id": "discord"}],
+                    ["https://discord.com"], ["discord", "discord"], ["unknown-integration"]):
+        try:
+            validate_record("campaign", {**data, "integrations": invalid}, record)
+        except ValueError as error:
+            assert "integrations" in str(error)
+        else:
+            raise AssertionError("Campaign integrations must be unique canonical IDs")
+    for invalid in ("github", ["GitHub"], ["github\n"], ["github", "github"]):
+        try:
+            validate_record("campaign", {**data, "tool_suggestions": invalid}, record)
+        except ValueError as error:
+            assert "tool_suggestions" in str(error)
+        else:
+            raise AssertionError("The native schema must reject invalid tool suggestions")
     record.write_text(json.dumps(data))
     agent = root / "agents" / agent_id / "config.yaml"
     agent.parent.mkdir(parents=True)
@@ -78,6 +108,21 @@ def verify(home):
         "oma_skills": [], "agent": {"enabled_toolsets": ["kanban"]},
     }))
     agent.with_name("SOUL.md").write_text("You coordinate fixture tasks.")
+    reviewer = root / "agents" / reviewer_id / "config.yaml"
+    reviewer.parent.mkdir()
+    reviewer_model = {"provider": "custom", "default": "review-model", "base_url": "https://review.example.test/v1"}
+    reviewer.write_text(json.dumps({
+        "id": reviewer_id, "name": "Reviewer", "description": "Reviews fixture tasks.", "campaign_id": campaign_id,
+        "model": reviewer_model, "oma_skills": [], "agent": {"enabled_toolsets": ["file"]},
+    }))
+    reviewer.with_name("SOUL.md").write_text("You review fixture tasks.")
+    publisher = root / "agents" / publisher_id / "config.yaml"
+    publisher.parent.mkdir()
+    publisher.write_text(json.dumps({
+        "id": publisher_id, "name": "Publisher", "description": "Publishes approved fixtures.",
+        "campaign_id": campaign_id, "oma_skills": [], "agent": {"enabled_toolsets": ["file"]},
+    }))
+    publisher.with_name("SOUL.md").write_text("You publish reviewed fixture drafts.")
     source = record.read_bytes()
     initial_revision = sha256(source).hexdigest()
     assert _status(home, campaign_id, data)["state"] == "draft"
@@ -102,20 +147,107 @@ def verify(home):
         else:
             raise AssertionError("An invalid plan edit must be rejected")
 
+    def configure_default(name, key):
+        (home / "config.yaml").write_text(json.dumps({"model": {
+            "provider": "openrouter", "default": name, "api_key": "${OPENROUTER_API_KEY}",
+        }}))
+        (home / ".env").write_text(f"OPENROUTER_API_KEY={key}\n")
+
+    default_key = "sk-or-v1-fixture-first"
+    configure_default("default-model", default_key)
     board = "campaign-fixture"
     assert not kanban_db.board_exists(board)
-    result = sync_campaign_configuration(root, campaign_id, {"revision": saved["revision"], "env": {}}, deploy=True)
+    assert campaign_configuration(record.read_bytes())["mode"] == "approve"
+    mode = update_campaign_mode(root, campaign_id, {"revision": saved["revision"], "mode": "control"})
+    assert safe_load(record.read_bytes())["mode"] == "control"
+    assert sync_campaign_configuration(root, campaign_id, {"revision": mode["revision"]}) == mode
+    prepared = sync_campaign_configuration(root, campaign_id, {"revision": mode["revision"], "env": {}, "prepareDeployment": True})
+    assert prepared["revision"] == mode["revision"] and not kanban_db.board_exists(board)
+    result = sync_campaign_configuration(root, campaign_id, {"revision": prepared["revision"], "env": {}}, deploy=True)
     deployed = safe_load(record.read_bytes())
     assert _status(home, campaign_id, deployed)["state"] == "installed"
     assert deployed["lifecycle_state"] == "paused"
     assert deployed["plans"] == suggestion["plans"]
+    assert deployed["tool_suggestions"] == tool_suggestions
+    assert deployed["integrations"] == []
     assert kanban_db.board_exists(board)
     profile = home / "profiles" / agent_id
     assert safe_load((profile / "config.yaml").read_bytes())["kanban"]["profile_board"] == board
     jobs = profile / "cron" / "jobs.json"
     if jobs.exists():
         assert not json.loads(jobs.read_bytes())["jobs"]
+    assert "model" not in deployed and result["modelId"] == ""
+    assert "model" not in safe_load(agent.read_bytes())
+    assert safe_load(agent.read_bytes())["effective"]["model"]["default"] == "default-model"
+    assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "default-model"
+    assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == default_key
     assert sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}}, deploy=True) == result
+
+    rotated_key = "sk-or-v1-fixture-rotated"
+    configure_default("rotated-model", rotated_key)
+    synced = sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}})
+    assert synced["modelId"] == "" and "model" not in safe_load(record.read_bytes())
+    assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "rotated-model"
+    assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == rotated_key
+
+    override = {
+        "revision": synced["revision"], "provider": "custom", "modelId": "campaign-model",
+        "baseUrl": "https://campaign.example.test/v1", "setModelKey": True, "composioUrl": "",
+    }
+    staged = update_campaign_configuration(root, campaign_id, override)
+    synced = sync_campaign_configuration(root, campaign_id, {
+        "revision": staged["revision"], "env": {"HERMES_MODEL_API_KEY": "fixture-campaign-key"},
+    })
+    assert synced["modelId"] == "campaign-model"
+    assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "campaign-model"
+    assert load_env_file(profile / ".env")["HERMES_MODEL_API_KEY"] == "fixture-campaign-key"
+    assert "model" not in safe_load(agent.read_bytes())
+
+    staged = update_campaign_configuration(root, campaign_id, {
+        **override, "revision": synced["revision"], "modelId": "", "provider": "", "baseUrl": "", "setModelKey": False,
+    })
+    synced = sync_campaign_configuration(root, campaign_id, {"revision": staged["revision"], "env": {}})
+    assert synced["modelId"] == "" and "model" not in safe_load(record.read_bytes())
+    assert safe_load(agent.read_bytes())["effective"]["model"]["default"] == "rotated-model"
+    assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "rotated-model"
+    assert safe_load(reviewer.read_bytes())["model"] == reviewer_model
+    assert safe_load((home / "profiles" / reviewer_id / "config.yaml").read_bytes())["model"] == reviewer_model
+
+    running = change_campaign_lifecycle(root, campaign_id, {"state": "resumed"})
+    assert running["state"] == "resumed" and running["missingIntegrations"] == []
+    assert safe_load(record.read_bytes())["lifecycle_state"] == "resumed"
+    assert change_campaign_lifecycle(root, campaign_id, {"state": "resumed"}) == running
+    try:
+        sync_campaign_configuration(root, campaign_id, {"revision": running["revision"]})
+    except WorkspaceError as error:
+        assert error.status == 409 and "Stop the campaign" in str(error)
+    else:
+        raise AssertionError("A running campaign must stop before syncing.")
+    assert change_campaign_lifecycle(root, campaign_id, {"state": "paused"})["state"] == "paused"
+    record.write_text(json.dumps({**safe_load(record.read_bytes()), "integrations": ["discord"]}))
+    blocked = change_campaign_lifecycle(root, campaign_id, {"state": "resumed"})
+    assert blocked["state"] == "paused" and blocked["missingIntegrations"] == ["discord"]
+    assert safe_load(record.read_bytes())["lifecycle_state"] == "paused"
+
+    draft = {
+        "platform": "x", "kind": "reply", "account": {"id": "fixture-account", "name": "Fixture"},
+        "content": {"text": "Fixture text", "media": [{"asset_id": "fixture-image", "kind": "image", "alt_text": "Fixture"}]},
+        "target": {"id": "fixture-target", "author_handle": "@fixture"},
+    }
+    saved_publication = save_publication(home, campaign_id, reviewer_id, draft)
+    publication_id = saved_publication["id"]
+    review = {"revision": saved_publication["revision"], "approver": "fixture-operator"}
+    assert campaign_publications(root, campaign_id)["publications"] == [saved_publication]
+    try:
+        approve_campaign_publication(root, campaign_id, publication_id, {**review, "revision": 2})
+    except WorkspaceError as error:
+        assert error.status == 409
+    else:
+        raise AssertionError("A different publication revision must be rejected.")
+    approved = approve_campaign_publication(root, campaign_id, publication_id, review)
+    assert approved["approval"]["by"] == "fixture-operator" and approved["task_id"]
+    assert approved["content"] == draft["content"] and approved["target"] == draft["target"]
+    assert approve_campaign_publication(root, campaign_id, publication_id, review) == approved
 
 
 with TemporaryDirectory(prefix="oma-campaign-deploy-") as directory:

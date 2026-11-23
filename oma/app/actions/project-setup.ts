@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
+import { requireAgentSetup } from "@/lib/server/agent-setup";
 import { sendProjectSetup, skipSavedProjectSetup, validateProjectLinks, type ProjectFields } from "@/lib/server/project-setup";
 
 export type ProjectSetupFormState = { errors?: Partial<Record<ProjectFields, string>>; message?: string; saved?: boolean };
@@ -21,6 +22,7 @@ export async function submitProjectSetup(
   form: FormData,
 ): Promise<ProjectSetupFormState> {
   const user = await requireUser();
+  requireAgentSetup(user.id);
   const result = validateProjectLinks({ websiteUrl: form.get("websiteUrl"), githubUrl: form.get("githubUrl") });
   if (!result.ok) return { errors: result.errors };
   try {
@@ -38,6 +40,7 @@ export async function submitProjectSetup(
 
 export async function skipProjectSetup() {
   const user = await requireUser();
+  requireAgentSetup(user.id);
   skipSavedProjectSetup(user.id);
   goToWorkspace();
 }

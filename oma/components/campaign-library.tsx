@@ -6,6 +6,9 @@ import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, Search, Users } from "lucide-react";
 
+import { CampaignKanban } from "@/components/campaign-kanban";
+import type { CampaignKanbanStatus } from "@/lib/server/agent-workspace";
+
 type SavedCampaignSummary = {
   id: string;
   name: string;
@@ -13,6 +16,7 @@ type SavedCampaignSummary = {
   version: string;
   agentCount: number;
   status?: string;
+  kanban?: CampaignKanbanStatus;
   playbook?: { id: string; name: string };
   brand?: { id: string; name: string };
 };
@@ -71,7 +75,7 @@ export function CampaignLibrary({ setup, sidebar, error, saved }: {
           )}
           {filtered.length > 0 && (
             <ul className="campaign-list">
-              {filtered.map(({ id, name, description, version, brand, playbook, agentCount, status }) => (
+              {filtered.map(({ id, name, description, version, brand, playbook, agentCount, status, kanban }) => (
                 <li className="campaign-entry" key={id}>
                   <h3>
                     <Link className="campaign-entry-link" href={"/campaigns/" + id}>
@@ -86,6 +90,7 @@ export function CampaignLibrary({ setup, sidebar, error, saved }: {
                     {playbook && <Link href={"/workspace/playbooks/" + playbook.id}>{playbook.name}</Link>}
                     {version && <span className="version-label">v{version}</span>}
                   </div>
+                  {kanban && <CampaignKanban status={kanban} />}
                 </li>
               ))}
             </ul>

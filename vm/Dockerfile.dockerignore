@@ -2,7 +2,10 @@
 
 !vm/
 !vm/bootstrap.py
+!vm/campaign-compatibility.patch
+!vm/register_campaign_suggestions.py
 !vm/start.sh
+!vm/sync_standalone.py
 !vm/workspace.py
 
 **/.env

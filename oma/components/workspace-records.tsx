@@ -2,14 +2,12 @@
 
 import Link from "next/link";
 import { ArrowRight, BookOpen, Tag } from "lucide-react";
-import type { ReactNode } from "react";
 
 import type { AgentWorkspace, SavedCampaign } from "@/lib/server/agent-workspace";
 
-export function WorkspaceIndex({ workspace, modelSettings }: { workspace: AgentWorkspace; modelSettings?: ReactNode }) {
+export function WorkspaceIndex({ workspace }: { workspace: AgentWorkspace }) {
   return (
     <div className="workspace-index">
-      {modelSettings}
       {(["brands", "playbooks"] as const).map((collection) => (
         <section key={collection} aria-labelledby={"workspace-" + collection}>
           <h2 id={"workspace-" + collection}>{collection === "brands" ? <><Tag size={16} aria-hidden="true" />Brands</> : <><BookOpen size={16} aria-hidden="true" />Playbooks</>}</h2>

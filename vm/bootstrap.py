@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 
 from dotenv import dotenv_values, set_key
 from hermes_cli.config import atomic_config_replace, require_readable_config_before_write
+from hermes_cli.oma_campaigns.settings import ENV_REFERENCE
 from hermes_constants import named_profile_is_live
 
 
@@ -71,6 +72,7 @@ def configure_model(path, provider, model, *, preserve_model=False, gateway=Fals
                 toolsets.append("clarify")
     if config != previous:
         atomic_config_replace(path, config)
+    return config
 
 
 def bootstrap(root, model, provider, credentials, gateway_seed, *, clarify_timeout=None):
@@ -86,13 +88,20 @@ def bootstrap(root, model, provider, credentials, gateway_seed, *, clarify_timeo
         return hmac.digest(gateway_seed.encode(), profile.encode(), "sha256").hex()
 
 
-    configure_model(
+    config = configure_model(
         managed_path(root, "config.yaml"), provider, model, gateway=True, clarify_timeout=clarify_timeout,
         # Without a deployment credential, the model is only a first-boot default.
         preserve_model=not credentials or managed_path(root, "oma", "agents", "default", "config.yaml").is_file(),
     )
+    active_model = config.get("model")
+    # A key synced from the console takes precedence over the optional first-boot seed.
+    synced_key = None
+    if isinstance(active_model, dict):
+        reference = active_model.get("api_key")
+        match = ENV_REFERENCE.fullmatch(reference) if isinstance(reference, str) else None
+        synced_key = match.group(1) if match else active_model.get("key_env")
     write_env(managed_path(root, ".env"), {
-        **credentials,
+        **{name: value for name, value in credentials.items() if name != synced_key},
         "API_SERVER_ENABLED": "true",
         "API_SERVER_HOST": "0.0.0.0",
         "API_SERVER_PORT": "8642",

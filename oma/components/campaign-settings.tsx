@@ -4,36 +4,27 @@
 
 import { useActionState, useRef, useState } from "react";
 import { deployCampaignAction, saveCampaignSettingsAction } from "@/app/actions/workspace";
-import type { CampaignConfiguration, CampaignModelDefaults } from "@/lib/server/agent-workspace";
+import type { CampaignConfiguration } from "@/lib/server/agent-workspace";
 
 export function CampaignSettings({
-  campaignId, configuration, modelDefaults, deploy = false,
+  campaignId, configuration, deploy = false,
 }: {
   campaignId: string;
   configuration: CampaignConfiguration;
-  modelDefaults: CampaignModelDefaults;
   deploy?: boolean;
 }) {
-  const hasModel = Boolean(configuration.provider || configuration.modelId || configuration.baseUrl || configuration.hasModelKey);
-  const initialModel = hasModel ? configuration : modelDefaults;
-  const [provider, setProvider] = useState(initialModel.provider);
-  const [modelId, setModelId] = useState(initialModel.modelId);
-  const [baseUrl, setBaseUrl] = useState(initialModel.baseUrl);
-  const [environmentKey, setEnvironmentKey] = useState(!hasModel || Boolean(configuration.usesEnvironmentKey));
+  const [provider, setProvider] = useState(configuration.provider);
+  const [modelId, setModelId] = useState(configuration.modelId);
+  const [baseUrl, setBaseUrl] = useState(configuration.baseUrl);
   const modelKey = useRef<HTMLInputElement>(null);
   const [result, action, pending] = useActionState((deploy ? deployCampaignAction : saveCampaignSettingsAction).bind(null, campaignId), {});
   const saved = result.configuration ?? configuration;
   const modelMatches = provider.trim() === saved.provider
     && modelId === saved.modelId && baseUrl === saved.baseUrl;
-  const hasDefaults = Boolean(modelDefaults.modelId || modelDefaults.baseUrl || modelDefaults.provider);
-  const canUseEnvironmentKey = modelDefaults.hasApiKey && baseUrl === modelDefaults.baseUrl
-    && provider.trim() === modelDefaults.provider;
-
-  function useModelDefaults() {
-    setProvider(modelDefaults.provider);
-    setModelId(modelDefaults.modelId);
-    setBaseUrl(modelDefaults.baseUrl);
-    setEnvironmentKey(true);
+  function useDefaultModel() {
+    setProvider("");
+    setModelId("");
+    setBaseUrl("");
     if (modelKey.current) modelKey.current.value = "";
   }
 
@@ -42,11 +33,12 @@ export function CampaignSettings({
       <form action={action} className="workspace-editor">
         <input type="hidden" name="revision" value={saved.revision} />
         <fieldset disabled={pending}>
-          <legend>Model</legend>
+          <legend>Model override (optional)</legend>
           <div className="campaign-settings-intro">
-            <p>{hasDefaults ? <>Settings start from <code>.env</code>. Edit the fields to override the model for this campaign.</>
-              : "Leave the model fields blank to use the agent’s default model."}</p>
-            {hasDefaults && <button type="button" className="btn secondary" onClick={useModelDefaults}>Use .env defaults</button>}
+            <p>Leave the model fields blank to use the default agent’s model.</p>
+            {(provider || modelId || baseUrl) && (
+              <button type="button" className="btn secondary" onClick={useDefaultModel}>Use default agent model</button>
+            )}
           </div>
           <div className="campaign-model-fields">
             <label>Provider
@@ -62,31 +54,20 @@ export function CampaignSettings({
             <input name="baseUrl" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)}
               placeholder="https://provider.example.com/v1" maxLength={2048} />
           </label>
-          {canUseEnvironmentKey && (
-            <label className="campaign-env-key">
-              <input type="checkbox" name="useEnvironmentKey" value="true" checked={environmentKey}
-                onChange={(event) => {
-                  setEnvironmentKey(event.target.checked);
-                  if (event.target.checked && modelKey.current) modelKey.current.value = "";
-                }} />
-              Sync the provider API key from .env
-            </label>
-          )}
           <label>Model API key
             <input name="modelKey" type="password" ref={modelKey} autoComplete="new-password" maxLength={4096}
-              aria-describedby="model-api-key-hint"
-              onChange={(event) => { if (event.target.value) setEnvironmentKey(false); }} />
+              aria-describedby="model-api-key-hint" />
           </label>
           <p id="model-api-key-hint">
-            {canUseEnvironmentKey && environmentKey ? "Enter a key to override the .env key for this campaign."
-              : saved.hasModelKey ? "Leave blank to keep the existing key reference."
-              : "Enter a key if your provider requires one."}
+            {saved.hasModelKey ? "Leave blank to keep the saved key for this override."
+              : "Enter a key if your model override requires one."}
           </p>
         </fieldset>
         {result.error && <p className="form-error" role="alert">{result.error}</p>}
-        {result.synced && modelMatches && <p className="workspace-save-status" role="status">{deploy ? "Campaign deployed. Its agent profiles are synced." : "Settings saved and synced to oma-agent."}</p>}
+        {(result.state === "resumed" || (result.synced && modelMatches)) &&
+          <p className="workspace-save-status" role="status">{deploy ? "Campaign deployed and started." : "Settings saved and synced to oma-agent."}</p>}
         <button className="btn primary" type="submit" disabled={pending}>
-          {deploy ? (pending ? "Deploying…" : "Deploy campaign") : (pending ? "Saving and syncing…" : "Save and sync")}
+          {deploy ? (pending ? "Syncing, deploying, and starting…" : "Deploy and start") : (pending ? "Saving and syncing…" : "Save and sync")}
         </button>
       </form>
     </section>

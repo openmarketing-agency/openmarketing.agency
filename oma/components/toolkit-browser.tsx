@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useEffect, useRef, useState, useTransition } from "react";
 import {
   AppWindow,
@@ -12,7 +13,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  assignToolAction,
   connectToolAction,
   disconnectToolAction,
   refreshConnectionsAction,
@@ -20,48 +20,65 @@ import {
   toolCategoriesAction,
 } from "@/app/actions/composio";
 import {
+  campaignConnectionScope,
   isWorkspaceScope,
   WORKSPACE_SCOPE,
   type ToolConnectionScope,
 } from "@/lib/agent-connections";
-import type { CampaignToolRecommendation } from "@/lib/campaign-tool-suggestions";
+import type { RequiredIntegration } from "@/lib/server/agent-workspace";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 import type { CatalogPage, Toolkit } from "@/lib/tool-catalog";
 
 const EMPTY_TOOLKITS: Toolkit[] = [];
-const NO_RECOMMENDATIONS: CampaignToolRecommendation[] = [];
+const NO_REQUIRED_INTEGRATIONS: RequiredIntegration[] = [];
+type ToolList = "connected" | "required" | "all";
+
+function ToolkitLogo({ url }: { url?: string }) {
+  const [failed, setFailed] = useState<string>();
+  return (
+    <div className="tool-catalog-icon" aria-hidden="true">
+      {url && url !== failed ? (
+        <Image src={url} width={24} height={24} alt="" unoptimized referrerPolicy="no-referrer"
+          onError={() => setFailed(url)} />
+      ) : <AppWindow size={21} strokeWidth={1.5} />}
+    </div>
+  );
+}
 
 export function ToolkitBrowser({
   scope = WORKSPACE_SCOPE,
-  campaignName,
-  recommendations = NO_RECOMMENDATIONS,
+  requiredIntegrations = NO_REQUIRED_INTEGRATIONS,
   snapshot: initialSnapshot,
   selected: initialSelected = [],
   metadata: initialMetadata = [],
   onChange,
   feedback,
+  startInCatalog = false,
   demo = false,
   demoCatalog = EMPTY_TOOLKITS,
 }: {
   scope?: ToolConnectionScope;
-  campaignName?: string;
-  recommendations?: CampaignToolRecommendation[];
+  requiredIntegrations?: RequiredIntegration[];
   snapshot: ConnectionSnapshot;
   selected?: string[];
   metadata?: Toolkit[];
   feedback?: string;
+  startInCatalog?: boolean;
   demo?: boolean;
   demoCatalog?: Toolkit[];
   onChange?: (
     snapshot: ConnectionSnapshot,
-    selected: string[],
     metadata: Toolkit[],
   ) => void;
 }) {
   const isCampaign = !isWorkspaceScope(scope);
-  const startingTab = isCampaign ? (recommendations.length ? "suggested" : "assigned")
-    : initialSnapshot.configured && !initialSnapshot.connected.length ? "all" : "connected";
-  const [tab, setTab] = useState(startingTab);
+  const hasRequiredTools = isCampaign && requiredIntegrations.length > 0;
+  const [selectedTab, setSelectedTab] = useState<ToolList>(
+    isCampaign ? (startInCatalog ? "all" : "required")
+      : initialSnapshot.configured && !initialSnapshot.connected.length ? "all" : "connected",
+  );
+  const tab = isCampaign && !hasRequiredTools ? "all" : selectedTab;
+  const campaignCatalog = isCampaign && tab === "all";
   const [search, setSearch] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState("");
@@ -73,11 +90,11 @@ export function ToolkitBrowser({
   const [selected, setSelected] = useState(initialSelected);
   const [metadata, setMetadata] = useState<Toolkit[]>(initialMetadata);
   const [page, setPage] = useState<CatalogPage>({
-    items: [],
-    total: 0,
+    items: demo ? demoCatalog : [],
+    total: demo ? demoCatalog.length : 0,
     nextCursor: null,
   });
-  const [loading, setLoading] = useState(startingTab === "all");
+  const [loading, setLoading] = useState(tab === "all" && canBrowseCatalog && !demo);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(initialSnapshot.error ?? "");
   const [catalogError, setCatalogError] = useState("");
@@ -87,7 +104,7 @@ export function ToolkitBrowser({
   const [pending, startTransition] = useTransition();
   const revision = useRef(0);
   const [retry, setRetry] = useState(0);
-  const showCategories = !isCampaign || tab === "all";
+  const showCategories = !isCampaign || campaignCatalog;
   useEffect(() => {
     if (demo || !showCategories || !snapshot.configured) return;
     let live = true;
@@ -175,10 +192,12 @@ export function ToolkitBrowser({
       ...selected.filter((slug) => known(slug).noAuth),
     ]),
   ];
-  const recommendationBySlug = new Map(recommendations.map((item) => [item.slug, item]));
-  const localItems = (tab === "suggested"
-    ? recommendations.map((item) => item.tool ?? { ...known(item.slug), name: item.name, description: "" })
-    : (tab === "assigned" ? selected : connectedIds).map(known)
+  const requiredBySlug = new Map(requiredIntegrations.flatMap((tool) => tool.slug ? [[tool.slug, tool]] as const : []));
+  const unsupported = tab === "required" ? requiredIntegrations.filter(({ slug, name }) =>
+    !slug && name.toLowerCase().includes(search.trim().toLowerCase())) : [];
+  const localItems = (isCampaign
+    ? [...requiredBySlug].map(([slug, required]) => merged.get(slug) ?? { ...known(slug), name: required.name })
+    : connectedIds.map(known)
   ).filter(
     (tool) =>
       `${tool.name} ${tool.slug} ${tool.description}`
@@ -186,18 +205,29 @@ export function ToolkitBrowser({
         .includes(search.toLowerCase().trim()) &&
       (!category || tool.categories.some((item) => item.id === category)),
   );
-  const catalogLoading = tab === "all" && loading;
+  const catalogLoading = tab === "all" && canBrowseCatalog && loading;
+  const showFilters = tab === "required"
+    ? requiredIntegrations.length > 1
+    : canBrowseCatalog || (!isCampaign && connectedIds.length > 0);
   const visible = tab === "all" ? page.items : localItems;
-  const tabs = isCampaign
-    ? [
-        ...(recommendations.length ? [{ id: "suggested", label: "Suggested" }] : []),
-        { id: "assigned", label: `Added (${selected.length})` },
-        { id: "all", label: "All tools" },
-      ]
-    : [
-        { id: "connected", label: `Connected (${connectedIds.length})` },
-        { id: "all", label: "All tools" },
-      ];
+  const tabs: { id: ToolList; label: string }[] = isCampaign ? [
+    { id: "required", label: "Required tools" },
+    { id: "all", label: "Composio catalog" },
+  ] : [
+    { id: "connected", label: `Connected (${connectedIds.length})` },
+    { id: "all", label: "All tools" },
+  ];
+
+  function selectToolList(next: ToolList) {
+    if (next === tab) return;
+    if (isCampaign) {
+      setSearch("");
+      setCategory("");
+    }
+    if (next === "all" && canBrowseCatalog) setLoading(true);
+    setSelectedTab(next);
+  }
+
   function update(
     nextSnapshot = snapshot,
     nextSelected = selected,
@@ -211,7 +241,7 @@ export function ToolkitBrowser({
     setSnapshot(nextSnapshot);
     setSelected(nextSelected);
     setMetadata(nextMetadata);
-    onChange?.(nextSnapshot, nextSelected, nextMetadata);
+    onChange?.(nextSnapshot, nextMetadata);
   }
   function mutate(tool: Toolkit, remove = false) {
     setBusy(tool.slug);
@@ -238,28 +268,7 @@ export function ToolkitBrowser({
           );
           return;
         }
-        if (
-          isCampaign &&
-          (remove || tool.noAuth || snapshot.connected.includes(tool.slug))
-        ) {
-          const result = await assignToolAction(tool.slug, scope, !remove);
-          if (result.error) {
-            setError(result.error);
-            return;
-          }
-          update(
-            snapshot,
-            remove
-              ? selected.filter((slug) => slug !== tool.slug)
-              : [...new Set([...selected, tool.slug])],
-            result.tool ?? tool,
-          );
-          setNotice(
-            remove
-              ? `${tool.name} removed from ${campaignName}.`
-              : `${tool.name} added to ${campaignName}.`,
-          );
-        } else if (remove) {
+        if (remove) {
           const result = await disconnectToolAction(tool.slug);
           if (result.error) {
             setError(result.error);
@@ -267,16 +276,17 @@ export function ToolkitBrowser({
           }
           update(
             result.snapshot,
-            selected.filter((slug) => slug !== tool.slug),
+            result.selected ?? selected,
             tool,
           );
           setNotice(
             tool.noAuth
-              ? `${tool.name} removed from all campaign selections.`
+              ? `${tool.name} disabled in the workspace.`
               : `${tool.name} disconnected. Campaigns using this account will need to reconnect it.`,
           );
         } else {
-          const result = await connectToolAction(tool.slug, scope);
+          const connection = campaignCatalog ? campaignConnectionScope(scope.playbookId, true) : scope;
+          const result = await connectToolAction(tool.slug, connection);
           if (result.url) {
             window.location.assign(result.url);
             return;
@@ -285,14 +295,9 @@ export function ToolkitBrowser({
             setError(result.error ?? "The connection couldn’t be started.");
             return;
           }
-          const fresh = await refreshConnectionsAction();
-          update(
-            fresh,
-            isCampaign || tool.noAuth
-              ? [...new Set([...selected, tool.slug])]
-              : selected,
-            tool,
-          );
+          const fresh = await refreshConnectionsAction(scope);
+          update(fresh.snapshot, fresh.selected ?? selected, tool);
+          if (fresh.error) setError(fresh.error);
           setNotice(`${tool.name} ${tool.noAuth ? "enabled" : "connected"}.`);
         }
       } catch {
@@ -307,9 +312,9 @@ export function ToolkitBrowser({
     setError("");
     startTransition(async () => {
       try {
-        const fresh = await refreshConnectionsAction();
-        update(fresh);
-        setError(fresh.error ?? "");
+        const fresh = await refreshConnectionsAction(scope);
+        update(fresh.snapshot, fresh.selected ?? selected);
+        setError(fresh.error ?? fresh.snapshot.error ?? "");
       } catch {
         setError("Couldn’t refresh connections. Try again.");
       } finally {
@@ -354,35 +359,37 @@ export function ToolkitBrowser({
     <div className={`tool-browser ${isCampaign ? "for-campaign" : "for-workspace"}`}>
       <div className="tool-browser-heading">
         <div>
-          <h2>{isCampaign ? "Campaign tools" : "Tool catalog"}</h2>
-          {tab === "suggested" && <p>Based on the brand’s verified channels and launches.</p>}
+          <h2>{hasRequiredTools ? "Campaign tools" : isCampaign ? "Composio catalog" : "Tool catalog"}</h2>
+          {tab === "required" && <p>Connect the tools required by this campaign’s configuration.</p>}
+          {campaignCatalog && <p>Connect shared accounts. Campaigns use the integrations listed in their configuration.</p>}
         </div>
         <button
+          type="button"
           className="icon-button"
           aria-label="Refresh connections"
-          disabled={pending || demo}
+          disabled={pending || demo || !snapshot.configured}
           onClick={refresh}
         >
           <RefreshCw size={16} className={busy === "refresh" ? "spin" : ""} />
         </button>
       </div>
-      {(isCampaign || canBrowseCatalog || connectedIds.length > 0) && <>
+      {(hasRequiredTools || (!isCampaign && showFilters)) && (
         <div className="tool-browser-tabs" role="group" aria-label="Tool lists">
           {tabs.map((item) => (
             <button
+              type="button"
               key={item.id}
               aria-pressed={tab === item.id}
-              disabled={item.id === "all" && !canBrowseCatalog}
+              disabled={!isCampaign && item.id === "all" && !canBrowseCatalog}
               className={tab === item.id ? "selected" : ""}
-              onClick={() => {
-                if (item.id === "all" && tab !== "all") setLoading(true);
-                setTab(item.id);
-              }}
+              onClick={() => selectToolList(item.id)}
             >
               {item.label}
             </button>
           ))}
         </div>
+      )}
+      {showFilters && (
         <div className="tool-browser-filters">
           <label className="search-box">
             <Search size={16} />
@@ -390,15 +397,13 @@ export function ToolkitBrowser({
               ref={searchInput}
               aria-label="Search tools"
               placeholder={
-                canBrowseCatalog && (tab === "all" || isCampaign)
-                  ? "Search tools…"
-                  : tab === "connected" ? "Search connected tools…" : "Search campaign tools…"
+                campaignCatalog ? "Search Composio tools…" : tab === "required" ? "Search campaign tools…"
+                  : tab === "all" ? "Search tools…" : "Search connected tools…"
               }
               value={search}
               onChange={(event) => {
                 setSearch(event.target.value);
-                if (isCampaign && canBrowseCatalog) setTab("all");
-                if (canBrowseCatalog && (tab === "all" || isCampaign)) setLoading(true);
+                if (canBrowseCatalog && tab === "all") setLoading(true);
               }}
             />
             {search && (
@@ -421,8 +426,7 @@ export function ToolkitBrowser({
               value={category}
               onChange={(event) => {
                 setCategory(event.target.value);
-                if (isCampaign && canBrowseCatalog) setTab("all");
-                if (canBrowseCatalog && (tab === "all" || isCampaign)) setLoading(true);
+                if (canBrowseCatalog && tab === "all") setLoading(true);
               }}
             >
               <option value="">All categories</option>
@@ -444,12 +448,12 @@ export function ToolkitBrowser({
             <ChevronDown size={14} />
           </label>}
         </div>
-      </>}
-      {!snapshot.configured && !demo && (
+      )}
+      {!canBrowseCatalog && (
         <div className="notice">
           <div>
             <strong>Tool provider setup required</strong>
-            <p>Set <code>COMPOSIO_API_KEY</code> in the console environment, then restart the console and refresh connections.</p>
+            <p>Set <code>COMPOSIO_API_KEY</code> in the console environment, then restart the console and {campaignCatalog ? "reload this page" : "refresh connections"}.</p>
           </div>
         </div>
       )}
@@ -463,21 +467,31 @@ export function ToolkitBrowser({
           {error}
         </p>
       )}
-      {categoryError && <p className="tool-catalog-message">{categoryError}</p>}
-      {tab === "all" && (
+      {showCategories && categoryError && <p className="tool-catalog-message">{categoryError}</p>}
+      {tab === "all" && canBrowseCatalog && (
         <div className="tool-catalog-summary">
           <span>
             {loading
               ? "Searching tools…"
-              : `${page.total.toLocaleString()} tools available`}
+              : `${page.total.toLocaleString()} ${page.total === 1 ? "tool" : "tools"} available`}
           </span>
-          <span>Browse integrations and search providers</span>
+          {!campaignCatalog && <span>Browse integrations and search providers</span>}
         </div>
       )}
       <div
         aria-busy={catalogLoading}
         className={`tool-catalog-list ${tab === "all" ? "catalog-grid" : ""}`}
       >
+        {unsupported.map(({ id, name }) => (
+            <article className="tool-catalog-item" key={id}>
+              <ToolkitLogo />
+              <div className="tool-catalog-info">
+                <h3>{name}</h3>
+                <p>No verified Composio toolkit is available.</p>
+                <div className="tool-catalog-tags"><span>Required</span></div>
+              </div>
+            </article>
+          ))}
         {catalogLoading ? (
           <div role="status" className="tool-catalog-loading">
             <LoaderCircle size={18} className="spin" />
@@ -485,43 +499,25 @@ export function ToolkitBrowser({
           </div>
         ) : (
           visible.map((tool) => {
-            const added = selected.includes(tool.slug);
+            const required = requiredBySlug.has(tool.slug);
             const active =
               snapshot.connected.includes(tool.slug) || tool.noAuth;
-            const isConnected = isCampaign
-              ? added && active
-              : connectedIds.includes(tool.slug);
+            const isConnected = isCampaign ? active : connectedIds.includes(tool.slug);
             const reconnect = snapshot.reconnect?.includes(tool.slug);
             const waiting = snapshot.pending?.includes(tool.slug);
-            const suggestion = tab === "suggested" ? recommendationBySlug.get(tool.slug) : undefined;
-            const unavailable = suggestion && !active && !suggestion.tool && snapshot.configured;
             return (
               <article className="tool-catalog-item" key={tool.slug}>
-                <div className="tool-catalog-icon">
-                  <AppWindow size={21} strokeWidth={1.5} />
-                </div>
+                <ToolkitLogo url={tool.logoUrl} />
                 <div className="tool-catalog-info">
                   <h3>{tool.name}</h3>
                   {tool.description && <p>{tool.description}</p>}
-                  {suggestion && (
-                    <ul className="campaign-tool-evidence">
-                      {suggestion.evidence.map((source) => (
-                        <li key={source.kind + source.url}>
-                          {source.kind === "channel" ? "Brand channel" : "Brand launch"} <span aria-hidden="true">·</span>{" "}
-                          <a href={source.url} target="_blank" rel="noreferrer">
-                            {source.label.replaceAll(/[-_]/g, " ")} <ArrowUpRight size={12} aria-hidden="true" />
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                   <div className="tool-catalog-tags">
+                    {required && <span>Required</span>}
                     {tool.noAuth && <span>No sign-in needed</span>}
                     {tool.categories.slice(0, 1).map((item) => (
                       <span key={item.id}>{item.name}</span>
                     ))}
                     {waiting && !active && <span>Authorization pending</span>}
-                    {unavailable && <span>Catalog details unavailable</span>}
                   </div>
                 </div>
                 <div className="tool-catalog-controls">
@@ -529,28 +525,22 @@ export function ToolkitBrowser({
                     <>
                       <span className="connection-status">
                         <Check size={13} />
-                        {isCampaign
-                          ? "Added"
-                          : tool.noAuth
-                            ? "Enabled"
-                            : "Connected"}
+                        {isCampaign && (!campaignCatalog || tool.noAuth) ? "Ready" : tool.noAuth ? "Enabled" : "Connected"}
                       </span>
-                      <button
+                      {!isCampaign && <button
                         className="btn ghost"
                         disabled={pending}
                         onClick={() => mutate(tool, true)}
-                        aria-label={`${isCampaign ? "Remove" : "Disconnect"} ${tool.name}`}
+                        aria-label={`${tool.noAuth ? "Remove" : "Disconnect"} ${tool.name}`}
                       >
                         {busy === tool.slug ? (
                           <LoaderCircle size={14} className="spin" />
-                        ) : isCampaign ? (
-                          "Remove"
                         ) : tool.noAuth ? (
                           "Remove"
                         ) : (
                           "Disconnect"
                         )}
-                      </button>
+                      </button>}
                     </>
                   ) : (
                     <>
@@ -558,21 +548,13 @@ export function ToolkitBrowser({
                         className="btn secondary"
                         disabled={pending || !snapshot.configured}
                         onClick={() => mutate(tool)}
-                        aria-label={`${isCampaign && active ? "Add" : "Connect"} ${tool.name}`}
+                        aria-label={`${tool.noAuth ? "Enable" : reconnect ? "Reconnect" : "Connect"} ${tool.name}`}
                       >
                         {busy === tool.slug ? (
                           <LoaderCircle size={14} className="spin" />
                         ) : (
                           <>
-                            {isCampaign && active
-                              ? "Add to campaign"
-                              : tool.noAuth
-                                ? "Enable"
-                                : reconnect
-                                  ? "Reconnect"
-                                  : isCampaign
-                                    ? "Connect & add"
-                                    : "Connect"}
+                            {tool.noAuth ? "Enable" : reconnect ? "Reconnect" : "Connect"}
                             {active ? (
                               <Plus size={14} />
                             ) : (
@@ -581,15 +563,6 @@ export function ToolkitBrowser({
                           </>
                         )}
                       </button>
-                      {isCampaign && added && (
-                        <button
-                          className="btn ghost"
-                          onClick={() => mutate(tool, true)}
-                          disabled={pending}
-                        >
-                          Remove
-                        </button>
-                      )}
                     </>
                   )}
                 </div>
@@ -597,38 +570,41 @@ export function ToolkitBrowser({
             );
           })
         )}
-        {canBrowseCatalog && !catalogLoading && !visible.length && !catalogError && (
+        {tab === "required" && !visible.length && !unsupported.length && (
+          <div className="tool-catalog-empty">
+            <h3>No integrations match your search</h3>
+          </div>
+        )}
+        {tab !== "required" && canBrowseCatalog && !catalogLoading && !visible.length && !catalogError && (
           <div className="tool-catalog-empty">
             <Search size={24} />
             <h3>
               {tab === "connected"
                 ? "No connected tools yet"
-                : tab === "assigned"
-                  ? "No tools added yet"
-                  : "No tools match these filters"}
+                : "No tools match these filters"}
             </h3>
             <p>
-              {tab === "connected" || tab === "assigned"
+              {tab === "connected"
                 ? "Explore the catalog to connect an account or add a tool that needs no sign-in."
                 : "Try a different search or category."}
             </p>
-            <button
+            {!campaignCatalog && <button
               className="btn secondary"
               onClick={() => {
                 setSearch("");
                 setCategory("");
                 setLoading(true);
                 setRetry((value) => value + 1);
-                setTab("all");
+                setSelectedTab("all");
               }}
             >
               Browse all tools
               <ArrowUpRight size={14} />
-            </button>
+            </button>}
           </div>
         )}
       </div>
-      {catalogError && (
+      {tab === "all" && catalogError && (
         <div className="tool-catalog-error" role="alert">
           <p>{catalogError}</p>
           <button

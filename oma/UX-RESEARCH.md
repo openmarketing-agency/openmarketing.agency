@@ -1,6 +1,6 @@
-# OMA OSS workspace redesign research
+# Open Marketing Agency workspace redesign research
 
-This brief documents the OSS repository’s workflows, the market patterns that informed the redesign, and the decisions behind the campaign-first console. It focuses on one self-hosted installation and its single workspace account.
+This brief documents Open Marketing Agency’s workflows, the market patterns that informed the redesign, and the decisions behind the campaign-first console. It focuses on one self-hosted installation and its single workspace account.
 
 ## Project and user journeys
 
@@ -33,4 +33,4 @@ The baseline protects the workspace behind sign-in and keeps four destinations v
 - Use the existing IBM Plex typography with limestone surfaces, evergreen actions, and quiet rules. Reserve the dark field for high-priority setup context. Preserve the four persistent mobile destinations and allow content to scroll clear of the bottom bar.
 - Distinguish genuinely empty lists, zero search matches, and unavailable providers. Keep focus visible and return it to the relevant filter when clearing a query. [Carbon empty states](https://www.carbondesignsystem.com/building-blocks/core/patterns/empty-states) · [WCAG 2.2](https://www.w3.org/TR/WCAG22/)
 
-This is a qualitative comparison based on primary product documentation and an inspection of the OSS application. No usage analytics or participant testing informed this work. Local verification covers setup, saved campaign review, draft filtering, navigation, and responsive states using isolated data. Live provider behavior depends on the installation’s configuration.
+This is a qualitative comparison based on primary product documentation and an inspection of the Open Marketing Agency console. No usage analytics or participant testing informed this work. Local verification covers setup, saved campaign review, draft filtering, navigation, and responsive states using isolated data. Live provider behavior depends on the installation’s configuration.

@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { CampaignKanban } from "../components/campaign-kanban";
 import { CampaignLibrary } from "../components/campaign-library";
 import { campaignAgentIds, campaignLifecycleLabel, CampaignAgents, CampaignOverview } from "../components/workspace-records";
 import { type AgentWorkspace, type SavedCampaign } from "../lib/server/agent-workspace";
@@ -36,6 +37,32 @@ test("lists an agent-saved campaign without a bundled fallback", () => {
   assert.match(html, /Retail search/);
   assert.match(html, /href="\/campaigns\/seo"/);
   assert.doesNotMatch(html, /href="\/campaigns\/social-media"|Mission owner/);
+});
+
+test("shows board task counts with the campaign lifecycle in the list", () => {
+  const html = renderToStaticMarkup(createElement(CampaignLibrary, {
+    saved: [{
+      id: "seo", name: "Retail search", description: "", version: "", agentCount: 1, status: "Running",
+      kanban: { state: "ready", counts: { done: 3, blocked: 1, ready: 0, running: 2 } },
+    }],
+  }));
+  assert.match(html, />Running</);
+  assert.match(html, /aria-label="Kanban task counts"/);
+  assert.match(html, /2 in progress.*1 blocked.*3 done/);
+  assert.doesNotMatch(html, /0 ready/);
+});
+
+test("distinguishes empty boards from unavailable, missing, and ambiguous boards", () => {
+  for (const [status, message] of [
+    [{ state: "ready", counts: {} }, "No tasks yet"],
+    [{ state: "unconfigured" }, "No board configured"],
+    [{ state: "unavailable" }, "Status unavailable"],
+    [{ state: "missing" }, "Board not found"],
+    [{ state: "ambiguous" }, "Board name matches multiple boards"],
+  ] as const) {
+    const html = renderToStaticMarkup(createElement(CampaignKanban, { status }));
+    assert.ok(html.includes(message));
+  }
 });
 
 const campaign: SavedCampaign = {

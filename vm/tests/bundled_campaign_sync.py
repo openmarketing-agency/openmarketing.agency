@@ -15,7 +15,7 @@ def verify_sync(home):
     from hermes_cli.config import atomic_config_replace
     from hermes_cli.oma_campaigns.install import _status
     from hermes_yaml import safe_load
-    from workspace import WorkspaceError, sync_campaign_configuration
+    from workspace import WorkspaceError, change_campaign_lifecycle, sync_campaign_configuration
 
     root = home / "oma"
     campaign_id = "fixture"
@@ -52,6 +52,7 @@ def verify_sync(home):
         (profile / "cron").mkdir(parents=True)
         (profile / "cron" / "jobs.json").write_text('{"jobs":[]}')
         (profile / ".env").write_text("EXISTING_FIXTURE_KEY=keep\n")
+        (profile / "SOUL.md").write_text("Preserve this installed legacy persona.")
         atomic_config_replace(profile / "config.yaml", {"agent": {"enabled_toolsets": ["file"]}})
     owner_config = profiles / coordinator / "config.yaml"
     atomic_config_replace(owner_config, {
@@ -78,12 +79,13 @@ def verify_sync(home):
     result = sync_campaign_configuration(root, campaign_id, request)
     updated = safe_load(record.read_bytes())
     assert _status(home, campaign_id, updated)["state"] == "installed"
-    assert updated["available-keys"] == sorted(request["env"])
+    assert updated["available-keys"] == sorted({*request["env"], "EXISTING_FIXTURE_KEY"})
     assert result["revision"] != request["revision"]
     for name in agents:
         profile = profiles / name
         native = safe_load((profile / "config.yaml").read_bytes())
         assert native["kanban"]["profile_board"] == board
+        assert (profile / "SOUL.md").read_text() == "Preserve this installed legacy persona."
         assert native["kanban"]["orchestrator_profile"] == coordinator
         assert native["agent"]["enabled_toolsets"] == ["file"]
         assert native["model"] == data["model"] and native["mcp_servers"] == data["mcp_servers"]
@@ -92,8 +94,11 @@ def verify_sync(home):
         assert env["EXISTING_FIXTURE_KEY"] == "keep"
         assert all(env[key] == value for key, value in request["env"].items())
     assert safe_load(owner_config.read_bytes())["kanban"]["dispatch_profiles"] == [specialist]
-    assert sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}}) == result
-    assert sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}}, deploy=True) == result
+    stopped = change_campaign_lifecycle(root, campaign_id, {"state": "paused", "revision": result["revision"]})
+    assert stopped["state"] == "paused"
+    synced = sync_campaign_configuration(root, campaign_id, {"revision": stopped["revision"], "env": {}})
+    assert synced["revision"] == stopped["revision"]
+    assert sync_campaign_configuration(root, campaign_id, {"revision": synced["revision"], "env": {}}, deploy=True) == synced
 
 
 with TemporaryDirectory(prefix="oma-bundled-sync-") as directory:

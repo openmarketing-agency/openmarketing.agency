@@ -1,8 +1,11 @@
 /** Validates and transports console requests to oma-agent's private workspace socket. */
 
 import { request } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { campaignPlanChatSchema, campaignPlanResponseSchema, campaignPlanSchema } from "../campaign-plan";
+import { validToolkitSlug } from "../tool-catalog";
+import type { LegacyToolSelections } from "./legacy-tool-selections";
 
 export const workspaceId = z.string().max(64).regex(/^[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*$/);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
@@ -30,13 +33,19 @@ const brand = record.extend({
   documents: z.array(document).max(64).optional(),
 });
 const playbook = record.extend({ revision, brandId: z.string(), strategy: z.string(), strategyHtml: z.string().optional() });
+export const campaignMode = z.enum(["approve", "control", "yolo"]);
+export type CampaignMode = z.infer<typeof campaignMode>;
 const campaignConfiguration = z.object({
   revision, provider: z.string(), modelId: z.string(), baseUrl: z.string(),
-  hasModelKey: z.boolean(), usesEnvironmentKey: z.boolean().optional(),
+  hasModelKey: z.boolean(), mode: campaignMode.optional(),
 });
 const campaign = record.extend({
   playbookId: z.string(), version: z.string(), orchestrator: z.string(), agentIds: strings,
   goals: strings, plans: strings, board: z.string(),
+  integrationConfigInvalid: z.boolean().optional(),
+  requiredIntegrations: z.array(z.object({
+    id: workspaceId, name: z.string(), slug: z.string().refine(validToolkitSlug).nullable(),
+  })).optional(),
   installationState: z.string().optional(), model: z.string().optional(),
   lifecycleState: z.string().optional(),
   configuration: campaignConfiguration.optional(),
@@ -47,7 +56,11 @@ const agent = record.extend({
     name: z.string(), schedule: z.string(), timezone: z.string().optional(), repeat: z.number().int().positive().optional(),
   })),
 });
-const standaloneModels = z.object({ revision, default: z.string(), maintenance: z.string() });
+const reasoningEffort = z.enum(["", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+const standaloneSelection = z.object({
+  provider: z.string(), modelId: z.string(), baseUrl: z.string(), reasoningEffort: reasoningEffort.default(""),
+});
+const standaloneModels = z.object({ revision, default: standaloneSelection, maintenance: standaloneSelection });
 export type StandaloneModels = z.infer<typeof standaloneModels>;
 export type StandaloneModelResult = { models?: StandaloneModels; error?: string };
 
@@ -70,6 +83,7 @@ export type WorkspaceEdit = "brands" | "playbooks" | "brand-knowledge";
 export type SavedPlaybook = z.infer<typeof playbook>;
 export type CampaignConfiguration = z.infer<typeof campaignConfiguration>;
 export type SavedCampaign = z.infer<typeof campaign>;
+export type RequiredIntegration = NonNullable<SavedCampaign["requiredIntegrations"]>[number];
 export type SavedAgent = z.infer<typeof agent>;
 
 export const brandUpdate = z.object({
@@ -89,14 +103,15 @@ export class WorkspaceRequestError extends Error {
 
 const unavailable = () => new WorkspaceRequestError(503, "Couldn’t reach the agent workspace. Check that oma-agent is running.");
 
-async function workspaceRequest(path: string, body?: object, method = body ? "PUT" : "GET"): Promise<unknown> {
+/** Call a trusted workspace endpoint over the private Unix socket. */
+export async function workspaceRequest(path: string, body?: object, method = body ? "PUT" : "GET"): Promise<unknown> {
   const socketPath = process.env.OMA_WORKSPACE_SOCKET;
   if (!socketPath) throw unavailable();
   const payload = body ? JSON.stringify(body) : undefined;
   return new Promise((resolve, reject) => {
     const req = request({
       socketPath, path, method,
-      signal: AbortSignal.timeout(path.endsWith("/deploy") ? 130_000 : method === "POST" ? 70_000 : 6_000),
+      signal: AbortSignal.timeout(path.endsWith("/deploy") ? 130_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000 : 6_000),
       headers: payload ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } : undefined,
     }, (response) => {
       const chunks: Buffer[] = [];
@@ -130,6 +145,38 @@ async function workspaceRequest(path: string, body?: object, method = body ? "PU
   });
 }
 
+const toolSelectionsPath = "/workspace/tool-selections";
+const toolkit = z.string().refine(validToolkitSlug);
+const toolSelections = z.object({
+  workspace: z.array(toolkit),
+  campaigns: z.record(workspaceId, z.array(toolkit)),
+});
+export type WorkspaceToolSelections = z.infer<typeof toolSelections>;
+
+function parseToolSelections(result: unknown): WorkspaceToolSelections {
+  const parsed = toolSelections.safeParse(result);
+  if (!parsed.success) throw new WorkspaceRequestError(502, "The agent workspace returned invalid tool selections.");
+  return parsed.data;
+}
+
+export async function readWorkspaceToolSelections(): Promise<WorkspaceToolSelections> {
+  return parseToolSelections(await workspaceRequest(toolSelectionsPath));
+}
+
+export async function writeWorkspaceToolSelection(campaignId: string | null, slug: string, selected: boolean) {
+  if ((campaignId !== null && !workspaceId.safeParse(campaignId).success) || !validToolkitSlug(slug)) {
+    throw new WorkspaceRequestError(422, "Choose a saved campaign and a supported toolkit.");
+  }
+  return parseToolSelections(await workspaceRequest(toolSelectionsPath, { campaignId, slug, selected }));
+}
+
+export async function importWorkspaceToolSelections(data: LegacyToolSelections): Promise<void> {
+  const result = z.object({ migrationId: revision }).safeParse(await workspaceRequest(toolSelectionsPath + "/import", data, "POST"));
+  if (!result.success || result.data.migrationId !== data.migrationId) {
+    throw new WorkspaceRequestError(502, "The agent workspace did not confirm the tool selection import.");
+  }
+}
+
 /** Read uncached workspace data. A console without the bundled agent has no socket. */
 export async function loadAgentWorkspace(): Promise<{ records?: AgentWorkspace; error?: string }> {
   if (!process.env.OMA_WORKSPACE_SOCKET) return {};
@@ -138,6 +185,26 @@ export async function loadAgentWorkspace(): Promise<{ records?: AgentWorkspace; 
     return result.success ? { records: result.data } : { error: "The agent workspace returned invalid records." };
   } catch (error) {
     if (error instanceof WorkspaceRequestError) return { error: error.message };
+    throw error;
+  }
+}
+
+const campaignKanban = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("ready"), counts: z.record(z.string(), z.number().int().nonnegative()) }),
+  z.object({ state: z.enum(["unconfigured", "missing", "ambiguous", "unavailable"]) }),
+]);
+
+export type CampaignKanbanStatus = z.infer<typeof campaignKanban>;
+
+/** Read task counts using the campaign’s current saved board, independently of the workspace inventory. */
+export async function readCampaignKanbanStatus(campaign: Pick<SavedCampaign, "id" | "board">): Promise<CampaignKanbanStatus> {
+  if (!campaign.board.trim()) return { state: "unconfigured" };
+  if (!workspaceId.safeParse(campaign.id).success) return { state: "unavailable" };
+  try {
+    const result = campaignKanban.safeParse(await workspaceRequest("/workspace/campaigns/" + campaign.id + "/kanban"));
+    return result.success ? result.data : { state: "unavailable" };
+  } catch (error) {
+    if (error instanceof WorkspaceRequestError) return { state: "unavailable" };
     throw error;
   }
 }
@@ -209,10 +276,11 @@ export async function previewCampaignPlan(id: string, input: unknown) {
   return reply.data;
 }
 
-const modelBaseUrl = z.union([z.literal(""), z.string().max(2048).refine((value) => {
+const requiredModelBaseUrl = z.string().max(2048).refine((value) => {
   const url = URL.parse(value);
   return url?.protocol === "https:" && !url.username && !url.password && !/[?#\s\\]/.test(value);
-})]);
+});
+const modelBaseUrl = z.union([z.literal(""), requiredModelBaseUrl]);
 const hostedComposioUrl = z.string().max(2048).regex(/^(?:https:\/\/backend\.composio\.dev\/tool_router\/(?:v3\/)?[A-Za-z0-9_-]+\/mcp\/?)?$/);
 const keyValue = z.string().max(4096).regex(/^[\x20-\x7e]*$/);
 const modelProvider = z.string().trim().max(80).regex(/^(?:[A-Za-z0-9_.-]+(?:[:@][A-Za-z0-9_.-]+)?)?$/);
@@ -220,34 +288,56 @@ const modelIdentifier = z.string().trim().max(200).regex(/^[^\s$]*$/);
 
 const standaloneModelUpdate = z.object({
   revision,
+  provider: modelProvider.transform((value) => value.toLowerCase()).refine(Boolean),
   modelId: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/),
+  baseUrl: requiredModelBaseUrl,
+  modelKey: keyValue.transform((value) => value.trim()).default(""),
+  reasoningEffort,
 });
+const standaloneIds = ["default", "maintenance"] as const;
+const standaloneRevisions = z.object({ revisions: z.object({ default: revision, maintenance: revision }) });
+const agentSync = z.object({ id: z.enum(standaloneIds), revision });
 
-export async function saveStandaloneModel(input: unknown): Promise<StandaloneModelResult> {
+/** Save the shared model, pass the key only to the two sync calls, and confirm both profiles. */
+export async function saveStandaloneModel(input: unknown, { requireKey = false } = {}): Promise<StandaloneModelResult> {
   const parsed = standaloneModelUpdate.safeParse(input);
-  if (!parsed.success) return { error: "Enter a valid model ID for both agents." };
-  try {
-    const result = standaloneModels.safeParse(await workspaceRequest("/workspace/agents/model", parsed.data, "POST"));
-    if (!result.success || result.data.default !== parsed.data.modelId || result.data.maintenance !== parsed.data.modelId) {
-      return { error: "Could not confirm the model on both agents. Reload the page to check their settings." };
-    }
-    return { models: result.data };
-  } catch (error) {
-    if (error instanceof WorkspaceRequestError) return { error: error.message };
-    throw error;
+  if (!parsed.success) {
+    return { error: parsed.error.issues.some(({ path }) => path[0] === "baseUrl")
+      ? "Enter a valid HTTPS provider base URL."
+      : "Check the provider, model ID, reasoning effort, and API key." };
   }
-}
-
-export type CampaignModelDefaults = { provider: string; modelId: string; baseUrl: string; hasApiKey: boolean };
-
-/** Read defaults from the server environment. The model key stays on the server. */
-export function loadCampaignModelDefaults(): CampaignModelDefaults {
-  const baseUrl = modelBaseUrl.safeParse(process.env.OMA_HERMES_BASE_URL?.trim() ?? "").data ?? "";
-  const modelId = modelIdentifier.safeParse(process.env.OMA_HERMES_MODEL ?? "").data ?? "";
-  const provider = modelProvider.safeParse(process.env.OMA_HERMES_PROVIDER ?? "").data
-    || (baseUrl ? "custom" : modelId ? "openrouter" : "");
-  const key = process.env.OMA_HERMES_API_KEY?.trim();
-  return { provider, modelId, baseUrl, hasApiKey: Boolean(baseUrl && key && keyValue.safeParse(key).success) };
+  const { modelKey, ...settings } = parsed.data;
+  if (requireKey && !modelKey) return { error: "Enter your provider API key to set up both agents." };
+  try {
+    const { revisions } = standaloneRevisions.parse(await workspaceRequest("/workspace/agents/model", {
+      ...settings, ...(modelKey ? { setModelKey: true } : {}),
+    }, "POST"));
+    for (const id of standaloneIds) {
+      const result = agentSync.parse(await workspaceRequest("/workspace/agents/" + id + "/sync", {
+        revision: revisions[id],
+        ...(modelKey ? { env: { HERMES_MODEL_API_KEY: modelKey } } : {}),
+      }, "POST"));
+      if (result.id !== id || result.revision !== revisions[id]) {
+        throw new WorkspaceRequestError(502, "Couldn’t confirm both agent syncs. Reload their settings and retry.");
+      }
+    }
+    const workspace = await loadAgentWorkspace();
+    const models = workspace.records?.standaloneModels;
+    const { provider, modelId, baseUrl, reasoningEffort } = settings;
+    if (!models || standaloneIds.some((id) =>
+      models[id].provider !== provider || models[id].modelId !== modelId || models[id].baseUrl !== baseUrl
+      || models[id].reasoningEffort !== reasoningEffort)) {
+      return { models, error: "Couldn’t confirm the saved settings on both agents. Reload their settings and retry." };
+    }
+    return { models };
+  } catch (error) {
+    const { records } = await loadAgentWorkspace();
+    return {
+      models: records?.standaloneModels,
+      error: error instanceof WorkspaceRequestError ? error.message
+        : "Couldn’t confirm both agent syncs. Reload their settings and retry.",
+    };
+  }
 }
 
 const campaignUpdate = z.object({
@@ -256,7 +346,6 @@ const campaignUpdate = z.object({
   modelId: modelIdentifier,
   baseUrl: modelBaseUrl,
   modelKey: keyValue.transform((value) => value.trim()),
-  useEnvironmentKey: z.literal("true").optional(),
 }).refine((input) =>
   (!(input.provider || input.baseUrl || input.modelKey) || input.modelId) && (!input.modelKey || input.baseUrl),
 );
@@ -265,35 +354,112 @@ export type CampaignConfigurationResult = {
   configuration?: CampaignConfiguration;
   error?: string;
   synced?: boolean;
+  deployed?: boolean;
+  state?: "paused" | "pausing" | "resumed";
 };
+
+/** Save publishing mode and sync its revision without passing credentials. */
+export async function saveCampaignMode(id: string, input: unknown) {
+  const parsed = z.object({ revision, mode: campaignMode }).safeParse(input);
+  if (!workspaceId.safeParse(id).success || !parsed.success) {
+    throw new WorkspaceRequestError(422, "Choose an available campaign mode.");
+  }
+  const workspace = await loadAgentWorkspace();
+  if (workspace.error) throw new WorkspaceRequestError(503, workspace.error);
+  const campaign = workspace.records?.campaigns.find((item) => item.id === id);
+  if (!campaign?.configuration) throw new WorkspaceRequestError(404, "Campaign settings were not found.");
+  if (campaign.configuration.revision !== parsed.data.revision) {
+    throw new WorkspaceRequestError(409, "This campaign changed. Reload its settings and try again.");
+  }
+
+  const stopped = await pauseCampaignForSync(id, campaign.lifecycleState, parsed.data.revision);
+  let synced: CampaignConfiguration;
+  try {
+    const result = campaignConfiguration.parse(await workspaceRequest("/workspace/campaigns/" + id + "/mode", {
+      mode: parsed.data.mode, revision: stopped.revision,
+    }));
+    if (result.mode !== parsed.data.mode) throw new Error("Unexpected mode");
+    synced = campaignConfiguration.parse(await workspaceRequest(
+      "/workspace/campaigns/" + id + "/sync", { revision: result.revision }, "POST",
+    ));
+    if (synced.mode !== parsed.data.mode) throw new Error("Unexpected synced mode");
+  } catch {
+    throw new WorkspaceRequestError(502, stopped.resume
+      ? "Campaign stopped, but the mode change and sync could not be confirmed. Reload settings before retrying."
+      : "Couldn’t confirm the mode change and sync. Reload settings before retrying.");
+  }
+  if (stopped.resume) await resumeCampaignAfterSync(id, synced.revision);
+  return parsed.data.mode;
+}
+
+const campaignLifecycle = z.object({
+  id: workspaceId, state: z.enum(["paused", "pausing", "resumed"]), revision, missingIntegrations: z.array(workspaceId),
+});
+
+export async function setCampaignLifecycle(id: string, state: "paused" | "resumed", expectedRevision?: string) {
+  if (!workspaceId.safeParse(id).success) throw new WorkspaceRequestError(404, "Campaign not found.");
+  const result = campaignLifecycle.safeParse(await workspaceRequest("/workspace/campaigns/" + id + "/lifecycle", {
+    state, ...(expectedRevision ? { revision: expectedRevision } : {}),
+  }));
+  if (!result.success || result.data.id !== id) {
+    throw new WorkspaceRequestError(502, "Couldn’t confirm the campaign state. Reload its status before retrying.");
+  }
+  return result.data;
+}
+
+async function pauseCampaignForSync(id: string, state: string | undefined, currentRevision: string) {
+  if (state !== "resumed" && state !== "pausing") return { revision: currentRevision, resume: false };
+  const deadline = Date.now() + 25_000;
+  let lifecycle = await setCampaignLifecycle(id, "paused", currentRevision);
+  while (lifecycle.state === "pausing" && Date.now() < deadline) {
+    await delay(400);
+    lifecycle = await setCampaignLifecycle(id, "paused", lifecycle.revision);
+  }
+  if (lifecycle.state !== "paused") {
+    throw new WorkspaceRequestError(409, "The campaign is still stopping. Wait until it is stopped and retry.");
+  }
+  return { revision: lifecycle.revision, resume: state === "resumed" };
+}
+
+async function resumeCampaignAfterSync(id: string, currentRevision: string) {
+  let lifecycle;
+  try {
+    lifecycle = await setCampaignLifecycle(id, "resumed", currentRevision);
+  } catch {
+    throw new WorkspaceRequestError(502, "Campaign synced, but restarting could not be confirmed. Reload its status.");
+  }
+  if (lifecycle.state !== "resumed") {
+    throw new WorkspaceRequestError(412, lifecycle.missingIntegrations.length
+      ? "Campaign synced and is stopped. Check the required integrations before restarting."
+      : "Campaign synced and is still stopped. Check the saved campaign settings before restarting.");
+  }
+  return lifecycle.revision;
+}
 
 /** Generate the MCP URL after validating the edit, then save the YAML and sync the campaign’s keys. */
 export async function saveCampaignConfiguration(
   id: string,
   input: unknown,
-  generateMcpUrl: () => Promise<{ url: string } | { error: string }>,
+  generateMcpUrl: (required: RequiredIntegration[]) => Promise<{ url: string } | { error: string }>,
   deploy = false,
 ): Promise<CampaignConfigurationResult> {
   const parsed = campaignUpdate.safeParse(input);
   if (!workspaceId.safeParse(id).success || !parsed.success) {
     return { error: "Check the model fields and use HTTPS for the model base URL." };
   }
-  const { modelKey, useEnvironmentKey, ...settings } = parsed.data;
-  let environmentKey: string | undefined;
-  if (useEnvironmentKey && !modelKey) {
-    const defaults = loadCampaignModelDefaults();
-    if (!defaults.hasApiKey || settings.baseUrl !== defaults.baseUrl || settings.provider !== defaults.provider) {
-      return { error: "Use the configured provider and base URL to sync the .env key, or enter a campaign key." };
-    }
-    environmentKey = process.env.OMA_HERMES_API_KEY?.trim();
-  }
+  const { modelKey, ...settings } = parsed.data;
   const workspace = await loadAgentWorkspace();
   if (workspace.error) return { error: workspace.error };
-  const current = workspace.records?.campaigns.find((item) => item.id === id)?.configuration;
+  const campaign = workspace.records?.campaigns.find((item) => item.id === id);
+  const current = campaign?.configuration;
   if (!current) return { error: "Couldn’t load this campaign’s settings. Check that oma-agent is running." };
   if (current.revision !== settings.revision) return { error: "This campaign changed. Reload its settings and try again." };
 
-  const mcp = await generateMcpUrl();
+  if (campaign?.integrationConfigInvalid) {
+    return { error: "Use a list of unique campaign integration IDs such as discord or facebook in config.yaml." };
+  }
+  const required = campaign?.requiredIntegrations ?? [];
+  const mcp = await generateMcpUrl(required);
   if ("error" in mcp) return { error: mcp.error };
   const url = hostedComposioUrl.safeParse(mcp.url);
   if (!url.success) return { error: "Composio returned a URL that can’t be synced to this campaign." };
@@ -303,37 +469,72 @@ export async function saveCampaignConfiguration(
     return { error: "Set COMPOSIO_API_KEY in OMA’s environment to sync a Composio MCP connection." };
   }
   const path = "/workspace/campaigns/" + id;
+  let stopped;
+  try {
+    stopped = await pauseCampaignForSync(id, campaign?.lifecycleState, settings.revision);
+  } catch (error) {
+    return { error: error instanceof WorkspaceRequestError ? error.message : "Couldn’t stop the campaign before syncing." };
+  }
   let saved: CampaignConfiguration;
   try {
     saved = campaignConfiguration.parse(await workspaceRequest(path + "/config", {
-      ...settings, composioUrl, setModelKey: Boolean(modelKey || environmentKey),
-      ...(environmentKey ? { useEnvironmentKey: true } : {}),
+      ...settings, revision: stopped.revision, composioUrl, setModelKey: Boolean(modelKey),
     }));
   } catch (error) {
-    if (error instanceof WorkspaceRequestError && [404, 409, 422].includes(error.status)) return { error: error.message };
-    return { error: "Couldn’t save the campaign settings. Check that oma-agent is running." };
+    const message = error instanceof WorkspaceRequestError && [404, 409, 422].includes(error.status)
+      ? error.message : "Couldn’t save the campaign settings. Check that oma-agent is running.";
+    return stopped.resume
+      ? { configuration: { ...current, revision: stopped.revision }, error: "Campaign stopped. " + message }
+      : { error: message };
+  }
+  const env = {
+    ...(modelKey ? { HERMES_MODEL_API_KEY: modelKey } : {}),
+    ...(composioKey ? { COMPOSIO_API_KEY: composioKey } : {}),
+  };
+  try {
+    saved = campaignConfiguration.parse(await workspaceRequest(path + "/sync", {
+      revision: saved.revision, env, ...(deploy ? { prepareDeployment: true } : {}),
+    }, "POST"));
+  } catch (error) {
+    const recovery = error instanceof WorkspaceRequestError && error.status === 412
+      ? "Check that the campaign has a board and its profiles are linked to it."
+      : modelKey ? "Reload campaign settings and re-enter the new model API key before retrying."
+      : "Reload campaign settings and try again.";
+    return {
+      configuration: saved,
+      error: (stopped.resume ? "Campaign stopped. " : "") + "Settings were saved, but oma-agent could not sync the campaign. " + recovery,
+    };
+  }
+  if (!deploy) {
+    if (!stopped.resume) return { configuration: saved, synced: true };
+    try {
+      const latest = await resumeCampaignAfterSync(id, saved.revision);
+      return { configuration: { ...saved, revision: latest }, synced: true, state: "resumed" };
+    } catch (error) {
+      return { configuration: saved, error: error instanceof WorkspaceRequestError
+        ? error.message : "Campaign synced, but restarting could not be confirmed." };
+    }
   }
   try {
-    const updated = campaignConfiguration.parse(await workspaceRequest(path + (deploy ? "/deploy" : "/sync"), {
-      revision: saved.revision,
-      env: {
-        ...(modelKey ? { HERMES_MODEL_API_KEY: modelKey } : {}),
-        ...(environmentKey ? { OMA_HERMES_API_KEY: environmentKey } : {}),
-        ...(composioKey ? { COMPOSIO_API_KEY: composioKey } : {}),
-      },
-    }, "POST"));
-    return { configuration: updated, synced: true };
+    saved = campaignConfiguration.parse(await workspaceRequest(path + "/deploy", { revision: saved.revision, env }, "POST"));
   } catch (error) {
-    let recovery = "Reload campaign settings and try again.";
-    if (deploy && error instanceof WorkspaceRequestError && [404, 409, 412, 422].includes(error.status)) {
-      return { configuration: saved, error: error.message };
+    const detail = error instanceof WorkspaceRequestError && error.status === 412
+      ? " Check the saved agent records and board before retrying." : " Reload its settings and try again.";
+    return { configuration: saved, error: "Campaign settings passed sync, but deployment could not be confirmed." + detail };
+  }
+  try {
+    const lifecycle = await setCampaignLifecycle(id, "resumed", saved.revision);
+    const configuration = { ...saved, revision: lifecycle.revision };
+    if (lifecycle.state !== "resumed") {
+      const missing = lifecycle.missingIntegrations.map((key) => required.find((tool) => tool.id === key)?.name ?? key);
+      return {
+        configuration, deployed: true, state: lifecycle.state,
+        error: missing.length ? "Campaign deployed. The agent couldn’t verify these required integrations: " + missing.join(", ") + "."
+          : "Campaign deployed. Wait for it to finish stopping, then retry.",
+      };
     }
-    if (error instanceof WorkspaceRequestError && error.status === 412) {
-      recovery = "Check that the campaign has a board and its profiles are linked to it.";
-    } else if (modelKey) {
-      recovery = "Reload campaign settings and re-enter the new model API key before retrying.";
-    }
-    const operation = deploy ? "deploy" : "sync";
-    return { configuration: saved, error: "Settings were saved, but oma-agent could not " + operation + " the campaign. " + recovery };
+    return { configuration, synced: true, deployed: true, state: lifecycle.state };
+  } catch {
+    return { configuration: saved, deployed: true, error: "Campaign deployed, but starting it could not be confirmed. Reload its status and retry." };
   }
 }

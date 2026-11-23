@@ -10,6 +10,7 @@ import { logoutAction } from "@/app/actions/auth";
 import { skipSetup } from "./actions";
 import { Brand } from "@/components/brand";
 import { requireUser } from "@/lib/dal";
+import { requireAgentSetup } from "@/lib/server/agent-setup";
 import { isOnboardingDocumentRequest } from "@/lib/onboarding";
 import { readOnboarding } from "@/lib/server/onboarding";
 
@@ -20,6 +21,7 @@ export const metadata: Metadata = { title: "Agent onboarding backup" };
 
 async function Setup() {
   const user = await requireUser();
+  requireAgentSetup(user.id);
   const initial = readOnboarding(user.id);
   const development = process.env.NODE_ENV === "development";
   if (initial.step.status === "closed" && !development) redirect("/dashboard");

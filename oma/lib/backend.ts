@@ -178,28 +178,3 @@ export function me(accessToken: string): Promise<Result<ApiUser>> {
     fallbackMessage: "Could not load your profile.",
   });
 }
-
-export type { ToolAssignment } from "./agent-connections";
-import type { ToolAssignment } from "./agent-connections";
-export function listToolAssignments(token: string) {
-  return request<ToolAssignment[]>("/api/v1/tool-assignments", {
-    headers: bearer(token),
-    fallbackMessage: "Could not load your tool assignments.",
-  });
-}
-export function saveToolAssignment(
-  token: string,
-  playbookId: string,
-  agentId: string,
-  slug: string,
-  assigned: boolean,
-) {
-  return request<void>(
-    `/api/v1/tool-assignments/${encodeURIComponent(playbookId)}/${encodeURIComponent(agentId)}/${encodeURIComponent(slug)}`,
-    {
-      method: assigned ? "PUT" : "DELETE",
-      headers: bearer(token),
-      fallbackMessage: "Could not save that tool assignment.",
-    },
-  );
-}

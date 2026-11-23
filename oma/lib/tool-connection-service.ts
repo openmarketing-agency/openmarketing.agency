@@ -256,7 +256,7 @@ export function createToolConnectionService(
   async function mcpSession(userId: string, toolIds: string[]) {
     const ids = [...new Set(toolIds.map(toolkitSlug))];
     if (!ids.length)
-      throw new Error("Assign at least one tool to this campaign first.");
+      throw new ToolConnectionConfigurationError("No campaign integrations were configured.");
     const definitions = await Promise.all(ids.map(definition));
     const items = await accounts(userId);
     const selected = definitions.map((tool) => ({
@@ -268,10 +268,11 @@ export function createToolConnectionService(
     const missing = selected.filter(
       (item) => !item.tool.noAuth && !item.account,
     );
-    if (missing.length)
-      throw new Error(
-        `Connect or remove these assigned tools before syncing the campaign: ${missing.map((item) => item.tool.name).join(", ")}.`,
+    if (missing.length) {
+      throw new ToolConnectionConfigurationError(
+        `Connect these required tools before syncing the campaign: ${missing.map(({ tool }) => tool.name).join(", ")}.`,
       );
+    }
     const authenticated = selected.filter((item) => item.account);
     return client.sessions.create(userId, {
       toolkits: ids,

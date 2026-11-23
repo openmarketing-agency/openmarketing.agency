@@ -1,6 +1,7 @@
 """Verify mounted workspace reads, scoped edits, and revision protection."""
 
 from hashlib import sha256
+import json
 import os
 from pathlib import Path
 import sys
@@ -42,6 +43,8 @@ with TemporaryDirectory() as temporary:
     campaign.write_text(
         "id: seo\nname: Search campaign\nplaybook: growth\nagents: [seo__researcher]\n"
         "goals: [Qualified leads]\nplans: [Publish research]\n"
+        "tool_suggestions: [google_analytics, github, github, invalid/path, 42]\n"
+        "integrations: [discord, facebook, x, google-analytics, wordpress]\n"
     )
     agent = root / "agents" / "seo__researcher" / "config.yaml"
     agent.parent.mkdir(parents=True)
@@ -57,6 +60,15 @@ with TemporaryDirectory() as temporary:
     assert saved["playbooks"][0]["brandId"] == "example"
     assert saved["campaigns"][0]["playbookId"] == "growth"
     assert saved["campaigns"][0]["goals"] == ["Qualified leads"]
+    assert "toolSuggestions" not in saved["campaigns"][0]
+    assert saved["campaigns"][0]["integrationConfigInvalid"] is False
+    assert saved["campaigns"][0]["requiredIntegrations"] == [
+        {"id": "discord", "name": "Discord", "slug": "discord"},
+        {"id": "facebook", "name": "Facebook", "slug": "facebook"},
+        {"id": "x", "name": "X (Twitter)", "slug": "twitter"},
+        {"id": "google-analytics", "name": "Google Analytics 4", "slug": "google_analytics"},
+        {"id": "wordpress", "name": "WordPress", "slug": None},
+    ]
     assert saved["agents"][0]["jobs"] == [{"name": "brief", "schedule": "weekly"}]
     update = {
         "revision": saved["brands"][0]["revision"], "name": "New name",
@@ -102,6 +114,23 @@ with TemporaryDirectory() as temporary:
     assert [(item["id"], item["playbookId"]) for item in current["campaigns"]] == [
         ("seo", "growth"), ("social", "launch"),
     ]
+    assert current["campaigns"][1]["requiredIntegrations"] == []
+    assert current["campaigns"][1]["integrationConfigInvalid"] is False
+    base = "id: social\nname: Social campaign\ntool_suggestions: [github]\n"
+    for value in ("", "integrations: []\n"):
+        new_campaign.write_text(base + value)
+        saved_social = records(root)["campaigns"][1]
+        assert saved_social["requiredIntegrations"] == []
+        assert saved_social["integrationConfigInvalid"] is False
+    new_campaign.write_text(base + "integrations: [slack, slack, https://example.test, {id: discord}, 42, made-up]\n")
+    saved_social = records(root)["campaigns"][1]
+    assert saved_social["requiredIntegrations"] == [{"id": "slack", "name": "Slack", "slug": "slack"}]
+    assert saved_social["integrationConfigInvalid"] is True
+    for value in ("slack", "{slack: true}", "null"):
+        new_campaign.write_text(base + "integrations: " + value + "\n")
+        saved_social = records(root)["campaigns"][1]
+        assert saved_social["requiredIntegrations"] == []
+        assert saved_social["integrationConfigInvalid"] is True
     update_record(root, "brands", "example", {**update, "revision": current["brands"][0]["revision"]})
     assert safe_load(current_brand.read_text())["name"] == "New name"
     assert brand.read_text() == changed
@@ -222,7 +251,13 @@ with TemporaryDirectory() as temporary:
     })
     keys = {"HERMES_MODEL_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key"}
     with patch.dict(os.environ, {"UNRELATED_TOKEN": "fixture-unrelated"}), patch("workspace.ensure_bundled_campaign_routing"), patch("workspace.subprocess.Popen") as native:
-        native.return_value.__enter__.return_value.wait.return_value = 0
+        process = native.return_value
+        process.__enter__.return_value.wait.return_value = 0
+        received_keys = []
+        def launch(*_, **kwargs):
+            received_keys.append(json.load(kwargs["stdin"]))
+            return process
+        native.side_effect = launch
         reject_call(422, sync_campaign_configuration, root, "seo", {
             "revision": configuration["revision"], "env": {"UNRELATED_TOKEN": "fixture-unrelated"},
         })
@@ -230,38 +265,36 @@ with TemporaryDirectory() as temporary:
         native.assert_not_called()
         assert sync_campaign_configuration(root, "seo", {"revision": configuration["revision"], "env": keys}) == configuration
         args, kwargs = native.call_args
-        assert args == (["sync-campaign", "seo"],)
-        assert {key: kwargs["env"][key] for key in keys} == keys
+        assert args == ([sys.executable, "-m", "hermes_cli.oma_campaigns.sync", "seo", "--env-stdin"],)
+        assert received_keys == [keys]
+        assert keys.keys().isdisjoint(kwargs["env"])
         assert "UNRELATED_TOKEN" not in kwargs["env"]
         native.return_value.__enter__.return_value.wait.return_value = 1
         reject_call(502, sync_campaign_configuration, root, "seo", {"revision": configuration["revision"], "env": keys})
     assert all(value not in campaign.read_text() for value in keys.values())
-    environment = update_campaign_configuration(root, "seo", {
-        **update, "revision": configuration["revision"], "provider": "openai-api", "useEnvironmentKey": True,
-    })
-    assert environment["provider"] == "openai-api" and environment["usesEnvironmentKey"] is True
-    saved_model = safe_load(campaign.read_text())["model"]
-    assert saved_model["api_key"] == "${OMA_HERMES_API_KEY}"
-    assert saved_model["key_env"] == "OMA_HERMES_API_KEY"
     reject_call(422, update_campaign_configuration, root, "seo", {
-        **update, "revision": environment["revision"], "provider": "custom:other", "setModelKey": False,
+        **update, "revision": configuration["revision"], "useEnvironmentKey": True,
     })
+    # A credential already present in an older campaign profile remains usable by its YAML reference.
+    legacy = safe_load(campaign.read_text())
+    legacy["model"].update(api_key="${OMA_HERMES_API_KEY}", key_env="OMA_HERMES_API_KEY")
+    campaign.write_text(json.dumps(legacy))
+    legacy_revision = sha256(campaign.read_bytes()).hexdigest()
     with patch("workspace.ensure_bundled_campaign_routing"), patch("workspace.subprocess.Popen") as native:
         native.return_value.__enter__.return_value.wait.return_value = 0
         reject_call(422, sync_campaign_configuration, root, "seo", {
-            "revision": environment["revision"], "env": {"HERMES_MODEL_API_KEY": "fixture-wrong-key"},
+            "revision": legacy_revision, "env": {"OMA_HERMES_API_KEY": "retired-app-default"},
         })
         native.assert_not_called()
-        assert sync_campaign_configuration(root, "seo", {
-            "revision": environment["revision"], "env": {"OMA_HERMES_API_KEY": "fixture-environment-key"},
-        }) == environment
-        assert native.call_args.kwargs["env"]["OMA_HERMES_API_KEY"] == "fixture-environment-key"
-    assert "fixture-environment-key" not in campaign.read_text()
+        assert sync_campaign_configuration(root, "seo", {"revision": legacy_revision, "env": {}})["hasModelKey"]
+        assert "OMA_HERMES_API_KEY" not in native.call_args.kwargs["env"]
+        assert safe_load(campaign.read_text())["model"]["api_key"] == "${OMA_HERMES_API_KEY}"
     cleared = update_campaign_configuration(root, "seo", {
-        **update, "revision": environment["revision"], "provider": "", "modelId": "",
+        **update, "revision": legacy_revision, "provider": "", "modelId": "",
         "baseUrl": "", "setModelKey": False, "composioUrl": "",
     })
     assert cleared["modelId"] == "" and cleared["composioUrl"] == ""
+    assert "model" not in safe_load(campaign.read_text())
     assert safe_load(campaign.read_text())["mcp_servers"] == {"other": {"url": "https://other.example.test/mcp"}}
 
 print("Workspace record reads and edits passed")

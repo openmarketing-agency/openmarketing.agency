@@ -1,10 +1,13 @@
-/** Opens the installation's SQLite database and initializes the schema for a fresh installation. */
+/** Opens the installation's SQLite database and initializes identity storage on fresh installations. */
 
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync };
+
+export const sqliteSchemaVersion = 5;
+export const legacyToolSelectionsSchemaVersion = 3;
 
 export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
   // Acquire the write lock before reading anything that influences the update.
@@ -22,7 +25,15 @@ export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
 function initializeSchema(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
-    if (version === 3) return;
+    if (version === sqliteSchemaVersion) return;
+    if (version === 4 || version === legacyToolSelectionsSchemaVersion) {
+      if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'agent_setup_complete'").get()) {
+        db.exec("ALTER TABLE users ADD COLUMN agent_setup_complete INTEGER NOT NULL DEFAULT 0 CHECK (agent_setup_complete IN (0, 1))");
+      }
+      // Keep version 3 until the workspace acknowledges the legacy tool selection import.
+      if (version === 4) db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
+      return;
+    }
     if (version !== 0) throw new Error("This SQLite database uses a different schema. Start OMA with a fresh data directory.");
 
     db.exec(`
@@ -32,6 +43,7 @@ function initializeSchema(db: DatabaseSync): void {
         email TEXT NOT NULL,
         hashed_password TEXT NOT NULL,
         session_version INTEGER NOT NULL DEFAULT 0,
+        agent_setup_complete INTEGER NOT NULL DEFAULT 0 CHECK (agent_setup_complete IN (0, 1)),
         onboarding_state TEXT CHECK (onboarding_state IS NULL OR json_valid(onboarding_state))
       ) STRICT;
 
@@ -58,15 +70,7 @@ function initializeSchema(db: DatabaseSync): void {
         UNIQUE (user_id, url)
       ) STRICT;
 
-      CREATE TABLE tool_assignments (
-        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        playbook_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        toolkit_slug TEXT NOT NULL,
-        PRIMARY KEY (user_id, playbook_id, agent_id, toolkit_slug)
-      ) STRICT;
-
-      PRAGMA user_version = 3;
+      PRAGMA user_version = ${sqliteSchemaVersion};
     `);
   });
 }

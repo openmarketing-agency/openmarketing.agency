@@ -3,9 +3,11 @@ import { Suspense, type ReactNode } from "react";
 import { ConsoleShell } from "@/components/console-shell";
 import { Loading } from "@/components/ui";
 import { requireUser } from "@/lib/dal";
+import { requireAgentSetup } from "@/lib/server/agent-setup";
 
 async function AuthenticatedConsole({ children }: { children: ReactNode }) {
   const user = await requireUser();
+  requireAgentSetup(user.id);
   return <ConsoleShell email={user.email}>{children}</ConsoleShell>;
 }
 

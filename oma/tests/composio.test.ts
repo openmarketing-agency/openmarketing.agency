@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { campaignConnectionScope, connectionScope, campaignToolSlugs } from "../lib/agent-connections";
+import { campaignConnectionScope, connectionScope, WORKSPACE_SCOPE } from "../lib/agent-connections";
 import { CONNECTION_ATTEMPT_MAX_AGE, readConnectionAttempt } from "../lib/connection-attempt";
 import { hostedMcpConnection, mcpClientConfiguration } from "../lib/mcp-client-config";
 import { createToolCatalog, suggestedToolkit } from "../lib/tool-catalog";
@@ -37,12 +37,13 @@ function authConfiguration(id: string, overrides: { name?: string; status?: stri
 test("lists, filters, and pages toolkits while reusing metadata and deduplicating categories", async (t) => {
   const search = { id: "search", name: "Search" };
   const productivity = { id: "productivity", name: "Productivity" };
+  const logoUrl = "https://assets.composio.dev/logos/google_search_console.png";
   const list = t.mock.fn(async () => ({
     items: [{
       slug: toolkit.slug,
       name: toolkit.name,
       no_auth: false,
-      meta: { description: toolkit.description, categories: [search], tools_count: 12 },
+      meta: { description: toolkit.description, logo: logoUrl, categories: [search], tools_count: 12 },
       composio_managed_auth_schemes: ["OAUTH2"],
       auth_schemes: ["OAUTH2"],
     }],
@@ -60,7 +61,7 @@ test("lists, filters, and pages toolkits while reusing metadata and deduplicatin
   }]);
   assert.deepEqual(page, {
     items: [{
-      ...toolkit, categories: [search], toolCount: 12, noAuth: false,
+      ...toolkit, logoUrl, categories: [search], toolCount: 12, noAuth: false,
       managedAuth: true, authSchemes: ["OAUTH2"],
     }],
     total: 45,
@@ -75,6 +76,28 @@ test("lists, filters, and pages toolkits while reusing metadata and deduplicatin
   assert.deepEqual(await catalog.categories(), [search, productivity]);
   assert.deepEqual(await catalog.categories(), [search, productivity]);
   assert.equal(retrieveCategories.mock.callCount(), 1);
+});
+
+test("reads HTTPS logos for individual toolkits and omits unusable logos", async () => {
+  const logos = {
+    valid: "https://logos.composio.dev/api/github",
+    malformed: "not a URL",
+    insecure: "http://assets.composio.dev/logos/github.png",
+    inline: "data:image/svg+xml,fixture",
+    credentialed: "https://user:pass@assets.composio.dev/logos/github.png",
+    missing: undefined,
+  };
+  const catalog = createToolCatalog({ toolkits: { list: async ({ search }: { search: keyof typeof logos }) => ({
+    items: [{
+      slug: search, name: search,
+      meta: { logo: logos[search], description: "", categories: [], tools_count: 1 },
+    }],
+  }) } } as unknown as CatalogClient);
+
+  assert.equal((await catalog.get("valid")).logoUrl, logos.valid);
+  for (const slug of ["malformed", "insecure", "inline", "credentialed", "missing"]) {
+    assert.equal((await catalog.get(slug)).logoUrl, undefined, slug);
+  }
 });
 
 test("binds OAuth callbacks to the signed-in owner, connection attempt, and provider account", async (t) => {
@@ -117,6 +140,17 @@ test("binds OAuth callbacks to the signed-in owner, connection attempt, and prov
   assert.equal(connectionScope(accountId, campaignScope).returnTo, campaignAttempt.returnTo);
   assert.deepEqual(readConnectionAttempt(JSON.stringify(campaignAttempt), accountId, attempt.nonce, false, now), campaignAttempt);
   assert.equal(readConnectionAttempt(JSON.stringify({ ...campaignAttempt, returnTo: "/campaigns/another?view=tools" }),
+    accountId, attempt.nonce, false, now), null);
+  const catalogScope = campaignConnectionScope("release-week", true);
+  const catalogAttempt = { ...attempt, ...catalogScope, returnTo: "/campaigns/release-week?view=tools&tool_list=catalog" };
+  assert.equal(connectionScope(accountId, catalogScope).returnTo, catalogAttempt.returnTo);
+  assert.deepEqual(readConnectionAttempt(JSON.stringify(catalogAttempt), accountId, attempt.nonce, false, now), catalogAttempt);
+  assert.equal(readConnectionAttempt(JSON.stringify({ ...catalogAttempt, returnTo: campaignAttempt.returnTo }),
+    accountId, attempt.nonce, false, now), null);
+  const workspaceAttempt = { ...attempt, ...WORKSPACE_SCOPE, returnTo: "/connections" };
+  assert.equal(connectionScope(accountId, WORKSPACE_SCOPE).returnTo, workspaceAttempt.returnTo);
+  assert.deepEqual(readConnectionAttempt(JSON.stringify(workspaceAttempt), accountId, attempt.nonce, false, now), workspaceAttempt);
+  assert.equal(readConnectionAttempt(JSON.stringify({ ...workspaceAttempt, returnTo: campaignAttempt.returnTo }),
     accountId, attempt.nonce, false, now), null);
   assert.throws(() => connectionScope(accountId, campaignConnectionScope("../other")), /saved campaign/);
   assert.equal(readConnectionAttempt(saved, accountId, "another-state", false, now), null);
@@ -201,29 +235,20 @@ test("explains how to resolve missing or ambiguous configurations in Composio", 
   assert.equal(create.mock.callCount(), 0);
 });
 
-test("pins assigned accounts in hosted MCP sessions and exports environment references", async (t) => {
+test("pins accounts for configured campaign integrations and exports environment references", async (t) => {
   const publicTool = { ...toolkit, slug: "public-search", name: "Public Search", noAuth: true };
-  const list = t.mock.fn(async () => ({ items: [connectedAccount()] }));
+  const list = t.mock.fn(async () => ({ items: [
+    connectedAccount(),
+    { ...connectedAccount({ id: "other-account" }), toolkit: { slug: "facebook" } },
+  ] }));
   const create = t.mock.fn(async () => ({
     mcp: { url: hostedUrl, headers: { "x-api-key": fixtureHeader, "X-MCP-Session": fixtureHeader } },
   }));
   const service = createToolConnectionService({
     connectedAccounts: { list }, sessions: { create },
   } as unknown as ConnectionClient, async (slug) => slug === publicTool.slug ? publicTool : toolkit);
-  const assignment = (agent_id: string, toolkit_slug: string) => ({ playbook_id: "seo", agent_id, toolkit_slug });
-  const slugs = campaignToolSlugs("seo", [
-    assignment("researcher", toolkit.slug),
-    assignment("writer", toolkit.slug),
-    assignment("campaign", publicTool.slug),
-    assignment("default", "unassigned-default-tool"),
-    { ...assignment("writer", "other-playbook-tool"), playbook_id: "finance" },
-  ]);
-  assert.deepEqual(slugs, [toolkit.slug, publicTool.slug]);
-  assert.deepEqual(campaignToolSlugs("release-week", [
-    { playbook_id: "release-week", agent_id: "campaign", toolkit_slug: publicTool.slug },
-    assignment("writer", toolkit.slug),
-  ]), [publicTool.slug]);
-  const session = await service.mcpSession(accountId, slugs);
+  const slugs = [toolkit.slug, publicTool.slug];
+  const session = await service.mcpSession(accountId, [toolkit.slug, ...slugs]);
   assert.deepEqual(create.mock.calls[0].arguments, [accountId, {
     toolkits: slugs,
     connectedAccounts: { [toolkit.slug]: providerAccount },
@@ -249,7 +274,8 @@ test("pins assigned accounts in hosted MCP sessions and exports environment refe
   assert.throws(() => hostedMcpConnection({ url: "http://mcp.example.test/" }), /HTTPS/);
 
   list.mock.mockImplementation(async () => ({ items: [connectedAccount({ isDisabled: true })] }));
-  await assert.rejects(service.mcpSession(accountId, slugs), /Connect or remove.*Google Search Console/);
+  await assert.rejects(service.mcpSession(accountId, slugs), /Connect these required tools.*Google Search Console/);
+  await assert.rejects(service.mcpSession(accountId, []), /No campaign integrations/);
   assert.equal(create.mock.callCount(), 1);
   await service.mcpSession(accountId, [publicTool.slug]);
   assert.deepEqual(create.mock.calls[1].arguments, [accountId, {

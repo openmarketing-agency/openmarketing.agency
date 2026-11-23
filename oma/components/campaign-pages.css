@@ -128,16 +128,6 @@
 }
 
 .campaign-dashboard-sidebar .workspace-index h2 svg { color: var(--accent); }
-.standalone-model-form { display: grid; gap: 6px; margin-top: 8px; }
-.standalone-model-form input:not([type="hidden"]) {
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-}
-.standalone-model-form button { justify-self: start; }
 .campaign-dashboard-sidebar .workspace-link-list a { border: 0; }
 .campaign-dashboard-sidebar .workspace-link-list a,
 .campaign-context dd a { text-decoration: none; }
@@ -209,6 +199,30 @@
 .campaign-entry-context { margin-top: 8px; }
 .campaign-agent-count { gap: 5px; white-space: nowrap; }
 .campaign-entry-context a { color: var(--accent); text-underline-offset: 3px; }
+.campaign-kanban {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.campaign-kanban-label { color: var(--text); font-weight: 550; }
+.campaign-kanban-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.campaign-kanban-counts li {
+  padding-inline: 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
 .campaign-entry-context a:hover { text-decoration: underline; }
 
 .campaign-library .campaign-empty {
@@ -242,6 +256,7 @@
 }
 .campaign-title { justify-content: start; }
 .campaign-identity > p { margin-top: 4px; line-height: 1.55; }
+.campaign-identity > .campaign-kanban { grid-column: 2; margin-top: 0; }
 
 .campaign-tabs {
   display: flex;
@@ -344,7 +359,7 @@
   .campaign-setup li { padding-block: 8px; }
   .campaign-identity { gap: 10px 12px; }
   .campaign-identity .playbook-mark { width: 26px; height: 32px; grid-row: auto; }
-  .campaign-identity > p { grid-column: 1 / -1; }
+  .campaign-identity > :is(p, .campaign-kanban) { grid-column: 1 / -1; }
   .campaign-title { gap: 5px 8px; }
   .campaign-tabs { gap: 0 12px; margin-top: 16px; }
   .campaign-dashboard-layout, .campaign-overview, .campaign-roster, .campaign-detail .campaign-settings { margin-top: 16px; }
@@ -494,3 +509,16 @@
   .campaign-tabs a { justify-content: center; gap: 4px; padding-inline: 1px; font-size: 0.8125rem; }
   .campaign-planner, .campaign-deploy { margin-top: 16px; }
 }
+
+.campaign-mode-settings .workspace-editor { margin-top: 16px; }
+.campaign-mode-settings .workspace-editor select {
+  width: min(100%, 20rem);
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--control);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.campaign-mode-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }

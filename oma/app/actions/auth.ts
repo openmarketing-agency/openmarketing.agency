@@ -35,7 +35,7 @@ export async function loginAction(
   }
 
   await setTokens(result.data);
-  redirect("/dashboard");
+  redirect(process.env.OMA_WORKSPACE_SOCKET ? "/agent-setup" : "/dashboard");
 }
 
 export async function registerAction(

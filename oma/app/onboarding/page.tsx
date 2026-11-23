@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import { logoutAction } from "@/app/actions/auth";
 import { Brand } from "@/components/brand";
 import { requireUser } from "@/lib/dal";
+import { requireAgentSetup } from "@/lib/server/agent-setup";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
 
 import { ProjectForm } from "./project-form";
@@ -16,6 +17,7 @@ export const metadata: Metadata = { title: "Set up your project" };
 
 async function Setup() {
   const user = await requireUser();
+  requireAgentSetup(user.id);
   const project = readProjectSetup(user.id);
   if (isProjectSetupComplete(project)) redirect("/dashboard");
   const links = project?.setup.status === "done"
