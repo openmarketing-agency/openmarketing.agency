@@ -1,5 +1,6 @@
 # Run the self-hosted Next.js workspace with SQLite in the project data folder.
 name: oma-local
+x-oma-bind-address: &oma-bind-address ${OMA_BIND_ADDRESS:-127.0.0.1}
 
 services:
   app:
@@ -9,7 +10,9 @@ services:
     init: true
     restart: unless-stopped
     ports:
-      - "${OMA_BIND_ADDRESS:-127.0.0.1}:${OMA_FRONTEND_PORT:-3000}:3000"
+      - host_ip: *oma-bind-address
+        published: "${OMA_FRONTEND_PORT:-3000}"
+        target: 3000
     volumes:
       - type: bind
         source: ./.oma-data
@@ -18,6 +21,7 @@ services:
           create_host_path: false
     environment:
       OMA_DATA_DIR: /app/data
+      OMA_BIND_ADDRESS: *oma-bind-address
       OMA_ENVIRONMENT: production
       OMA_APP_URL: ${OMA_APP_URL:-http://localhost:${OMA_FRONTEND_PORT:-3000}}
       OMA_FRONTEND_PORT: ${OMA_FRONTEND_PORT:-3000}

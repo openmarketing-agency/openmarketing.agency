@@ -40,3 +40,21 @@ test("Compose startup hides internal addresses and prints the banner after readi
   assert.match(result.stdout, /Apache License 2\.0/);
   assert.match(result.stdout.trimEnd(), /Made with ♥ by oma team$/);
 });
+
+test("Next dev permits the configured console hostname and specific bind IP", () => {
+  const config = fileURLToPath(new URL("../next.config.ts", import.meta.url));
+  const readOrigins = (appUrl: string, bindAddress: string) => {
+    const result = spawnSync(process.execPath, ["--import", "tsx", "-e", `
+      console.log(JSON.stringify(require(process.argv[1]).default.allowedDevOrigins));
+    `, config], {
+      encoding: "utf8",
+      env: { ...process.env, OMA_APP_URL: appUrl, OMA_BIND_ADDRESS: bindAddress },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  };
+
+  assert.deepEqual(readOrigins("http://localhost:3000", "192.168.1.86"), ["localhost", "192.168.1.86"]);
+  assert.deepEqual(readOrigins("https://oma.example.test:8443", "0.0.0.0"), ["oma.example.test"]);
+  assert.deepEqual(readOrigins("https://*.example.test", "::"), []);
+});

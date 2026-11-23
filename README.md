@@ -64,7 +64,7 @@ mkdir -p -m 700 .oma-data
 docker compose up --build -d --wait
 ```
 
-Use `make dev-console` for hot reload with just the console. See the [application development guide](oma/README.md) for native Node.js development.
+Use `make dev-console` for hot reload with just the console. See the [application development guide](oma/README.md) for native Node.js development. For development on your LAN, set `OMA_BIND_ADDRESS` to the Mac or server’s specific LAN IP and set `OMA_APP_URL` to the address you open in your browser. Restart the console after changing these settings.
 
 To use Chat with an existing Hermes gateway, set `OMA_AGENT_URL` to an address reachable from the console and set `OMA_AGENT_API_KEY` to the gateway’s `API_SERVER_KEY`. On Docker Desktop, for example, use `http://host.docker.internal:8642` for a gateway on your host. For native development on the same machine, use `http://127.0.0.1:8642` in `oma/.env.local`. Keep the gateway private and recreate the console after changing its environment. The gateway needs the [Hermes Runs API](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server#post-v1runs).
 
