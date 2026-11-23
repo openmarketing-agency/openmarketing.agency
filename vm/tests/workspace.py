@@ -1,6 +1,7 @@
 """Verify mounted workspace reads, scoped edits, and revision protection."""
 
 from hashlib import sha256
+import json
 import os
 from pathlib import Path
 import sys
@@ -220,20 +221,23 @@ with TemporaryDirectory() as temporary:
     reject_call(422, update_campaign_configuration, root, "seo", {
         **update, "revision": configuration["revision"], "baseUrl": "https://next.example.test", "setModelKey": False,
     })
-    keys = {"HERMES_MODEL_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key"}
+    keys = {"HERMES_MODEL_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key",
+            "EXTRA_TOOL_TOKEN": "fixture-extra-key"}
     with patch.dict(os.environ, {"UNRELATED_TOKEN": "fixture-unrelated"}), patch("workspace.ensure_bundled_campaign_routing"), patch("workspace.subprocess.Popen") as native:
-        native.return_value.__enter__.return_value.wait.return_value = 0
+        worker = native.return_value.__enter__.return_value
+        worker.returncode = 0
         reject_call(422, sync_campaign_configuration, root, "seo", {
-            "revision": configuration["revision"], "env": {"UNRELATED_TOKEN": "fixture-unrelated"},
+            "revision": configuration["revision"], "env": {"INVALID-NAME": "fixture-unrelated"},
         })
         reject_call(409, sync_campaign_configuration, root, "seo", {"revision": update["revision"], "env": keys})
         native.assert_not_called()
         assert sync_campaign_configuration(root, "seo", {"revision": configuration["revision"], "env": keys}) == configuration
         args, kwargs = native.call_args
-        assert args == (["sync-campaign", "seo"],)
-        assert {key: kwargs["env"][key] for key in keys} == keys
+        assert args == ([sys.executable, "-m", "hermes_cli.oma_campaigns.sync", "seo", "--env-stdin"],)
+        assert not keys.keys() & kwargs["env"].keys()
+        assert json.loads(worker.communicate.call_args.kwargs["input"]) == keys
         assert "UNRELATED_TOKEN" not in kwargs["env"]
-        native.return_value.__enter__.return_value.wait.return_value = 1
+        worker.returncode = 1
         reject_call(502, sync_campaign_configuration, root, "seo", {"revision": configuration["revision"], "env": keys})
     assert all(value not in campaign.read_text() for value in keys.values())
     environment = update_campaign_configuration(root, "seo", {
@@ -247,15 +251,13 @@ with TemporaryDirectory() as temporary:
         **update, "revision": environment["revision"], "provider": "custom:other", "setModelKey": False,
     })
     with patch("workspace.ensure_bundled_campaign_routing"), patch("workspace.subprocess.Popen") as native:
-        native.return_value.__enter__.return_value.wait.return_value = 0
-        reject_call(422, sync_campaign_configuration, root, "seo", {
-            "revision": environment["revision"], "env": {"HERMES_MODEL_API_KEY": "fixture-wrong-key"},
-        })
-        native.assert_not_called()
+        worker = native.return_value.__enter__.return_value
+        worker.returncode = 0
+        keys = {"HERMES_MODEL_API_KEY": "fixture-other-key", "OMA_HERMES_API_KEY": "fixture-environment-key"}
         assert sync_campaign_configuration(root, "seo", {
-            "revision": environment["revision"], "env": {"OMA_HERMES_API_KEY": "fixture-environment-key"},
+            "revision": environment["revision"], "env": keys,
         }) == environment
-        assert native.call_args.kwargs["env"]["OMA_HERMES_API_KEY"] == "fixture-environment-key"
+        assert json.loads(worker.communicate.call_args.kwargs["input"]) == keys
     assert "fixture-environment-key" not in campaign.read_text()
     cleared = update_campaign_configuration(root, "seo", {
         **update, "revision": environment["revision"], "provider": "", "modelId": "",

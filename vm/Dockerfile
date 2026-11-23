@@ -1,4 +1,4 @@
-ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.18@sha256:6c4f4b40d8ec8ef45c1400cede685e64879415c0f929fd4705260912cf70e5b3
+ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.19@sha256:451c6f355c9a4a2ec64306dbcc9e37b058a6dcf2976b2f061fed0a794f7ba4bd
 
 FROM ${OMA_AGENT_IMAGE} AS agent
 USER root
