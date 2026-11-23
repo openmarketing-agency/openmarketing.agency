@@ -5,9 +5,17 @@ export type AgentRunProgress = {
     | "completed" | "failed" | "cancelled" | "unknown";
   tool?: string;
   updatedAt?: string;
+  message?: string;
+  outputTokens?: number;
+  reasoningTokens?: number;
 };
 
 export type AgentActivity = {
   gateway: { activeRuns: number; activeAgents: number } | null;
   setup: AgentRunProgress | { status: "not_sent" | "unavailable" | "connection_lost" } | null;
+};
+
+export type AgentActivityUpdate = {
+  phase: "writing" | "update";
+  message?: string;
 };

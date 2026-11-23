@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 
-import { AgentChatError, agentStatus, answerAgentPrompt, getAgentActivityCounts, getAgentRun, getAgentRunProgress, startAgentRun } from "../lib/server/agent-chat";
+import { AgentChatError, agentStatus, answerAgentPrompt, getAgentActivityCounts, getAgentRun, getAgentRunProgress, startAgentRun, streamAgentRunActivity } from "../lib/server/agent-chat";
 
 const key = "fixture-agent-key";
 const account = "fixture-owner";
@@ -95,7 +95,7 @@ test("uses the private key file for the bundled gateway and reports unreachable 
   });
 });
 
-test("projects authorized run progress without returning prompts, outputs, or secrets", async (t) => {
+test("projects authorized run progress with sanitized public replies and reported usage", async (t) => {
   useGateway(t);
   const runEndpoint = "http://vm:8642/p/seo__orchestrator/v1/runs";
   let payload: object = { status: "queued" };
@@ -122,10 +122,65 @@ test("projects authorized run progress without returning prompts, outputs, or se
   payload = { status: "running", pending_controls: [{ kind: "clarify" }, { kind: "approval", command: "private command" }] };
   assert.deepEqual(await getAgentRunProgress(account, handle), { status: "waiting_for_approval" });
 
-  for (const status of ["waiting_for_approval", "stopping", "completed", "failed", "cancelled", "unknown"]) {
+  for (const status of ["waiting_for_approval", "stopping", "failed", "cancelled", "unknown"]) {
     payload = { status, output: "private output", progress_at: null };
     assert.deepEqual(await getAgentRunProgress(account, handle), { status });
   }
+  payload = {
+    status: "completed", output: "Setup ready. " + key, reasoning: "private analysis",
+    usage: { input_tokens: 200, output_tokens: 42, reasoning_tokens: 12, cost_usd: 0.01 },
+  };
+  assert.deepEqual(await getAgentRunProgress(account, handle), {
+    status: "completed", message: "Setup ready. [redacted]", outputTokens: 42, reasoningTokens: 12,
+  });
+
+  payload = { status: "completed", usage: { completion_tokens: 20, reasoning_tokens: -1 } };
+  assert.deepEqual(await getAgentRunProgress(account, handle), { status: "completed", outputTokens: 20 });
+
+});
+
+test("streams only public assistant text for the owner and redacts a credential split across deltas", async (t) => {
+  useGateway(t);
+  const runEndpoint = "http://vm:8642/p/seo__orchestrator/v1/runs";
+  const request = new AbortController();
+  const events = [
+    { event: "reasoning.available", text: "internal thinking" },
+    { event: "tool.started", tool: "terminal", preview: "sensitive command" },
+    { event: "approval.request", description: "private approval" },
+    { event: "message.interim", text: "Checking the website. " + key },
+    { event: "message.delta", delta: "The setup is almost complete. " + key.slice(0, 7) },
+    { event: "message.delta", delta: key.slice(7) + ". I have created the initial campaign records." },
+    { event: "run.completed", output: "The workspace is ready." },
+  ];
+  const text = events.map((event) => "data: " + JSON.stringify(event) + "\r\n\r\n").join("");
+  const requests = t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    const headers = new Headers(options.headers);
+    assert.equal(headers.get("authorization"), "Bearer " + key);
+    if (url === runEndpoint) return Response.json({ run_id: "run_progress" }, { status: 202 });
+    assert.equal(url, runEndpoint + "/run_progress/events");
+    assert.equal(headers.get("accept"), "text/event-stream");
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let index = 0; index < text.length; index += 17) {
+          controller.enqueue(encoder.encode(text.slice(index, index + 17)));
+        }
+        controller.close();
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
+  });
+
+  const { handle } = await startAgentRun(account, message);
+  await assert.rejects(streamAgentRunActivity("different-user", handle, request.signal),
+    (error: unknown) => error instanceof AgentChatError && error.status === 404);
+  assert.equal(requests.mock.callCount(), 1);
+  const stream = await streamAgentRunActivity(account, handle, request.signal);
+  const rendered = await new Response(stream).text();
+  assert.match(rendered, /Checking the website\. \[redacted\]/);
+  assert.match(rendered, /The setup is almost complete\. \[redacted\]/);
+  assert.match(rendered, /The workspace is ready/);
+  assert.doesNotMatch(rendered, /fixture|internal thinking|sensitive command|private approval|run_progress/);
 });
 
 test("reads aggregate activity from protected detailed health with the configured profile prefix", async (t) => {

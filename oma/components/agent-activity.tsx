@@ -6,7 +6,7 @@ import { Activity } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import type { AgentActivity as Snapshot } from "@/lib/agent-activity";
+import type { AgentActivity as Snapshot, AgentActivityUpdate } from "@/lib/agent-activity";
 
 import "./agent-activity.css";
 
@@ -14,7 +14,7 @@ type SetupStatus = NonNullable<Snapshot["setup"]>["status"];
 const setupStatus: Record<SetupStatus, string> = {
   not_sent: "Ready to send to oma-agent",
   queued: "Queued",
-  running: "Processing",
+  running: "Waiting for an update",
   waiting_for_answer: "Waiting for an answer",
   waiting_for_approval: "Waiting for approval",
   stopping: "Stopping",
@@ -33,6 +33,7 @@ export function AgentActivity() {
   const router = useRouter();
   const [data, setData] = useState<Snapshot>();
   const [error, setError] = useState("");
+  const [update, setUpdate] = useState<AgentActivityUpdate>();
 
   useEffect(() => {
     let disposed = false;
@@ -40,6 +41,22 @@ export function AgentActivity() {
     let request: AbortController | undefined;
     let sawActiveSetup = false;
     let signedOut = false;
+    let stream: EventSource | undefined;
+
+    function closeStream() {
+      stream?.close();
+      stream = undefined;
+    }
+
+    function openStream() {
+      if (stream || document.hidden) return;
+      stream = new EventSource("/api/agent/activity?stream=1");
+      stream.onmessage = ({ data }) => {
+        if (disposed) return;
+        const next = JSON.parse(data) as AgentActivityUpdate;
+        setUpdate((previous) => ({ ...next, message: next.message ?? previous?.message }));
+      };
+    }
 
     async function poll() {
       if (disposed || signedOut || document.hidden || request) return;
@@ -51,6 +68,8 @@ export function AgentActivity() {
         if (disposed) return;
         if (response.status === 401) {
           signedOut = true;
+          closeStream();
+          setUpdate(undefined);
           setData(undefined);
           setError("Sign in to view agent activity.");
           return;
@@ -62,7 +81,13 @@ export function AgentActivity() {
         setError("");
         const status = snapshot.setup?.status;
         const running = !!status && activeSetup.has(status);
-        if (running) sawActiveSetup = true;
+        if (running) {
+          sawActiveSetup = true;
+          openStream();
+        } else {
+          closeStream();
+          if (status === "not_sent" || !status) setUpdate(undefined);
+        }
         if (status && sawActiveSetup && finishedSetup.has(status)) {
           sawActiveSetup = false;
           router.refresh();
@@ -76,13 +101,17 @@ export function AgentActivity() {
       }
     }
 
-    function resume() { void poll(); }
+    function resume() {
+      if (document.hidden) closeStream();
+      else void poll();
+    }
     document.addEventListener("visibilitychange", resume);
     void poll();
     return () => {
       disposed = true;
       clearTimeout(scheduled);
       request?.abort();
+      closeStream();
       document.removeEventListener("visibilitychange", resume);
     };
   }, [router]);
@@ -91,6 +120,12 @@ export function AgentActivity() {
   const setup = data?.setup;
   const busy = isBusy(gateway);
   const status = gateway ? (busy ? "Working" : "Idle") : data || error ? "Activity unavailable" : "Checking…";
+  const tool = setup && "tool" in setup ? setup.tool : undefined;
+  const message = (setup && "message" in setup && setup.message) || update?.message;
+  const outputTokens = setup && "outputTokens" in setup ? setup.outputTokens : undefined;
+  const reasoningTokens = setup && "reasoningTokens" in setup ? setup.reasoningTokens : undefined;
+  const setupLabel = setup?.status === "running" && update?.phase === "writing" && !tool
+    ? "Writing a reply" : setup ? setupStatus[setup.status] : "";
 
   return (
     <section className="agent-activity" aria-labelledby="agent-activity-heading">
@@ -109,8 +144,8 @@ export function AgentActivity() {
         <dl className="agent-activity-setup">
           <div>
             <dt>Project setup</dt>
-            <dd aria-live="polite">{setupStatus[setup.status]}
-              {"tool" in setup && setup.tool && <> · {setup.tool.replaceAll("_", " ")}</>}
+            <dd aria-live="polite">{setupLabel}
+              {tool && <> · {tool.replaceAll("_", " ")}</>}
             </dd>
           </div>
           {"updatedAt" in setup && setup.updatedAt && (
@@ -120,6 +155,18 @@ export function AgentActivity() {
             </div>
           )}
         </dl>
+      )}
+      {setup && message && (
+        <div className="agent-activity-message">
+          <p className="agent-activity-message-label">{setup.status === "completed" ? "Agent reply" : "Latest agent message"}</p>
+          <p>{message}</p>
+        </div>
+      )}
+      {(outputTokens !== undefined || reasoningTokens !== undefined) && (
+        <p className="agent-activity-counts agent-activity-tokens">
+          {outputTokens !== undefined && <span>{outputTokens.toLocaleString()} output tokens</span>}
+          {reasoningTokens !== undefined && <span>{reasoningTokens.toLocaleString()} reasoning tokens</span>}
+        </p>
       )}
       {error && <p className="agent-activity-error" role="status">{error}</p>}
     </section>

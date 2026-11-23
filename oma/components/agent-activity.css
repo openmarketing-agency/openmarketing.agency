@@ -56,3 +56,17 @@
 .agent-activity-setup dd { margin: 0; font-weight: 550; overflow-wrap: anywhere; }
 .agent-activity-time time { font-variant-numeric: tabular-nums; }
 .agent-activity-error { color: var(--negative); }
+
+.agent-activity-message {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.agent-activity-message p { margin: 0; }
+.agent-activity-message p + p { margin-top: 4px; }
+.agent-activity-message-label { color: var(--muted); font-weight: 600; }
+.agent-activity-tokens { display: flex; flex-wrap: wrap; gap: 4px 12px; }

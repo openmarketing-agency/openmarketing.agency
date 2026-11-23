@@ -20,6 +20,8 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm omactl d
 docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes chat
 ```
 
+On [Campaigns](http://localhost:3000/dashboard), **Agent activity** shows live public messages from the signed-in account’s project setup run. It shows output or reasoning token totals when the gateway reports them.
+
 Open [Chat](http://localhost:3000/chat) to talk with oma-agent’s default profile. The full stack supplies its gateway address and default-profile key automatically. The Hermes dashboard and CLI also remain available.
 
 Open **Settings → Default and maintenance agents** to change the model or provider base URL, rotate the API key, or set the shared reasoning effort. The console writes `agent.reasoning_effort` to both saved records and syncs it to their Hermes profiles. **Provider default** leaves effort selection to Hermes and the model, while **None** asks Hermes to disable reasoning. The console forwards a submitted API key to both profiles over the private workspace socket. Hermes stores it in each profile’s credential file. The YAML uses a `model.api_key` reference such as `${OPENROUTER_API_KEY}`. The console needs no key in its `.env`. Start a new chat after changing the model or reasoning effort.
