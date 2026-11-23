@@ -79,7 +79,7 @@ def verify_sync(home):
     result = sync_campaign_configuration(root, campaign_id, request)
     updated = safe_load(record.read_bytes())
     assert _status(home, campaign_id, updated)["state"] == "installed"
-    assert updated["available-keys"] == sorted({*request["env"], "EXISTING_FIXTURE_KEY"})
+    assert updated["all-keys"] == updated["available-keys"] == sorted({*request["env"], "EXISTING_FIXTURE_KEY"})
     assert result["revision"] != request["revision"]
     for name in agents:
         profile = profiles / name
@@ -102,7 +102,8 @@ def verify_sync(home):
 
 
 with TemporaryDirectory(prefix="oma-bundled-sync-") as directory:
-    os.environ.update(HERMES_HOME=directory, HOME=directory)
-    verify_sync(Path(directory))
+    home = Path(directory).resolve()
+    os.environ.update(HERMES_HOME=str(home), HOME=str(home))
+    verify_sync(home)
 
 print("Legacy bundled profiles linked and synced successfully")

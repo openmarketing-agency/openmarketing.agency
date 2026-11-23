@@ -9,6 +9,29 @@ import type { LegacyToolSelections } from "./legacy-tool-selections";
 
 export const workspaceId = z.string().max(64).regex(/^[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*$/);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
+export const campaignMode = z.enum(["approve", "control", "yolo"]);
+const publicationCampaignId = z.string().max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+export const publicationId = z.string().regex(/^[a-f0-9]{32}$/);
+export const publicationRevision = z.number().int().positive();
+export const nativeCampaignPublication = z.object({
+  id: publicationId, revision: publicationRevision,
+  status: z.enum(["pending_approval", "approved", "publishing", "published", "failed"]),
+  platform: z.string(), kind: z.enum(["post", "reply"]),
+  account: z.object({ id: z.string(), name: z.string().optional(), handle: z.string().optional(), avatar_url: z.string().optional() }),
+  content: z.object({ text: z.string(), media: z.array(z.object({
+    asset_id: z.string(), kind: z.enum(["image", "video", "document"]), url: z.string().optional(), alt_text: z.string().optional(),
+  })).optional() }),
+  target: z.object({ id: z.string(), url: z.string().optional(), author_name: z.string().optional(),
+    author_handle: z.string().optional(), author_avatar_url: z.string().optional(), text: z.string().optional() }).optional(),
+  approval: z.object({ revision: publicationRevision, source: z.enum(["human", "automatic"]), by: z.string().nullable(), at: z.string() }).nullable(),
+  result: z.object({ provider_id: z.string(), url: z.string().optional(), published_at: z.string() })
+    .or(z.object({ error: z.string() })).nullable(),
+  task_id: z.string().nullable(), created_at: z.string(), updated_at: z.string(),
+});
+const publicationsPage = z.object({
+  campaign_id: publicationCampaignId, mode: campaignMode, publications: z.array(nativeCampaignPublication), next_cursor: z.number().int().positive().nullable(),
+});
+export type CampaignPublication = z.infer<typeof nativeCampaignPublication>;
 const strings = z.array(z.string());
 const stringMap = z.record(z.string(), z.string());
 const record = z.object({ id: workspaceId, name: z.string(), description: z.string() });
@@ -33,7 +56,6 @@ const brand = record.extend({
   documents: z.array(document).max(64).optional(),
 });
 const playbook = record.extend({ revision, brandId: z.string(), strategy: z.string(), strategyHtml: z.string().optional() });
-export const campaignMode = z.enum(["approve", "control", "yolo"]);
 export type CampaignMode = z.infer<typeof campaignMode>;
 const campaignConfiguration = z.object({
   revision, provider: z.string(), modelId: z.string(), baseUrl: z.string(),
@@ -47,7 +69,7 @@ const campaign = record.extend({
     id: workspaceId, name: z.string(), slug: z.string().refine(validToolkitSlug).nullable(),
   })).optional(),
   installationState: z.string().optional(), model: z.string().optional(),
-  lifecycleState: z.string().optional(),
+  lifecycleState: z.string().optional(), mode: campaignMode.optional(),
   configuration: campaignConfiguration.optional(),
 });
 const agent = record.extend({
@@ -129,7 +151,7 @@ export async function workspaceRequest(path: string, body?: object, method = bod
         try {
           const result: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
           const status = response.statusCode ?? 503;
-          if (status === 200) {
+          if (status === 200 || status === 202) {
             resolve(result);
             return;
           }
@@ -317,7 +339,7 @@ export async function saveStandaloneModel(input: unknown, { requireKey = false }
         revision: revisions[id],
         ...(modelKey ? { env: { HERMES_MODEL_API_KEY: modelKey } } : {}),
       }, "POST"));
-      if (result.id !== id || result.revision !== revisions[id]) {
+      if (result.id !== id) {
         throw new WorkspaceRequestError(502, "Couldn’t confirm both agent syncs. Reload their settings and retry.");
       }
     }
@@ -537,4 +559,29 @@ export async function saveCampaignConfiguration(
   } catch {
     return { configuration: saved, deployed: true, error: "Campaign deployed, but starting it could not be confirmed. Reload its status and retry." };
   }
+}
+
+function publicationsPath(id: string) {
+  if (!publicationCampaignId.safeParse(id).success) throw new WorkspaceRequestError(404, "This campaign was not found.");
+  return `/workspace/campaigns/${id}/publications`;
+}
+
+export async function listWorkspacePublications(id: string, before?: number) {
+  const path = publicationsPath(id);
+  const cursor = before === undefined ? "" : `?before=${publicationRevision.parse(before)}`;
+  const result = publicationsPage.safeParse(await workspaceRequest(path + cursor));
+  if (!result.success || result.data.campaign_id !== id) {
+    throw new WorkspaceRequestError(502, "The agent workspace returned invalid publications.");
+  }
+  return result.data;
+}
+
+export async function approveWorkspacePublication(id: string, item: string, revision: number, approver: string) {
+  const path = publicationsPath(id);
+  if (!publicationId.safeParse(item).success) throw new WorkspaceRequestError(404, "Publication not found.");
+  const result = nativeCampaignPublication.safeParse(await workspaceRequest(`${path}/${item}/approve`, { revision, approver }, "POST"));
+  if (!result.success || result.data.id !== item || result.data.revision !== revision) {
+    throw new WorkspaceRequestError(502, "The agent workspace returned an invalid approval.");
+  }
+  return result.data;
 }

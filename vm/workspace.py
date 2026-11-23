@@ -9,6 +9,7 @@ from contextlib import ExitStack, closing, contextmanager
 from hashlib import sha256
 from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler
+from importlib.util import find_spec
 from io import StringIO
 from itertools import chain
 import json
@@ -24,7 +25,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from markdown_it import MarkdownIt
 
@@ -224,15 +225,20 @@ def nested_brand_documents(directory):
         yield from walk(directory, [folder], 0)
 
 
-def run_campaign_command(root, command, env, *, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, returncodes=(0,)):
+def run_campaign_command(root, command, env, *, payload=None, stdout=subprocess.DEVNULL, returncodes=(0,)):
     # Kill the launcher and its worker together before releasing the edit lock on timeout.
     with subprocess.Popen(
         command, cwd=root.parent, start_new_session=True,
         env={**{name: os.environ[name] for name in RUNTIME_ENV if name in os.environ}, **env},
-        stdin=stdin, stdout=stdout, stderr=subprocess.DEVNULL,
+        stdin=subprocess.PIPE if payload is not None else subprocess.DEVNULL,
+        stdout=stdout, stderr=subprocess.DEVNULL,
     ) as runner:
         try:
-            status = runner.wait(timeout=60)
+            if payload is None:
+                status = runner.wait(timeout=60)
+            else:
+                runner.communicate(input=payload, timeout=60)
+                status = runner.returncode
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(runner.pid, SIGKILL)
@@ -380,6 +386,7 @@ def project(collection, source, directory, record_id=None):
             **campaign_integrations(data),
             "board": string(data.get("kanban_board_name")) or string(data.get("kanban_board")),
             "installationState": string(data.get("installation_state")), "model": model_name(data.get("model")),
+            "mode": string(data.get("mode"), "approve"),
             "lifecycleState": ("paused" if data.get("installation_state") == "installing" else
                                string(data.get("lifecycle_state"), "resumed" if data.get("installation_state") == "installed" else "paused")),
         }
@@ -997,9 +1004,13 @@ def ensure_bundled_campaign_routing(root, campaign_id, record, source, mode, *, 
     return True
 
 
-def valid_sync_key(value):
-    return (isinstance(value, str) and 0 < len(value) <= 4096 and bool(value.strip())
-            and value.isascii() and all(32 <= ord(char) <= 126 for char in value))
+def checked_sync_env(value):
+    from hermes_cli.oma_campaigns.credentials import validate_sync_env
+
+    try:
+        return validate_sync_env(value)
+    except ValueError:
+        raise WorkspaceError(422, "Invalid profile API keys.") from None
 
 
 STANDALONE_AGENTS = ("default", "maintenance")
@@ -1171,17 +1182,15 @@ def sync_agent_configuration(root, agent_id, request):
         "revision" in request and (not isinstance(request["revision"], str) or not re.fullmatch(r"[a-f0-9]{64}", request["revision"]))
     ):
         raise WorkspaceError(422, "Invalid agent sync request.")
-    env = request.get("env", {})
-    if not isinstance(env, dict) or (env and (
-        set(env) != {MODEL_KEY} or "revision" not in request or not valid_sync_key(env[MODEL_KEY])
-    )):
-        raise WorkspaceError(422, "Invalid agent API key.")
-    with editable_record(root, "agents", agent_id) as (_, source, _):
+    env = checked_sync_env(request.get("env", {}))
+    with editable_record(root, "agents", agent_id) as (record, source, _):
         revision = sha256(source).hexdigest()
         if request.get("revision", revision) != revision:
             raise WorkspaceError(409, "This agent changed before sync. Reload its settings and try again.")
         command = [sys.executable, str(Path(__file__).with_name("sync_standalone.py")), agent_id, revision]
-        if env:
+        if MODEL_KEY in env:
+            if "revision" not in request:
+                raise WorkspaceError(422, "Include the staged revision to sync the agent’s model API key.")
             model = mapping(parse_record(source, agent_id).get("model"))
             provider = model.get("provider")
             name = standalone_key_name(provider)
@@ -1191,9 +1200,14 @@ def sync_agent_configuration(root, agent_id, request):
             )
             if not staged_key or (provider == "custom" and not configuration_url(model.get("base_url"))):
                 raise WorkspaceError(422, "Save the agent’s provider settings before syncing its API key.")
-            command.append(name)
+            supplied = env[MODEL_KEY]
+            if name in env and env[name] != supplied:
+                raise WorkspaceError(422, "Two different values were supplied for the provider credential.")
+            env = {key: value for key, value in env.items() if key != MODEL_KEY}
+            env[name] = supplied
         try:
-            run_campaign_command(root, command, {**env, "HERMES_HOME": str(root.parent)})
+            run_campaign_command(root, [*command, "--env-stdin"] if env else command,
+                                 {"HERMES_HOME": str(root.parent)}, payload=json.dumps(env).encode() if env else None)
         except subprocess.CalledProcessError as error:
             status, message = {
                 3: (409, "This agent changed during sync. Reload its settings and try again."),
@@ -1202,7 +1216,7 @@ def sync_agent_configuration(root, agent_id, request):
             raise WorkspaceError(status, message) from None
         except (OSError, subprocess.TimeoutExpired):
             raise WorkspaceError(503, "Standalone agent sync is unavailable.") from None
-    return {"id": agent_id, "revision": revision}
+        return {"id": agent_id, "revision": sha256(read_file(record)[0]).hexdigest()}
 
 
 def sync_campaign_configuration(root, campaign_id, request, *, deploy=False):
@@ -1210,9 +1224,9 @@ def sync_campaign_configuration(root, campaign_id, request, *, deploy=False):
             or not isinstance(request.get("env", {}), dict)
             or ("prepareDeployment" in request and (deploy or request["prepareDeployment"] is not True))):
         raise WorkspaceError(422, "Invalid campaign sync request.")
-    env = request.get("env", {})
-    if not set(env) <= {MODEL_KEY, COMPOSIO_KEY} or not all(valid_sync_key(value) for value in env.values()):
-        raise WorkspaceError(422, "Invalid campaign API keys.")
+    env = checked_sync_env(request.get("env", {}))
+    if "OMA_HERMES_API_KEY" in env:
+        raise WorkspaceError(422, "Use the API key entered in campaign settings.")
     with editable_record(root, "campaigns", campaign_id) as (record, source, mode):
         if request["revision"] != sha256(source).hexdigest():
             raise WorkspaceError(409, "This campaign changed before sync. Reload its settings and try again.")
@@ -1254,10 +1268,7 @@ def sync_campaign_configuration(root, campaign_id, request, *, deploy=False):
                 raise WorkspaceError(412, "oma-agent couldn’t provision this campaign. Check its saved agent records and board, then reopen deployment.") from None
         command = [sys.executable, "-m", "hermes_cli.oma_campaigns.sync", campaign_id, "--env-stdin"]
         try:
-            with TemporaryFile() as credentials:
-                credentials.write(json.dumps(env).encode())
-                credentials.seek(0)
-                run_campaign_command(root, command, {}, stdin=credentials)
+            run_campaign_command(root, command, {"HERMES_HOME": str(root.parent)}, payload=json.dumps(env).encode())
         except (OSError, subprocess.SubprocessError):
             raise WorkspaceError(502, "oma-agent could not sync the campaign. Verify that the campaign is installed and try again.") from None
         return campaign_configuration(read_file(record)[0])
@@ -1287,37 +1298,45 @@ def change_campaign_lifecycle(root, campaign_id, request):
         return {
             "id": campaign_id, "state": result["state"], "revision": sha256(read_file(record)[0]).hexdigest(),
             "missingIntegrations": [key for key in strings(result.get("missing_integrations")) if valid_id(key)],
+            **({"missing_model": True, "message": "Configure a campaign model before resuming."}
+               if result.get("missing_model") is True else {}),
         }
 
 
-def campaign_publications(root, campaign_id, before=None):
-    """List publication previews using the native campaign store."""
-    from hermes_cli.oma_campaigns.publications import PublicationError, list_publications
-
-    if not valid_id(campaign_id):
-        raise WorkspaceError(404, "Campaign not found.")
+def campaign_publications(root, campaign_id, query="", *, publication_id=None, request=None):
+    """Read native previews or approve the exact revision through the same campaign store."""
+    if not valid_id(campaign_id) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", campaign_id):
+        raise WorkspaceError(404, "This campaign was not found.")
     try:
-        return list_publications(root.parent, campaign_id, before=before, limit=50)
-    except PublicationError as error:
-        raise WorkspaceError(error.status, str(error)) from None
-    except (ValueError, sqlite3.Error):
-        raise WorkspaceError(422, "Could not read the campaign’s publication records.") from None
+        available = find_spec("hermes_cli.oma_campaigns.publications") is not None
+    except ModuleNotFoundError:
+        available = False
+    if not available:
+        raise WorkspaceError(503, "Campaign publications are unavailable in this agent image.")
+    from hermes_cli.oma_campaigns.publications import PublicationError, approve_publication, list_publications
+
+    try:
+        if publication_id is not None:
+            if not isinstance(request, dict) or set(request) != {"revision", "approver"}:
+                raise WorkspaceError(422, "Invalid publication approval request.")
+            return approve_publication(root.parent, campaign_id, publication_id, request["revision"], request["approver"])
+        params = parse_qs(query, keep_blank_values=True, max_num_fields=2)
+        if set(params) - {"before", "limit"} or any(
+            len(values) != 1 or not re.fullmatch(r"[0-9]{1,16}", values[0]) for values in params.values()
+        ):
+            raise WorkspaceError(422, "Invalid publications page.")
+        return list_publications(root.parent, campaign_id, **{key: int(values[0]) for key, values in params.items()})
+    except PublicationError as exc:
+        raise WorkspaceError(exc.status, str(exc)) from None
+    except ValueError:
+        raise WorkspaceError(422, "Invalid publication request or campaign record.") from None
+    except (OSError, sqlite3.Error):
+        raise WorkspaceError(503, "Could not access campaign publications. Retry to finish queuing an approval.") from None
+
 
 
 def approve_campaign_publication(root, campaign_id, publication_id, request):
-    """Pass the authenticated approver and exact revision to the native publisher queue."""
-    from hermes_cli.oma_campaigns.publications import PublicationError, approve_publication
-
-    if not valid_id(campaign_id):
-        raise WorkspaceError(404, "Campaign not found.")
-    if not isinstance(request, dict) or request.keys() != {"revision", "approver"}:
-        raise WorkspaceError(422, "Submit the reviewed publication revision and approver.")
-    try:
-        return approve_publication(root.parent, campaign_id, publication_id, request["revision"], request["approver"])
-    except PublicationError as error:
-        raise WorkspaceError(error.status, str(error)) from None
-    except (ValueError, sqlite3.Error):
-        raise WorkspaceError(422, "Could not process the campaign’s publication record.") from None
+    return campaign_publications(root, campaign_id, publication_id=publication_id, request=request)
 
 
 def read_kanban_dashboard(home, route):
@@ -1431,12 +1450,13 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         payload = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
 
     def do_GET(self):
-        publication_list = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications(?:\?before=([1-9][0-9]{0,15}))?", self.path)
+        publication_list = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications(?:\?(.*))?", self.path)
         document = re.fullmatch(r"/workspace/brands/([^/]+)/documents/([a-f0-9]{16})", self.path)
         logo = re.fullmatch(r"/workspace/brands/([^/]+)/logos/([A-Za-z0-9_-]{1,64})", self.path)
         profile = re.fullmatch(r"/workspace/agents/([^/]+)/profile", self.path)
@@ -1451,8 +1471,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             elif self.path == "/workspace/tool-selections":
                 result = tool_selections(self.server.root)
             elif publication_list:
-                result = campaign_publications(self.server.root, publication_list[1],
-                                               int(publication_list[2]) if publication_list[2] else None)
+                result = campaign_publications(self.server.root, publication_list[1], publication_list[2] or "")
             elif kanban:
                 result = campaign_kanban_status(self.server.root, kanban[1])
             elif document:
@@ -1472,9 +1491,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             return
         self.reply(200, result)
 
-    def read_update(self):
+    def read_update(self, max_bytes=MAX_FILE_SIZE):
         length = int(self.headers.get("Content-Length", "0"))
-        if not 0 < length <= MAX_FILE_SIZE:
+        if not 0 < length <= max_bytes:
             raise WorkspaceError(413, "The workspace update is too large.")
         return json.loads(self.rfile.read(length))
 
@@ -1487,7 +1506,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self.reply(404, {"message": "Unknown workspace request."})
             return
         try:
-            request = self.read_update()
+            if approval and self.headers.get_content_type() != "application/json":
+                raise WorkspaceError(415, "Publication approval requires a JSON request.")
+            request = self.read_update(1024 if approval else MAX_FILE_SIZE)
             if approval:
                 with self.server.edit_lock:
                     result = approve_campaign_publication(self.server.root, *approval.groups(), request)
@@ -1529,8 +1550,11 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         )):
             self.reply(404, {"message": "Unknown workspace request."})
             return
+        lifecycle = path and path[3] == "/lifecycle"
         try:
-            request = self.read_update()
+            if lifecycle and self.headers.get_content_type() != "application/json":
+                raise WorkspaceError(415, "Campaign lifecycle requires a JSON request.")
+            request = self.read_update(256 if lifecycle else MAX_FILE_SIZE)
             result = {}
             with self.server.edit_lock:
                 if selection:
@@ -1554,7 +1578,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         except OSError:
             self.reply(503, {"message": "Could not save the agent workspace record."})
         else:
-            self.reply(200, result)
+            status = 409 if lifecycle and result.get("missing_model") else 202 if lifecycle and result["state"] == "pausing" else 200
+            self.reply(status, result)
 
 
 if __name__ == "__main__":

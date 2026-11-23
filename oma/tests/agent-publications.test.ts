@@ -15,7 +15,7 @@ test("projects native drafts and submits the displayed revision with the operato
   const id = "a".repeat(32);
   const base = "/workspace/campaigns/demo/publications";
   const draft = {
-    id, revision: 2, status: "pending_approval", platform: "x", kind: "reply",
+    id, revision: 2, approval: null, result: null, task_id: null, created_at: "test", updated_at: "test", status: "pending_approval", platform: "x", kind: "reply",
     account: { id: "test-account", name: "Fixture" },
     content: { text: "Exact text", media: [{ asset_id: "asset", kind: "image", alt_text: "Dark clouds" }] },
     target: { id: "response-to", author_handle: "@reader", text: "Original post" },

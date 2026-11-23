@@ -37,6 +37,7 @@ if guest test -f /opt/hermes/hermes_cli/oma_campaigns/standalone.py; then
 fi
 guest /opt/hermes/.venv/bin/python - < "$root/tests/bundled_campaign_sync.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_deploy.py"
+guest /opt/hermes/.venv/bin/python - < "$root/tests/test_campaign_publications.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_kanban.py"
 guest bash -euo pipefail -c '
     test -x /usr/local/bin/omactl

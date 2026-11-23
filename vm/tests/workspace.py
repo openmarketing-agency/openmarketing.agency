@@ -249,27 +249,23 @@ with TemporaryDirectory() as temporary:
     reject_call(422, update_campaign_configuration, root, "seo", {
         **update, "revision": configuration["revision"], "baseUrl": "https://next.example.test", "setModelKey": False,
     })
-    keys = {"HERMES_MODEL_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key"}
+    keys = {"HERMES_MODEL_API_KEY": "fixture-model-key", "COMPOSIO_API_KEY": "fixture-composio-key",
+            "EXTRA_TOOL_TOKEN": "fixture-extra-key"}
     with patch.dict(os.environ, {"UNRELATED_TOKEN": "fixture-unrelated"}), patch("workspace.ensure_bundled_campaign_routing"), patch("workspace.subprocess.Popen") as native:
-        process = native.return_value
-        process.__enter__.return_value.wait.return_value = 0
-        received_keys = []
-        def launch(*_, **kwargs):
-            received_keys.append(json.load(kwargs["stdin"]))
-            return process
-        native.side_effect = launch
+        worker = native.return_value.__enter__.return_value
+        worker.returncode = 0
         reject_call(422, sync_campaign_configuration, root, "seo", {
-            "revision": configuration["revision"], "env": {"UNRELATED_TOKEN": "fixture-unrelated"},
+            "revision": configuration["revision"], "env": {"INVALID-NAME": "fixture-unrelated"},
         })
         reject_call(409, sync_campaign_configuration, root, "seo", {"revision": update["revision"], "env": keys})
         native.assert_not_called()
         assert sync_campaign_configuration(root, "seo", {"revision": configuration["revision"], "env": keys}) == configuration
         args, kwargs = native.call_args
         assert args == ([sys.executable, "-m", "hermes_cli.oma_campaigns.sync", "seo", "--env-stdin"],)
-        assert received_keys == [keys]
+        assert json.loads(worker.communicate.call_args.kwargs["input"]) == keys
         assert keys.keys().isdisjoint(kwargs["env"])
         assert "UNRELATED_TOKEN" not in kwargs["env"]
-        native.return_value.__enter__.return_value.wait.return_value = 1
+        worker.returncode = 1
         reject_call(502, sync_campaign_configuration, root, "seo", {"revision": configuration["revision"], "env": keys})
     assert all(value not in campaign.read_text() for value in keys.values())
     reject_call(422, update_campaign_configuration, root, "seo", {
@@ -281,7 +277,7 @@ with TemporaryDirectory() as temporary:
     campaign.write_text(json.dumps(legacy))
     legacy_revision = sha256(campaign.read_bytes()).hexdigest()
     with patch("workspace.ensure_bundled_campaign_routing"), patch("workspace.subprocess.Popen") as native:
-        native.return_value.__enter__.return_value.wait.return_value = 0
+        native.return_value.__enter__.return_value.returncode = 0
         reject_call(422, sync_campaign_configuration, root, "seo", {
             "revision": legacy_revision, "env": {"OMA_HERMES_API_KEY": "retired-app-default"},
         })

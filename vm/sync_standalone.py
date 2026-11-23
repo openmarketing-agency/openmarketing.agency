@@ -4,14 +4,14 @@ import os
 from pathlib import Path
 import sys
 
+from hermes_cli.oma_campaigns.credentials import read_sync_env
 from hermes_cli.oma_campaigns.sync import StaleRecord, sync_agent
 
 
 def main():
-    agent_id, revision, *key_names = sys.argv[1:]
-    value = os.environ.pop("HERMES_MODEL_API_KEY", "")
-    env = {key_names[0]: value} if key_names else None
+    agent_id, revision, *flags = sys.argv[1:]
     try:
+        env = read_sync_env() if flags == ["--env-stdin"] else None
         sync_agent(Path(os.environ["HERMES_HOME"]), agent_id, revision=revision, env=env)
         return 0
     except StaleRecord:
