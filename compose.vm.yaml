@@ -10,7 +10,6 @@ services:
       OMA_WORKSPACE_SOCKET: /run/oma-console/workspace.sock
 
   vm:
-    platform: linux/amd64
     build:
       context: .
       dockerfile: vm/Dockerfile
