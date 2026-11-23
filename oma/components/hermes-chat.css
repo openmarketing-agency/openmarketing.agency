@@ -1,14 +1,9 @@
 /* Styles the transcript and composer for the shared workspace and campaign chat. */
-.chat-page { max-width: 70rem; margin-inline: auto; }
 .runtime-chat {
   display: flex;
   flex-direction: column;
   min-width: 0;
   background: var(--surface);
-}
-.chat-page .runtime-chat {
-  border: 1px solid var(--border);
-  border-radius: 10px;
 }
 .chat-page-heading {
   display: flex;
@@ -145,7 +140,6 @@
 
 
 @media (max-width: 520px) {
-  .chat-page { padding: 21px 15px; }
   .chat-page-heading,
   .runtime-chat-history,
   .runtime-messages,

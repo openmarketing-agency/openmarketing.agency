@@ -1,4 +1,4 @@
-/* Styles the desktop workspace rail and persistent mobile navigation. */
+/* Keeps workspace navigation and chat alongside independently scrolling page content. */
 .workbench {
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr);
@@ -46,14 +46,50 @@
 .workbench-main { width: 100%; min-width: 0; min-height: 100dvh; }
 .workbench-mobile { display: none; }
 
+.workbench-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(21rem, 35%, 38rem);
+  align-items: start;
+  min-width: 0;
+}
+.workbench-content .workbench-main {
+  container: workbench-main / inline-size;
+  overflow-wrap: anywhere;
+}
+.workbench-chat {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  min-width: 0;
+  border-inline-start: 1px solid var(--border);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.workbench-chat .runtime-chat { height: 100%; }
+.workbench-chat .runtime-messages { min-height: 0; max-height: none; overscroll-behavior: contain; }
+.workbench-chat .runtime-composer { flex-shrink: 0; }
+.workbench-chat .runtime-composer textarea { resize: none; }
+.workbench-chat .runtime-chat > .runtime-prompt { max-height: 65%; overflow: auto; }
+
+@container workbench-main (max-width: 22rem) {
+  .workbench-main :is(.page-content, .workspace-page, .workspace-settings, .agent-library-page, .agent-playbook-page) {
+    padding-inline: 12px;
+  }
+}
+
 @media (max-width: 840px) {
   html:has(.workbench) { scroll-padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
-  .workbench { display: block; }
+  .workbench {
+    display: block;
+    --mobile-workbench-header: 57px;
+    --mobile-workbench-nav: calc(61px + env(safe-area-inset-bottom));
+    --mobile-workbench-height: calc(100dvh - var(--mobile-workbench-header) - var(--mobile-workbench-nav));
+  }
   .workbench-mobile {
     display: flex;
     align-items: center;
     gap: 12px;
-    min-height: 57px;
+    min-height: var(--mobile-workbench-header);
     padding: 4px 16px;
     border-bottom: 1px solid var(--border);
     background: var(--raised);
@@ -75,8 +111,23 @@
     overflow: visible;
   }
   .workbench-brand, .workbench-account { display: none; }
-  .workbench-links { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; max-width: 40rem; margin-inline: auto; }
+  .workbench-links { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; max-width: 40rem; margin-inline: auto; }
   .workbench-links a { flex-direction: column; justify-content: center; gap: 3px; min-height: 52px; padding: 5px 1px; font-size: 12px; }
   .workbench-links a:focus-visible { outline-offset: -2px; }
-  .workbench-main { min-height: calc(100dvh - 57px); padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .workbench-main { min-height: calc(100dvh - var(--mobile-workbench-header)); padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .workbench:has(.workbench-content) .workbench-mobile { position: sticky; top: 0; z-index: 10; }
+  .workbench-content {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 46%);
+    margin-bottom: var(--mobile-workbench-nav);
+  }
+  .workbench-content .workbench-main { min-height: var(--mobile-workbench-height); padding-bottom: 0; }
+  .workbench-chat { top: var(--mobile-workbench-header); height: var(--mobile-workbench-height); }
+}
+
+@media (max-width: 560px) {
+  .workbench-chat :is(.chat-page-heading, .runtime-chat-history, .runtime-messages, .runtime-composer) { padding-inline: 12px; }
+  .workbench-chat .chat-page-heading .playbook-mark { display: none; }
+  .workbench-chat .btn { max-width: 100%; min-width: 0; white-space: normal; }
+  .workbench-chat .runtime-message { max-width: 100%; padding-inline: 10px; }
+  .workbench-chat .chat-error { margin-inline: 12px; }
 }

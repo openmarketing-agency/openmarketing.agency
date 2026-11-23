@@ -91,7 +91,6 @@
   min-width: 0;
 }
 
-.campaign-dashboard-sidebar .agent-activity,
 .campaign-dashboard-sidebar .workspace-index { margin: 0; }
 
 .campaign-dashboard-sidebar .workspace-index,
@@ -348,15 +347,18 @@
 .campaign-detail .campaign-settings-intro p,
 .campaign-detail #model-api-key-hint { color: var(--muted); }
 
-@media (max-width: 960px) {
+@container workbench-main (max-width: 48rem) {
   .campaign-dashboard-layout:has(.campaign-dashboard-sidebar),
   .campaign-overview:has(.campaign-reading + .campaign-context) { grid-template-columns: minmax(0, 1fr); }
 }
 
-@media (max-width: 600px) {
+@container workbench-main (max-width: 38rem) {
   .campaign-setup { grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 20px; }
   .campaign-setup ol { padding-left: 1.2rem; font-size: 0.875rem; }
   .campaign-setup li { padding-block: 8px; }
+}
+
+@media (max-width: 600px) {
   .campaign-identity { gap: 10px 12px; }
   .campaign-identity .playbook-mark { width: 26px; height: 32px; grid-row: auto; }
   .campaign-identity > :is(p, .campaign-kanban) { grid-column: 1 / -1; }
@@ -366,27 +368,8 @@
   .campaign-list > li, .campaign-reading, .campaign-roster, .campaign-detail .campaign-settings { padding: 16px; }
 }
 
-.campaign-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(21rem, 35%, 38rem);
-  align-items: start;
-}
-.campaign-workspace .campaign-detail { width: 100%; container-type: inline-size; }
+.campaign-detail { width: 100%; container-type: inline-size; }
 
-.campaign-chat-rail {
-  position: sticky;
-  top: 0;
-  height: 100dvh;
-  min-width: 0;
-  border-inline-start: 1px solid var(--border);
-  background: var(--surface);
-  overflow-wrap: anywhere;
-}
-.campaign-chat-rail .runtime-chat { height: 100%; }
-.campaign-chat-rail .runtime-messages { min-height: 0; max-height: none; overscroll-behavior: contain; }
-.campaign-chat-rail .runtime-composer { flex-shrink: 0; }
-.campaign-chat-rail .runtime-composer textarea { resize: none; }
-.campaign-chat-rail .runtime-prompt { max-height: 65%; overflow: auto; }
 .campaign-detail-header,
 .campaign-header-actions {
   display: flex;
@@ -449,32 +432,10 @@
   .campaign-deploy { margin-top: 16px; }
 }
 
-@media (max-width: 840px) {
-  .workbench:has(.campaign-workspace) {
-    --campaign-mobile-header: 57px;
-    --campaign-mobile-nav: calc(61px + env(safe-area-inset-bottom));
-  }
-  .workbench:has(.campaign-workspace) .workbench-mobile { position: sticky; top: 0; z-index: 10; }
-  .workbench-main:has(.campaign-workspace) { padding-bottom: var(--campaign-mobile-nav); }
-  .campaign-workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 46%); }
-  .campaign-chat-rail {
-    top: var(--campaign-mobile-header);
-    height: calc(100dvh - var(--campaign-mobile-header) - var(--campaign-mobile-nav));
-  }
-}
-
 @media (max-width: 560px) {
-  .campaign-workspace .campaign-detail { padding-inline: 12px; }
   .campaign-detail-header .campaign-identity { grid-template-columns: minmax(0, 1fr); }
   .campaign-detail-header .playbook-mark { display: none; }
   .campaign-tools .tool-browser-tabs { flex-wrap: wrap; gap: 0 12px; }
-  .campaign-chat-rail .chat-page-heading,
-  .campaign-chat-rail .runtime-chat-history,
-  .campaign-chat-rail .runtime-messages,
-  .campaign-chat-rail .runtime-composer { padding-inline: 12px; }
-  .campaign-chat-rail .chat-page-heading .playbook-mark { display: none; }
-  .campaign-chat-rail .runtime-message { max-width: 100%; padding-inline: 10px; }
-  .campaign-chat-rail .chat-error { margin-inline: 12px; }
 }
 
 .campaign-mode-settings .workspace-editor { margin-top: 16px; }

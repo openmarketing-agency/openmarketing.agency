@@ -1,11 +1,11 @@
-/** Provides workspace navigation and account access across console routes. */
+/** Provides workspace navigation, account access, and the right-side conversation across console routes. */
 
 "use client";
 
 import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ClipboardCheck, LogOut, Megaphone, MessageSquare, Plug, Settings } from "lucide-react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { ClipboardCheck, LogOut, Megaphone, Plug, Settings } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
 import { Brand } from "@/components/brand";
@@ -16,11 +16,10 @@ const destinations = [
   { href: "/dashboard", label: "Campaigns", icon: Megaphone },
   { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/connections", label: "Tools", icon: Plug },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-type ConsoleProps = { email?: string; children: ReactNode };
+type ConsoleProps = { email?: string; children: ReactNode; conversation?: ReactNode };
 
 export function ConsoleShell(props: ConsoleProps) {
   return (
@@ -31,7 +30,9 @@ export function ConsoleShell(props: ConsoleProps) {
 }
 
 function PathAwareConsole(props: ConsoleProps) {
-  return <ConsoleFrame {...props} pathname={usePathname()} />;
+  const pathname = usePathname();
+  const chat = useSearchParams().get("chat");
+  return <ConsoleFrame {...props} pathname={pathname} selectedChat={pathname.startsWith("/campaigns/") ? null : chat} />;
 }
 
 function SignOut() {
@@ -44,12 +45,16 @@ function SignOut() {
   );
 }
 
-function ConsoleFrame({ email, children, pathname }: ConsoleProps & { pathname: string }) {
+function ConsoleFrame({ email, children, conversation, pathname, selectedChat }: ConsoleProps & {
+  pathname: string;
+  selectedChat?: string | null;
+}) {
   const inCampaignWorkspace = pathname.startsWith("/campaigns/") || pathname.startsWith("/workspace/");
   const active = inCampaignWorkspace ? destinations[0] : destinations.find(({ href }) =>
     pathname === href || pathname.startsWith(`${href}/`),
   );
 
+  const main = <main id="main-content" tabIndex={-1} className="workbench-main">{children}</main>;
   return (
     <div className="workbench">
       <header className="workbench-mobile">
@@ -61,7 +66,7 @@ function ConsoleFrame({ email, children, pathname }: ConsoleProps & { pathname: 
         <div className="workbench-brand"><Brand /></div>
         <nav className="workbench-links" aria-label="Workspace">
           {destinations.map(({ href, label, icon: Icon }) => (
-            <Link key={href} href={href}
+            <Link key={href} href={selectedChat ? { pathname: href, query: { chat: selectedChat } } : href}
               aria-current={href === active?.href ? (pathname === href ? "page" : "location") : undefined}>
               <Icon size={19} strokeWidth={1.7} aria-hidden="true" />
               <span>{label}</span>
@@ -74,7 +79,12 @@ function ConsoleFrame({ email, children, pathname }: ConsoleProps & { pathname: 
           <SignOut />
         </div>}
       </aside>
-      <main id="main-content" tabIndex={-1} className="workbench-main">{children}</main>
+      {conversation ? (
+        <div className="workbench-content">
+          {main}
+          <aside className="workbench-chat" aria-label="Workspace conversation">{conversation}</aside>
+        </div>
+      ) : main}
     </div>
   );
 }

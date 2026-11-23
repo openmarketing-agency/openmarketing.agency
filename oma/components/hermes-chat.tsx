@@ -8,6 +8,7 @@ import { Bot, LoaderCircle, Plus, RefreshCw, Send } from "lucide-react";
 
 import { answerChatPrompt, readChatTurn, readOlderChatMessages, sendChatMessage } from "@/app/actions/chat";
 import { maxChatMessageLength, type AgentPrompt, type AgentStatus, type ChatHistory, type ChatMessage } from "@/lib/agent-chat";
+import { AgentActivity } from "./agent-activity";
 import { HermesPrompt } from "./hermes-prompt";
 import "./hermes-chat.css";
 
@@ -182,8 +183,8 @@ export function HermesChat({
         <div className="surface-heading">
           <span className="playbook-mark"><Bot size={24} aria-hidden="true" /></span>
           <div>
-            <h2 id={headingId}>{campaignId ? "Campaign chat" : "Default profile"}</h2>
-            {campaignId && <p>Default profile</p>}
+            <h2 id={headingId}>{campaignId ? "Campaign chat" : "Workspace chat"}</h2>
+            <p>Default profile</p>
           </div>
         </div>
         <span role="status" className={status.ready ? "chat-status is-ready" : "chat-status"}>{status.ready ? "Connected" : "Offline"}</span>
@@ -198,6 +199,7 @@ export function HermesChat({
           onClick={() => openChat("new")}><Plus size={15} aria-hidden="true" /> New chat</button>
       </div>
       <div className="runtime-messages" ref={transcript} role="log" aria-label="Conversation">
+        <AgentActivity />
         {offset != null && <button type="button" className="btn secondary runtime-load-older" disabled={loadingOlder}
           onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : "Load older messages"}</button>}
         {!messages.length && !pending && !history.error && (

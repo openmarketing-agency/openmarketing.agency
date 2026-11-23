@@ -99,7 +99,6 @@ export function CampaignLibrary({ setup, sidebar, error, saved }: {
             <div className="empty-state campaign-empty">
               <h3>No campaigns yet</h3>
               <p>Campaigns appear here when oma-agent saves them.</p>
-              {!setup && <Link className="btn secondary" href="/chat">Open Chat <ArrowRight size={16} aria-hidden="true" /></Link>}
             </div>
           )}
           {!saved && (
@@ -116,7 +115,7 @@ export function CampaignLibrary({ setup, sidebar, error, saved }: {
             </div>
           )}
         </section>
-        {sidebar && <aside className="campaign-dashboard-sidebar" aria-label="Workspace activity and records">{sidebar}</aside>}
+        {sidebar && <aside className="campaign-dashboard-sidebar" aria-label="Workspace records">{sidebar}</aside>}
       </div>
     </div>
   );

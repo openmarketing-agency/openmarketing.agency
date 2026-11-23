@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { AgentActivity } from "@/components/agent-activity";
 import { CampaignLibrary } from "@/components/campaign-library";
 import { Loading } from "@/components/ui";
 import { campaignAgentIds, campaignLifecycleLabel, WorkspaceIndex } from "@/components/workspace-records";
@@ -40,10 +39,7 @@ async function Dashboard() {
       saved={saved}
       setup={isProjectSetupComplete(project) ? undefined : { needsRetry: project?.setup.status === "done" }}
       error={error}
-      sidebar={<>
-        <AgentActivity />
-        {records && <WorkspaceIndex workspace={records} />}
-      </>}
+      sidebar={records && <WorkspaceIndex workspace={records} />}
     />
   );
 }
