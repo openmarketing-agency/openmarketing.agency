@@ -1299,7 +1299,6 @@ def change_campaign_lifecycle(root, campaign_id, request):
             raise WorkspaceError(502, "oma-agent returned an invalid campaign state.")
         return {
             "id": campaign_id, "state": result["state"], "revision": sha256(read_file(record)[0]).hexdigest(),
-            "missingIntegrations": [key for key in strings(result.get("missing_integrations")) if valid_id(key)],
             **({"missing_model": True, "message": "Configure a campaign model before resuming."}
                if result.get("missing_model") is True else {}),
         }

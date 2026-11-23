@@ -388,7 +388,7 @@ export async function saveCampaignMode(id: string, input: unknown) {
 }
 
 const campaignLifecycle = z.object({
-  id: workspaceId, state: z.enum(["paused", "pausing", "resumed"]), revision, missingIntegrations: z.array(workspaceId),
+  id: workspaceId, state: z.enum(["paused", "pausing", "resumed"]), revision,
 });
 
 export async function setCampaignLifecycle(id: string, state: "paused" | "resumed", expectedRevision?: string) {
@@ -424,9 +424,7 @@ async function resumeCampaignAfterSync(id: string, currentRevision: string) {
     throw new WorkspaceRequestError(502, "Campaign synced, but restarting could not be confirmed. Reload its status.");
   }
   if (lifecycle.state !== "resumed") {
-    throw new WorkspaceRequestError(412, lifecycle.missingIntegrations.length
-      ? "Campaign synced and is stopped. Check the required integrations before restarting."
-      : "Campaign synced and is still stopped. Check the saved campaign settings before restarting.");
+    throw new WorkspaceRequestError(412, "Campaign synced and is still stopped. Check the saved campaign settings before restarting.");
   }
   return lifecycle.revision;
 }
@@ -521,11 +519,10 @@ export async function saveCampaignConfiguration(
     const lifecycle = await setCampaignLifecycle(id, "resumed", saved.revision);
     const configuration = { ...saved, revision: lifecycle.revision };
     if (lifecycle.state !== "resumed") {
-      const missing = lifecycle.missingIntegrations.map((key) => required.find((tool) => tool.id === key)?.name ?? key);
       return {
         configuration, deployed: true, state: lifecycle.state,
-        error: missing.length ? "Campaign deployed. The agent couldn’t verify these required integrations: " + missing.join(", ") + "."
-          : "Campaign deployed. Wait for it to finish stopping, then retry.",
+        error: lifecycle.state === "pausing" ? "Campaign deployed. Wait for it to finish stopping, then retry."
+          : "Campaign deployed, but it is still stopped. Check its settings before retrying.",
       };
     }
     return { configuration, synced: true, deployed: true, state: lifecycle.state };
