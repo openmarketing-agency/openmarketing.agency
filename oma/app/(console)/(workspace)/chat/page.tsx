@@ -9,7 +9,7 @@ type Props = { searchParams: Promise<{ chat?: string | string[] }> };
 async function RedirectToConversation({ searchParams }: Props) {
   const { chat } = await searchParams;
   const selected = chat === "new" ? chat : z.uuid().safeParse(chat).data;
-  redirect(selected ? "/dashboard?chat=" + selected : "/dashboard");
+  return redirect(selected ? "/dashboard?chat=" + selected : "/dashboard");
 }
 
 export default function Page(props: Props) {
