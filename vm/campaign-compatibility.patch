@@ -1,16 +1,15 @@
-# Retains console campaign defaults and Composio checks on the bundled oma-agent image.
+# Retains console campaign defaults and leaves integration validation to the console.
 --- a/hermes_cli/oma_campaigns/lifecycle.py
 +++ b/hermes_cli/oma_campaigns/lifecycle.py
-@@ -13,6 +13,8 @@
+@@ -13,6 +13,7 @@
  from hermes_cli.config import atomic_config_write
  from hermes_cli.config_backend import require_file_tooling
  from hermes_cli.kanban_db_connect import _dispatch_tick_lock, connect_closing
 +from hermes_cli.oma_campaigns.defaults import snapshot
-+from hermes_cli.oma_campaigns.integrations import missing_integrations
  from hermes_cli.oma_campaigns.install import _campaign_config_path, _campaigns_dir, _install_lock, _status
  from hermes_cli.oma_campaigns.schema import validate_record
  from hermes_cli.oma_campaigns.source import _member, read_mapping
-@@ -136,15 +138,21 @@
+@@ -136,15 +137,16 @@
              atomic_config_write(path, config)
              if target == "paused":
                  return {**result, "state": "paused"}
@@ -20,11 +19,6 @@
          model_id = model.get("default") if isinstance(model, dict) else model
          if not isinstance(model_id, str) or not model_id.strip():
              return {**result, "state": "paused", "missing_model": True}
-+        connection_home = (home / "profiles" / status["orchestrator"]
-+                           if config.get("mcp_servers", {}).get("composio") else home)
-+        missing = missing_integrations(home, config.get("integrations", []), connection_home=connection_home)
-+        if missing:
-+            return {**result, "state": "paused", "missing_integrations": missing}
          if config.get("mode") == "control":
              _control_cron(profiles, park=True)
          else:
@@ -34,110 +28,17 @@
                  _activate_new_jobs(profiles)
              _skip_missed_recurring_jobs(profiles)
          atomic_config_write(path, {**config, "lifecycle_state": "resumed"})
---- a/hermes_cli/oma_campaigns/integrations.py
-+++ b/hermes_cli/oma_campaigns/integrations.py
-@@ -1,9 +1,14 @@
- """Canonical OMA integrations and candidates from saved brand evidence."""
-
-+import asyncio
- from functools import lru_cache
- from importlib.resources import files
- import json
- from pathlib import Path
-+from urllib.parse import urlsplit
-+
-+from agent.runtime_scope import bind_profile_scope
-+from hermes_cli.config_effective import load_user_config_effective
-
- from hermes_cli.oma_campaigns.schema import validate_record
- from hermes_cli.oma_campaigns.source import _member, read_mapping
-@@ -34,3 +39,74 @@
-     canonical = {aliases.get(key, key.replace("_", "-")) for key in observed}
-     supported = {key for key in canonical if catalog.get(key, {}).get("composio")}
-     return {"candidates": sorted(supported), "unmapped": sorted(canonical - supported)}
-+
-+
-+_COMPOSIO_HOSTS = {"connect.composio.dev", "mcp.composio.dev", "backend.composio.dev"}
-+
-+
-+def missing_integrations(home: Path, required: list[str], *, connection_home: Path | None = None) -> list[str]:
-+    if not required:
-+        return []
-+    catalog = integration_catalog()
-+    candidates = set(brand_candidates(home)["candidates"])
-+    slugs = {key: catalog[key]["composio"] for key in required if key in candidates}
-+    active = active_composio_toolkits(connection_home or home, {
-+        slug: catalog[key]["name"] for key, slug in slugs.items()
-+    }) if slugs else set()
-+    return [key for key in required if slugs.get(key) not in active]
-+
-+
-+def _active_connections(payload: object) -> set[str]:
-+    if not isinstance(payload, dict) or payload.get("successful") is False or payload.get("error"):
-+        return set()
-+    data = payload.get("data", payload)
-+    rows = data.get("toolkit_connection_statuses") if isinstance(data, dict) else None
-+    if not isinstance(rows, list):
-+        return set()
-+    slugs = [row["toolkit"] for row in rows if isinstance(row, dict) and isinstance(row.get("toolkit"), str)]
-+    return {row["toolkit"] for row in rows if isinstance(row, dict)
-+            and isinstance(row.get("toolkit"), str) and slugs.count(row["toolkit"]) == 1
-+            and row.get("has_active_connection") is True}
-+
-+
-+async def _search_composio(url: str, headers: dict, queries: dict[str, str]) -> set[str]:
-+    import httpx2
-+    from mcp import ClientSession
-+    from mcp.client.streamable_http import streamable_http_client
-+
-+    # The router provides account status; never call MANAGE_CONNECTIONS (which can start OAuth).
-+    async with asyncio.timeout(15), httpx2.AsyncClient(headers=headers, follow_redirects=False) as client:
-+        async with streamable_http_client(url, http_client=client) as streams:
-+            async with ClientSession(streams[0], streams[1]) as session:
-+                await session.initialize()
-+                result = await session.call_tool("COMPOSIO_SEARCH_TOOLS", {
-+                    "queries": [{"use_case": f"Read the current account or property in {name} ({slug})."}
-+                                for slug, name in queries.items()],
-+                    "session": {"generate_id": True},
-+                })
-+                if result.isError:
-+                    return set()
-+                payload = result.structuredContent
-+                if payload is None and len(result.content) == 1 and result.content[0].type == "text":
-+                    payload = json.loads(result.content[0].text)
-+                return _active_connections(payload) & queries.keys()
-+
-+
-+def active_composio_toolkits(home: Path, queries: dict[str, str]) -> set[str]:
-+    try:
-+        with bind_profile_scope(home):
-+            config = load_user_config_effective(home / "config.yaml", fail_closed=True)
-+        server = config.get("mcp_servers", {}).get("composio", {})
-+        if not server or server.get("enabled", True) is not True or server.get("command"):
-+            return set()
-+        url = server.get("url", "")
-+        parsed = urlsplit(url)
-+        if (parsed.scheme != "https" or parsed.hostname not in _COMPOSIO_HOSTS or parsed.username is not None
-+                or parsed.port not in (None, 443) or "${" in url):
-+            return set()
-+        headers = server.get("headers", {})
-+        if not isinstance(headers, dict) or any(not isinstance(value, str) or "${" in value for value in headers.values()):
-+            return set()
-+        return asyncio.run(_search_composio(url, headers, queries))
-+    except Exception:  # health: allow BLE001 -- fail closed without emitting sensitive URL/header diagnostics
-+        return set()
---- a/hermes_cli/oma_campaigns/__main__.py
-+++ b/hermes_cli/oma_campaigns/__main__.py
-@@ -47,7 +47,8 @@
-             return 0
-         result = handlers[args.command](default_home(), args)
-         print(json.dumps(result, indent=2))
--        return 3 if args.command == "lifecycle" and result.get("missing_model") is True else 0
-+        blocked = args.command == "lifecycle" and (result.get("missing_model") or result.get("missing_integrations"))
-+        return 3 if blocked else 0
-     except (ValueError, OSError) as exc:
-         print(f"OMA campaigns: {exc}", file=sys.stderr)
-         return 1
+--- a/hermes_cli/oma_campaigns/schema.py
++++ b/hermes_cli/oma_campaigns/schema.py
+@@ -27,8 +27,3 @@
+             missing = ", ".join(key for key in error.validator_value if key not in error.instance)
+             raise ValueError(f"{context}: invalid OMA {kind} {field} (missing: {missing})")
+         raise ValueError(f"{context}: invalid OMA {kind} {field} ({error.validator})")
+-    if kind == "campaign" and record.get("integrations"):
+-        from hermes_cli.oma_campaigns.integrations import integration_catalog
+-
+-        if set(record["integrations"]) - integration_catalog().keys():
+-            raise ValueError(f"{context}: invalid OMA campaign integrations (use canonical catalog IDs)")
 --- a/hermes_cli/oma_campaigns/install.py
 +++ b/hermes_cli/oma_campaigns/install.py
 @@ -84,7 +84,7 @@
@@ -234,8 +135,9 @@
 @@ -18,7 +18,7 @@
      "goals": { "$ref": "#/$defs/text_list" },
      "plans": { "$ref": "#/$defs/text_list" },
-     "integrations": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/properties/id" }, "description": "Canonical OMA integration IDs required to resume." },
+-    "integrations": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/properties/id" }, "description": "Canonical OMA integration IDs required to resume." },
 -    "mode": { "enum": ["yolo", "approve", "control"], "default": "yolo", "description": "Campaign automation and publishing policy; separate from lifecycle." },
++    "integrations": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/properties/id" }, "description": "Integration IDs declared for workspace setup." },
 +    "mode": { "enum": ["yolo", "approve", "control"], "default": "approve", "description": "Campaign automation and publishing policy; separate from lifecycle." },
      "lifecycle_state": { "enum": ["paused", "pausing", "resumed"], "readOnly": true },
      "kanban_board": { "type": "string", "pattern": "^campaign-[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])" },

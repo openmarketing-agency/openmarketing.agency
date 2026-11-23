@@ -59,13 +59,12 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     } else if (request.url?.endsWith("/lifecycle")) {
       if (payload.state === "paused") {
         response.end(JSON.stringify({ id: "seo", state: stopping ? "pausing" : "paused",
-          revision: (stopping ? "1" : "2").repeat(64), missingIntegrations: [] }));
+          revision: (stopping ? "1" : "2").repeat(64) }));
         stopping = false;
         return;
       }
       response.end(JSON.stringify({
         id: "seo", state: lifecycleState, revision: "d".repeat(64),
-        missingIntegrations: lifecycleState === "paused" ? ["discord"] : [],
       }));
     } else {
       response.end(JSON.stringify({
@@ -97,7 +96,7 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   assert.equal(requests.length, 0);
   integrationConfigInvalid = false;
   const providerError = "Connect or remove the campaign’s unconnected tools.";
-  assert.deepEqual(await saveCampaignConfiguration("seo", input, async () => ({ error: providerError })), { error: providerError });
+  assert.deepEqual(await saveCampaignConfiguration("seo", input, async () => ({ error: providerError }), true), { error: providerError });
   assert.ok((await saveCampaignConfiguration("seo", input, async () => ({ url: "https://unrelated.example.test/mcp" }))).error);
   assert.equal(requests.length, 0);
   const saved = await saveCampaignConfiguration("seo", { ...input, composioUrl: "https://unrelated.example.test/mcp" }, generateMcp);
@@ -149,12 +148,12 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     { method: "PUT", path: "/workspace/campaigns/seo/lifecycle", body: { state: "resumed", revision: "c".repeat(64) } },
   ]);
   requests.length = 0;
-  lifecycleState = "paused";
+  lifecycleState = "pausing";
   const blocked = await saveCampaignConfiguration("seo", input, generateMcp, true);
-  assert.equal(blocked.state, "paused");
+  assert.equal(blocked.state, "pausing");
   assert.equal(blocked.deployed, true);
   assert.equal(blocked.synced, undefined);
-  assert.match(blocked.error ?? "", /required integrations: Discord/);
+  assert.match(blocked.error ?? "", /finish stopping/);
 
   requests.length = 0;
   deployFailureStatus = 412;

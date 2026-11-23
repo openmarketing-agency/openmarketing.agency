@@ -293,13 +293,11 @@ with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
                 assert request(address, "POST", "/workspace/campaigns/seo/sync", sync)[0] == 200
                 assert load_env_file(home / "profiles/seo__orchestrator/.env")["EXTRA_TOOL_TOKEN"] == "extra-fixture"
                 assert safe_load(campaign.read_bytes())["available-keys"] == ["EXTRA_TOOL_TOKEN"]
-                blocked = request(address, "PUT", lifecycle, {"state": "resumed"})
-                assert blocked[0] == 200 and blocked[1]["state"] == "paused", blocked
-                assert blocked[1]["missingIntegrations"] == ["google-analytics"]
-                atomic_config_replace(campaign, {**safe_load(campaign.read_bytes()), "integrations": []})
                 for state in ("resumed", "paused"):
                     status, current = request(address, "PUT", lifecycle, {"state": state})
-                    assert status == 200 and current["state"] == state
+                    assert status == 200 and current["state"] == state, (status, current)
+                    assert "missingIntegrations" not in current
+                assert safe_load(campaign.read_bytes())["integrations"] == ["google-analytics"]
         finally:
             server.shutdown()
             worker.join()
