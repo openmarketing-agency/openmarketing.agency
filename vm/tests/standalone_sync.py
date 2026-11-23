@@ -9,7 +9,9 @@ import socket
 import sys
 from tempfile import TemporaryDirectory
 from threading import Lock, Thread
+from unittest.mock import patch
 
+from agent.secret_scope import load_env_file
 from hermes_cli.config import atomic_config_replace
 from hermes_yaml import safe_load
 
@@ -30,7 +32,8 @@ class Connection(HTTPConnection):
 def request(address, method, path, body=None):
     client = Connection(address, timeout=10)
     try:
-        client.request(method, path, json.dumps(body) if body is not None else None)
+        client.request(method, path, json.dumps(body) if body is not None else None,
+                       {"Content-Type": "application/json"} if body is not None else {})
         reply = client.getresponse()
         return reply.status, json.loads(reply.read())
     finally:
@@ -64,13 +67,12 @@ with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
         worker = Thread(target=server.serve_forever)
         worker.start()
         try:
-            stale = post(address, "default", {"revision": "0" * 64})
-            assert stale[0] == 409, stale
+            assert post(address, "default", {"revision": "0" * 64})[0] == 422
             assert post(address, "default", {"model": "ignored"})[0] == 422
             assert post(address, "demo__worker", {})[0] == 404
             assert safe_load(native.read_bytes())["model"] == "before"
-            revision = sha256(record.read_bytes()).hexdigest()
             status, result = post(address, "default", {})
+            revision = sha256(record.read_bytes()).hexdigest()
             assert (status, result) == (200, {"id": "default", "revision": revision}), (status, result)
             assert safe_load(native.read_bytes()) == {"model": "after", "agent": {"enabled_toolsets": ["file", "web"]}}
             installed = home / "skills" / "fixture" / "SKILL.md"
@@ -104,7 +106,71 @@ with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
             previous["model"]["default"] = payload["modelId"]
             assert safe_load(maintenance.read_bytes()) == previous
             assert safe_load(native.read_bytes()) == {"model": payload["modelId"], "agent": {"enabled_toolsets": ["file", "web"]}}
+
+            config = safe_load(saved_maintenance.read_bytes())
+            config["model"] = {"default": payload["modelId"], "api_key": "${TEST_MODEL_KEY}"}
+            config["mcp_servers"] = {
+                "example": {"url": "https://example.invalid/mcp", "headers": {"X-Key": "${TEST_MCP_KEY}"}},
+                "disabled": {"enabled": False, "headers": {"X-Key": "${TEST_DISABLED_KEY}"}},
+            }
+            atomic_config_replace(saved_maintenance, config)
+            original = saved_maintenance.read_bytes()
+            revision = sha256(original).hexdigest()
+            profile_env = maintenance.parent / ".env"
+            profile_env.write_text("KEEP_KEY=keep-me\n", encoding="utf-8")
+            body = {"env": {"TEST_MODEL_KEY": "new-model-secret", "TEST_MCP_KEY": "new-mcp-secret",
+                    "TEST_DISABLED_KEY": "ignored", "TEST_UNREFERENCED_KEY": "ignored"}}
+            assert post(address, "maintenance", {**body, "revision": revision})[0] == 422
+            assert post(address, "maintenance", {**body, "env": {"TEST_MODEL_KEY": "bad\nvalue"}})[0] == 422
+            assert post(address, "maintenance", {"env": {**body["env"], "PATH": "invalid-override"}})[0] == 422
+            assert load_env_file(profile_env) == {"KEEP_KEY": "keep-me"}
+            status, result = post(address, "maintenance", body)
+            latest = sha256(saved_maintenance.read_bytes()).hexdigest()
+            assert (status, result) == (200, {"id": "maintenance", "revision": latest})
+            expected = {"KEEP_KEY": "keep-me", **body["env"]}
+            assert load_env_file(profile_env) == expected
+            assert not (home / ".env").exists()
+            assert safe_load(saved_maintenance.read_bytes()) == {
+                **config, "all-keys": sorted(expected), "available-keys": sorted(expected),
+            }
+            assert safe_load(maintenance.read_bytes())["model"] == config["model"]
+            assert safe_load(maintenance.read_bytes())["mcp_servers"] == config["mcp_servers"]
+            assert post(address, "maintenance", {"env": {}})[0] == 200
+            assert load_env_file(profile_env)["TEST_MODEL_KEY"] == "new-model-secret"
+
+            from hermes_cli.oma_campaigns.install import install
+
+            campaign = root / "campaigns" / "seo" / "config.yaml"
+            campaign.parent.mkdir(parents=True)
+            role = root / "agents" / "seo__orchestrator"
+            role.mkdir()
+            (role / "SOUL.md").write_text("Coordinate the campaign.\n", encoding="utf-8")
+            atomic_config_replace(role / "config.yaml", {
+                "id": "seo__orchestrator", "name": "Orchestrator", "description": "Test role.",
+                "campaign_id": "seo", "agent": {"enabled_toolsets": ["kanban"]},
+            })
+            campaign_config = {"id": "seo", "name": "SEO", "description": "Test campaign.",
+                               "agents": ["seo__orchestrator"], "orchestrator": "seo__orchestrator",
+                               "integrations": ["google-analytics"], "model": ""}
+            atomic_config_replace(campaign, campaign_config)
+            with patch.dict(os.environ, {"HOME": str(home), "HERMES_HOME": str(home),
+                                         "HERMES_DISABLE_LAZY_INSTALLS": "1"}):
+                assert install(home, "seo")["lifecycle_state"] == "paused"
+                lifecycle = "/workspace/campaigns/seo/lifecycle"
+                assert request(address, "PUT", lifecycle, {"state": "resumed", "env": {}})[0] == 422
+                no_model = request(address, "PUT", lifecycle, {"state": "resumed"})
+                assert no_model == (409, {
+                    "id": "seo", "state": "paused", "missing_model": True,
+                    "message": "Configure a campaign model before resuming.",
+                }), no_model
+                atomic_config_replace(campaign, {**safe_load(campaign.read_bytes()), "model": "fixture-model"})
+                sync = {"revision": sha256(campaign.read_bytes()).hexdigest(), "env": {"EXTRA_TOOL_TOKEN": "extra-fixture"}}
+                assert request(address, "POST", "/workspace/campaigns/seo/sync", sync)[0] == 200
+                assert load_env_file(home / "profiles/seo__orchestrator/.env")["EXTRA_TOOL_TOKEN"] == "extra-fixture"
+                assert safe_load(campaign.read_bytes())["available-keys"] == ["EXTRA_TOOL_TOKEN"]
+                for state in ("resumed", "paused"):
+                    assert request(address, "PUT", lifecycle, {"state": state}) == (200, {"id": "seo", "state": state})
         finally:
             server.shutdown()
             worker.join()
-print("Standalone agent sync passed over the private Unix socket")
+print("Standalone sync, campaign sync, and campaign lifecycle passed over the private Unix socket")

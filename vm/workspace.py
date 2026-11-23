@@ -217,15 +217,20 @@ def nested_brand_documents(directory):
         yield from walk(directory, [folder], 0)
 
 
-def run_campaign_command(root, command, env):
+def run_campaign_command(root, command, env, *, payload=None):
     # Kill the launcher and its worker together before releasing the edit lock on timeout.
     with subprocess.Popen(
         command, cwd=root.parent, start_new_session=True,
         env={**{name: os.environ[name] for name in RUNTIME_ENV if name in os.environ}, **env},
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdin=subprocess.PIPE if payload is not None else subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     ) as runner:
         try:
-            status = runner.wait(timeout=60)
+            if payload is None:
+                status = runner.wait(timeout=60)
+            else:
+                runner.communicate(input=payload, timeout=60)
+                status = runner.returncode
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(runner.pid, SIGKILL)
@@ -837,6 +842,13 @@ def valid_sync_key(value):
             and value.isascii() and all(32 <= ord(char) <= 126 for char in value))
 
 
+def valid_sync_env(env):
+    return isinstance(env, dict) and all(
+        re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) and valid_sync_key(value)
+        for key, value in env.items()
+    )
+
+
 STANDALONE_AGENTS = ("default", "maintenance")
 
 
@@ -927,17 +939,21 @@ def update_standalone_model(root, request):
 def sync_agent_configuration(root, agent_id, request):
     if agent_id not in STANDALONE_AGENTS:
         raise WorkspaceError(404, "This agent does not support standalone sync.")
-    if not isinstance(request, dict) or request.keys() - {"revision"} or (
-        "revision" in request and (not isinstance(request["revision"], str) or not re.fullmatch(r"[a-f0-9]{64}", request["revision"]))
-    ):
+    if not isinstance(request, dict) or request.keys() - {"env"}:
         raise WorkspaceError(422, "Invalid agent sync request.")
-    with editable_record(root, "agents", agent_id) as (_, source, _):
+    env = request.get("env", {})
+    if not valid_sync_env(env):
+        raise WorkspaceError(422, "Invalid agent API keys.")
+    with editable_record(root, "agents", agent_id) as (record, source, _):
         revision = sha256(source).hexdigest()
-        if request.get("revision", revision) != revision:
-            raise WorkspaceError(409, "This agent changed before sync. Reload its settings and try again.")
         command = [sys.executable, "-m", "hermes_cli.oma_campaigns.standalone", "sync", agent_id, "--revision", revision]
         try:
-            run_campaign_command(root, command, {"HERMES_HOME": str(root.parent)})
+            runtime = {"HERMES_HOME": str(root.parent)}
+            if env:
+                # Untrusted variable names must not become launcher environment variables.
+                run_campaign_command(root, [*command, "--env-stdin"], runtime, payload=json.dumps(env).encode())
+            else:
+                run_campaign_command(root, command, runtime)
         except subprocess.CalledProcessError as error:
             status, message = {
                 3: (409, "This agent changed during sync. Reload its settings and try again."),
@@ -946,28 +962,20 @@ def sync_agent_configuration(root, agent_id, request):
             raise WorkspaceError(status, message) from None
         except (OSError, subprocess.TimeoutExpired):
             raise WorkspaceError(503, "Standalone agent sync is unavailable.") from None
-    return {"id": agent_id, "revision": revision}
+        return {"id": agent_id, "revision": sha256(read_file(record)[0]).hexdigest()}
 
 
 def sync_campaign_configuration(root, campaign_id, request, *, deploy=False):
     if not isinstance(request, dict) or set(request) != {"revision", "env"} or not isinstance(request["env"], dict):
         raise WorkspaceError(422, "Invalid campaign sync request.")
     env = request["env"]
-    if not set(env) <= {MODEL_KEY, ENV_MODEL_KEY, COMPOSIO_KEY} or not all(valid_sync_key(value) for value in env.values()):
+    if not valid_sync_env(env):
         raise WorkspaceError(422, "Invalid campaign API keys.")
     with editable_record(root, "campaigns", campaign_id) as (record, source, mode):
         if request["revision"] != sha256(source).hexdigest():
             raise WorkspaceError(409, "This campaign changed before sync. Reload its settings and try again.")
         data = parse_record(source, campaign_id)
-        model = mapping(data.get("model"))
-        server = mapping(mapping(data.get("mcp_servers")).get("composio"))
-        for key in env.keys() & {MODEL_KEY, ENV_MODEL_KEY}:
-            if model.get("api_key") != "${" + key + "}" or not configuration_url(model.get("base_url")):
-                raise WorkspaceError(422, "Save a model URL with the API key before syncing.")
-        if COMPOSIO_KEY in env and not (
-            composio_url(server.get("url")) and mapping(server.get("headers")).get("x-api-key") == "${" + COMPOSIO_KEY + "}"
-        ):
-            raise WorkspaceError(422, "Save a Composio MCP URL before syncing its API key.")
+
         routed = ensure_bundled_campaign_routing(root, campaign_id, record, source, mode, allow_new=deploy)
         if deploy and not routed:
             if data.get("installation_state") == "installing":
@@ -978,14 +986,47 @@ def sync_campaign_configuration(root, campaign_id, request, *, deploy=False):
                 )
             except (OSError, subprocess.SubprocessError):
                 raise WorkspaceError(412, "oma-agent couldn’t provision this campaign. Check its saved agent records and board, then reopen deployment.") from None
-        # Deployment already runs in the bundled VM's venv. Use that same interpreter for sync.
-        command = ([sys.executable, "-m", "hermes_cli.oma_campaigns.sync", campaign_id] if deploy
-                   else ["sync-campaign", campaign_id])
+        command = [sys.executable, "-m", "hermes_cli.oma_campaigns.sync", campaign_id, "--env-stdin"]
         try:
-            run_campaign_command(root, command, env)
+            run_campaign_command(root, command, {"HERMES_HOME": str(root.parent)}, payload=json.dumps(env).encode())
         except (OSError, subprocess.SubprocessError):
             raise WorkspaceError(502, "oma-agent could not sync the campaign. Verify that the campaign is installed and try again.") from None
         return campaign_configuration(read_file(record)[0])
+
+
+def set_campaign_lifecycle(root, campaign_id, request):
+    if not isinstance(request, dict) or set(request) != {"state"} or request["state"] not in ("paused", "resumed"):
+        raise WorkspaceError(422, "Campaign state must be paused or resumed.")
+    target = request["state"]
+    with editable_record(root, "campaigns", campaign_id) as (_, source, _):
+        parse_record(source, campaign_id)
+        env = {name: os.environ[name] for name in RUNTIME_ENV if name in os.environ}
+        env["HERMES_HOME"] = str(root.parent)
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "hermes_cli.oma_campaigns", "lifecycle", campaign_id, target],
+                cwd=root.parent, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, text=True, timeout=40, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise WorkspaceError(504, "Campaign lifecycle timed out. Check its state before retrying.") from None
+        if proc.returncode not in (0, 3):
+            raise WorkspaceError(409, "Campaign lifecycle could not change. Check the installed campaign and retry.")
+        try:
+            result = json.loads(proc.stdout)
+            if not isinstance(result, dict) or result.get("id") != campaign_id:
+                raise ValueError
+            state = result.get("state")
+            response = {"id": campaign_id, "state": state}
+            if proc.returncode == 3:
+                if target != "resumed" or state != "paused" or result.get("missing_model") is not True:
+                    raise ValueError
+                return 409, {**response, "missing_model": True, "message": "Configure a campaign model before resuming."}
+            if state not in (target, "pausing"):
+                raise ValueError
+            return (202 if state == "pausing" else 200), response
+        except (ValueError, RecursionError):
+            raise WorkspaceError(502, "Campaign lifecycle returned an invalid response.") from None
 
 
 def brand_document(root, record_id, document_id):
@@ -1119,6 +1160,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self.reply(200, result)
 
     def do_PUT(self):
+        lifecycle = re.fullmatch(r"/workspace/campaigns/([^/]+)/lifecycle", self.path)
+        if lifecycle:
+            self.put_lifecycle(lifecycle[1])
+            return
         path = re.fullmatch(r"/workspace/([^/]+)/([^/]+)(/knowledge|/config|/plan)?", self.path)
         if not path or (path[3] == "/knowledge" and path[1] != "brands") or (
             (path[1] == "campaigns") != (path[3] in ("/config", "/plan"))
@@ -1145,6 +1190,25 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self.reply(503, {"message": "Could not save the agent workspace record."})
         else:
             self.reply(200, result)
+
+    def put_lifecycle(self, campaign_id):
+        try:
+            if self.headers.get_content_type() != "application/json":
+                raise WorkspaceError(415, "Campaign lifecycle requires a JSON request.")
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 256:
+                raise WorkspaceError(413, "The campaign lifecycle request is too large or empty.")
+            request = json.loads(self.rfile.read(length))
+            with self.server.edit_lock:
+                status, result = set_campaign_lifecycle(self.server.root, campaign_id, request)
+        except (ValueError, RecursionError):
+            self.reply(400, {"message": "Invalid campaign lifecycle request."})
+        except WorkspaceError as error:
+            self.reply(error.status, {"message": str(error)})
+        except OSError:
+            self.reply(503, {"message": "Could not access the agent workspace."})
+        else:
+            self.reply(status, result)
 
 
 if __name__ == "__main__":
