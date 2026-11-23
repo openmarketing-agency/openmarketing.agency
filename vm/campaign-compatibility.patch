@@ -1,4 +1,4 @@
-# Retains console campaign defaults and Composio checks on oma-agent v0.1.20.
+# Retains console campaign defaults and Composio checks on the bundled oma-agent image.
 --- a/hermes_cli/oma_campaigns/lifecycle.py
 +++ b/hermes_cli/oma_campaigns/lifecycle.py
 @@ -13,6 +13,8 @@
@@ -248,7 +248,7 @@
 
 -- Every campaign must declare a non-empty `integrations` list in its `config.yaml`. Use unique canonical OMA catalog IDs, not display names, URLs, or connector aliases. Select the smallest set that the campaign needs for its plans and measurement; don't copy the brand's entire inventory. If no catalog integration fits, leave the campaign unprovisioned and report the gap rather than adding an unrelated integration.
 +- Every campaign must declare an `integrations` list in its `config.yaml`. Use unique canonical OMA catalog IDs, not display names, URLs, or connector aliases. Select the smallest set that the campaign needs for its plans and measurement; don't copy the brand's entire inventory. Write `integrations: []` if the campaign needs none. Report a blocker if a required service has no supported integration.
- - Start with the saved brand's `integrations` and `channels` (social, blog, newsletter). Use `integrations` in the launcher to shortlist observed integrations and verified social channels. Compare what best serves the campaign with what the brand already uses. Prefer a verified, usable existing connection when it meets the need; if no existing connection meets the need, declare the best-fit required integration and report it as a setup blocker.
+ - Start with the saved brand's `integrations` and `channels` (social, blog, newsletter). Use `integrations` in the launcher to shortlist observed integrations and verified social channels; it is not the full catalog. Prefer verified, suitable existing connections. When a required connection is missing, consult the OMA integrations catalog and [integration intake guide](references/integration-intake.md), then ask the user to connect the smallest set required by the plan. Include media generation only if a role actually needs it; ask for the provider and scope, not raw credentials.
  - Brand evidence and a saved integration ID do not prove access. Before activating the campaign or enabling its jobs, verify each required connection for the intended account or property and the owning profile's needed read or write permissions. If a required connection is missing or unverified, save the campaign without activating it or enabling jobs and report what must be connected. This is a skill check, not a gate enforced by the YAML validator or lifecycle command.
 
 @@ -111,6 +111,6 @@
