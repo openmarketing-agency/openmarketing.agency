@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Suspense } from "react";
 
 import { AgentActivity } from "@/components/agent-activity";
@@ -14,18 +13,6 @@ import "@/components/campaign-pages.css";
 
 export const metadata: Metadata = { title: "Campaigns" };
 
-async function SetupLink() {
-  const user = await requireUser();
-  const project = readProjectSetup(user.id);
-  if (isProjectSetupComplete(project)) return null;
-
-  return (
-    <Link href="/onboarding" className="btn secondary">
-      {project?.setup.status === "done" ? "Finish project setup" : "Set up your workspace"}
-    </Link>
-  );
-}
-
 export default function DashboardPage() {
   return (
     <Suspense fallback={<Loading label="Loading campaigns…" />}>
@@ -35,7 +22,8 @@ export default function DashboardPage() {
 }
 
 async function Dashboard() {
-  await requireUser();
+  const user = await requireUser();
+  const project = readProjectSetup(user.id);
   const { records, error } = await loadAgentWorkspace();
   const saved = records?.campaigns.map((campaign) => {
     const playbook = records.playbooks.find((item) => item.id === campaign.playbookId);
@@ -50,12 +38,14 @@ async function Dashboard() {
   return (
     <CampaignLibrary
       saved={saved}
-      setup={<SetupLink />}
-      notice={error ? <p className="form-error" role="alert">{error}</p>
-        : !records && <p className="notice">Start the full Docker stack to see saved campaigns.</p>}
-      sidebar={<><AgentActivity />{records && <WorkspaceIndex workspace={records} modelSettings={
-        records.standaloneModels && <StandaloneModelSettings models={records.standaloneModels} />
-      } />}</>}
+      setup={isProjectSetupComplete(project) ? undefined : { needsRetry: project?.setup.status === "done" }}
+      error={error}
+      sidebar={<>
+        <AgentActivity />
+        {records && <WorkspaceIndex workspace={records} modelSettings={
+          records.standaloneModels && <StandaloneModelSettings models={records.standaloneModels} />
+        } />}
+      </>}
     />
   );
 }

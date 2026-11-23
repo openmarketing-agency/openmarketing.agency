@@ -43,7 +43,7 @@ export function AgentProfileDetail({ agent, campaign, profile, error }: {
             : <WorkspaceText text={profile?.content ?? ""} html={profile?.html} empty="No profile document saved yet." />}
         </section>
         <aside className="record-related agent-profile-related" aria-label="Agent configuration and schedule">
-          <section id="agent-configuration" aria-labelledby="agent-configuration-heading">
+          <section id="agent-configuration" aria-labelledby="agent-configuration-heading" tabIndex={-1}>
             <h2 id="agent-configuration-heading"><SlidersHorizontal size={16} aria-hidden="true" /> Configuration</h2>
             <dl className="agent-profile-fields">
               <div><dt>Profile ID</dt><dd><code>{agent.id}</code></dd></div>
@@ -52,7 +52,7 @@ export function AgentProfileDetail({ agent, campaign, profile, error }: {
               {!!agent.toolsets.length && <div><dt>Toolsets</dt><dd><AgentLabels items={agent.toolsets} /></dd></div>}
             </dl>
           </section>
-          <section id="agent-schedule" aria-labelledby="agent-schedule-heading">
+          <section id="agent-schedule" aria-labelledby="agent-schedule-heading" tabIndex={-1}>
             <h2 id="agent-schedule-heading"><CalendarClock size={16} aria-hidden="true" /> Scheduled work</h2>
             {agent.jobs.length ? (
               <ul className="agent-profile-jobs">

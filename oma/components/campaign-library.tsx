@@ -17,10 +17,10 @@ type SavedCampaignSummary = {
   brand?: { id: string; name: string };
 };
 
-export function CampaignLibrary({ setup, sidebar, notice, saved }: {
-  setup?: ReactNode;
+export function CampaignLibrary({ setup, sidebar, error, saved }: {
+  setup?: { needsRetry: boolean };
   sidebar?: ReactNode;
-  notice?: ReactNode;
+  error?: string;
   saved?: SavedCampaignSummary[];
 }) {
   const [query, setQuery] = useState("");
@@ -34,16 +34,34 @@ export function CampaignLibrary({ setup, sidebar, notice, saved }: {
     <div className="agent-library-page campaign-page">
       <header className="campaign-heading">
         <h1>Campaigns</h1>
-        {setup}
+        <p>Plan work, configure your agents, and review what’s ready to deploy.</p>
       </header>
+      {setup && (
+        <section className="campaign-setup" aria-labelledby="campaign-setup-heading">
+          <div>
+            <h2 id="campaign-setup-heading">{setup.needsRetry ? "Finish sending your project" : "Start with your project"}</h2>
+            <p>{setup.needsRetry
+              ? "Your project links are saved. Reopen setup to send them to oma-agent."
+              : "Share a website or GitHub repository so oma-agent has context to plan your campaigns."}</p>
+            <Link className="btn primary" href="/onboarding">
+              {setup.needsRetry ? "Finish project setup" : "Set up your project"}<ArrowRight size={16} aria-hidden="true" />
+            </Link>
+          </div>
+          <ol aria-label="Campaign workflow">
+            <li>{setup.needsRetry ? "Project links saved" : "Share your project links"}</li>
+            <li>Review the saved campaign plan</li>
+            <li>Configure agents and deploy</li>
+          </ol>
+        </section>
+      )}
       <div className="campaign-dashboard-layout">
-        <section className="campaign-library" aria-label="Saved campaigns">
-          {notice}
+        <section className="campaign-library" aria-labelledby="saved-campaigns-heading">
+          <h2 id="saved-campaigns-heading">Saved campaigns</h2>
           {!!saved?.length && (
             <div className="campaign-search">
               <label className="search-box">
                 <Search size={16} aria-hidden="true" />
-                <input ref={search} type="search" aria-label="Search campaigns" placeholder="Search campaigns…"
+                <input ref={search} type="search" aria-label="Search campaigns" placeholder="Search by campaign, brand, or playbook"
                   value={query} onChange={(event) => setQuery(event.target.value)} />
               </label>
               <span role="status">
@@ -55,11 +73,11 @@ export function CampaignLibrary({ setup, sidebar, notice, saved }: {
             <ul className="campaign-list">
               {filtered.map(({ id, name, description, version, brand, playbook, agentCount, status }) => (
                 <li className="campaign-entry" key={id}>
-                  <h2>
+                  <h3>
                     <Link className="campaign-entry-link" href={"/campaigns/" + id}>
                       <span>{name}</span><ArrowRight size={18} aria-hidden="true" />
                     </Link>
-                  </h2>
+                  </h3>
                   {description && <p>{description}</p>}
                   <div className="campaign-entry-context">
                     {status && <span className="campaign-deployment-status" data-state={status}>{status}</span>}
@@ -74,13 +92,20 @@ export function CampaignLibrary({ setup, sidebar, notice, saved }: {
           )}
           {saved?.length === 0 && (
             <div className="empty-state campaign-empty">
-              <h2>No campaigns yet</h2>
-              <p>Campaigns will appear here when oma-agent saves them.</p>
+              <h3>No campaigns yet</h3>
+              <p>Campaigns appear here when oma-agent saves them.</p>
+              {!setup && <Link className="btn secondary" href="/chat">Open Chat <ArrowRight size={16} aria-hidden="true" /></Link>}
+            </div>
+          )}
+          {!saved && (
+            <div className="empty-state campaign-empty">
+              <h3>Campaign workspace unavailable</h3>
+              <p role={error ? "alert" : undefined}>{error ?? "Start the full Docker stack to access saved campaigns."}</p>
             </div>
           )}
           {!!saved?.length && filtered.length === 0 && (
             <div className="empty-state campaign-empty">
-              <h2>No matching campaigns</h2>
+              <h3>No matching campaigns</h3>
               <p>Try a campaign, brand, or playbook name.</p>
               <button className="btn secondary" onClick={() => { setQuery(""); search.current?.focus(); }}>Clear search</button>
             </div>

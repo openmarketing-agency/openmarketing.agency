@@ -21,15 +21,7 @@ async function Setup() {
   const links = project?.setup.status === "done"
     ? { websiteUrl: project.setup.websiteUrl, githubUrl: project.setup.githubUrl } : undefined;
 
-  return (
-    <main id="main-content" tabIndex={-1} className="workspace-entry-panel">
-      <header>
-        <h1>Add your project</h1>
-        <p>Give oma-agent a website, a GitHub repository, or both to start planning.</p>
-      </header>
-      <ProjectForm initialLinks={links} needsRetry={Boolean(project?.delivery)} />
-    </main>
-  );
+  return <ProjectForm initialLinks={links} needsRetry={Boolean(project?.delivery)} />;
 }
 
 export default function OnboardingPage() {
@@ -41,9 +33,23 @@ export default function OnboardingPage() {
           <button type="submit" className="btn ghost">Sign out</button>
         </form>
       </header>
-      <Suspense fallback={<main id="main-content" className="workspace-entry-panel" role="status">Loading setup…</main>}>
-        <Setup />
-      </Suspense>
+      <main id="main-content" tabIndex={-1} className="project-setup-layout">
+        <header className="project-setup-heading">
+          <h1>Add your project</h1>
+          <p>Enter a website, a GitHub repository, or both to give oma-agent context for your campaigns.</p>
+        </header>
+        <section className="project-setup-panel" aria-labelledby="project-links-title">
+          <h2 id="project-links-title">Project links</h2>
+          <Suspense fallback={<p className="project-setup-loading" role="status">Loading setup…</p>}>
+            <Setup />
+          </Suspense>
+        </section>
+        <aside className="project-setup-help" aria-labelledby="project-setup-help-title">
+          <h2 id="project-setup-help-title">What happens next</h2>
+          <p>OMA saves your links locally before sending them to oma-agent. If delivery fails, retry with the saved links.</p>
+          <p>To go straight to Campaigns, choose Skip setup.</p>
+        </aside>
+      </main>
     </div>
   );
 }

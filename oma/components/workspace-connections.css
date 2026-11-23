@@ -1,0 +1,25 @@
+/* Gives shared tool accounts and campaign assignments distinct context. */
+.connections-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0 0 24px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.connections-overview > div { display: flex; align-items: flex-start; gap: 12px; padding: 17px 19px; }
+.connections-overview > div + div { border-inline-start: 1px solid var(--border); }
+.connections-overview svg { flex: none; margin-top: 2px; color: var(--accent); }
+.connections-overview h2 { font-size: 14px; }
+.connections-overview p { margin-top: 4px; }
+.connections-overview a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.workspace-connections-page .tool-browser .icon-button { min-width: 40px; min-height: 40px; }
+.workspace-connections-page .tool-browser .search-box:focus-within input { outline: none; }
+.workspace-connections-page .tool-browser .search-box button { min-width: 34px; min-height: 34px; }
+.workspace-connections-page .tool-browser .search-box button:focus-visible { outline-offset: -1px; }
+.workspace-connections-page .tool-browser .notice { align-items: start; }
+@media (max-width: 620px) {
+  .connections-overview { grid-template-columns: 1fr; margin-bottom: 18px; }
+  .connections-overview > div + div { border-inline-start: 0; border-top: 1px solid var(--border); }
+  .connections-overview > div { padding: 13px 14px; }
+}

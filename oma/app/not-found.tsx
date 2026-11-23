@@ -1,16 +1,18 @@
 import Link from "next/link";
 import { Brand } from "@/components/brand";
+import "@/components/auth-layout.css";
+
 export default function NotFound() {
   return (
-    <main id="main-content" className="page-content">
-      <Brand />
-      <div className="empty-state" style={{ marginTop: 40 }}>
-        <h1>Campaign not found</h1>
-        <p>This page may have moved. Find your next workflow in the library.</p>
+    <div className="workspace-entry">
+      <header className="workspace-entry-bar"><Brand href="/" /></header>
+      <main id="main-content" tabIndex={-1} className="entry-form-panel entry-missing-page">
+        <h1>Page not found</h1>
+        <p>Check the address or return to your campaign workspace.</p>
         <Link className="btn primary" href="/dashboard">
           Back to campaigns
         </Link>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }

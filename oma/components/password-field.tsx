@@ -11,6 +11,8 @@ export function PasswordField({
   const [visible, setVisible] = useState(false);
   const [value, setValue] = useState("");
   const name = confirm ? "confirmPassword" : "password";
+  const visibilityTarget = confirm ? "password confirmation" : "password";
+  const hintId = register && !confirm ? "password-requirements" : undefined;
   return (
     <div className="auth-field">
       <label htmlFor={name}>{confirm ? "Confirm password" : "Password"}</label>
@@ -22,6 +24,7 @@ export function PasswordField({
           onChange={(e) => setValue(e.target.value)}
           type={visible ? "text" : "password"}
           autoComplete={register ? "new-password" : "current-password"}
+          aria-describedby={hintId}
           required
           minLength={register ? 8 : undefined}
           maxLength={128}
@@ -35,14 +38,15 @@ export function PasswordField({
         />
         <button
           type="button"
-          aria-label={visible ? "Hide password" : "Show password"}
+          aria-label={`${visible ? "Hide" : "Show"} ${visibilityTarget}`}
+          aria-controls={name}
           onClick={() => setVisible(!visible)}
         >
-          {visible ? <EyeOff size={17} /> : <Eye size={17} />}
+          {visible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
         </button>
       </div>
-      {register && !confirm && (
-        <span className="field-hint">Use 8–128 characters.</span>
+      {hintId && (
+        <span id={hintId} className="field-hint">Use 8–128 characters.</span>
       )}
     </div>
   );

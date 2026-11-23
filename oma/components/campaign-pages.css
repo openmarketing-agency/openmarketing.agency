@@ -7,7 +7,6 @@
   overflow-wrap: anywhere;
 }
 
-.campaign-heading,
 .campaign-title {
   display: flex;
   flex-wrap: wrap;
@@ -17,11 +16,59 @@
 }
 
 .campaign-heading h1 {
-  font-size: 2.5rem;
+  font-size: clamp(1.85rem, 4.1vw, 2.875rem);
   font-weight: 650;
   line-height: 1.12;
   letter-spacing: -0.032em;
 }
+
+.campaign-heading > p {
+  max-width: 67ch;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.campaign-setup {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(12rem, 1fr);
+  align-items: center;
+  gap: 24px 36px;
+  margin-top: 27px;
+  padding: clamp(22px, 4vw, 38px);
+  border-radius: 10px;
+  background: var(--inverse-surface);
+  color: var(--inverse-text);
+}
+
+.campaign-setup h2 {
+  max-width: 21ch;
+  font-size: clamp(1.65rem, 3.1vw, 2.25rem);
+  font-weight: 650;
+  line-height: 1.14;
+  letter-spacing: -0.032em;
+}
+.campaign-setup p {
+  max-width: 46ch;
+  margin: 10px 0 18px;
+  color: var(--inverse-muted);
+}
+.campaign-setup .btn.primary {
+  min-height: 44px;
+  background: var(--accent-soft);
+  color: var(--text);
+  white-space: normal;
+}
+.campaign-setup .btn.primary:hover:not(:disabled) { background: var(--surface); }
+.campaign-setup .btn:focus-visible { outline-color: var(--inverse-text); }
+.campaign-setup ol {
+  margin: 0;
+  padding-left: 1.8rem;
+  list-style: decimal;
+}
+.campaign-setup li { padding: 9px 0 9px 6px; }
+.campaign-setup li + li { border-top: 1px solid var(--inverse-border); }
+.campaign-setup li::marker { color: var(--inverse-muted); font-weight: 650; }
 
 .campaign-dashboard-layout,
 .campaign-overview {
@@ -54,7 +101,7 @@
 .campaign-detail .campaign-settings {
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface);
 }
 
@@ -98,6 +145,11 @@
 .campaign-context dd a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .campaign-library { min-width: 0; }
+.campaign-library > h2 {
+  margin: 0 0 12px;
+  font-size: 1.125rem;
+  font-weight: 650;
+}
 .campaign-search {
   display: flex;
   align-items: center;
@@ -107,7 +159,7 @@
   margin-bottom: 14px;
 }
 
-.campaign-search .search-box { width: min(100%, 19rem); min-height: 40px; margin: 0; }
+.campaign-search .search-box { width: min(100%, 20rem); min-height: 44px; margin: 0; background: var(--surface); }
 .campaign-search > span { font-size: 0.875rem; color: var(--muted); }
 
 .campaign-list,
@@ -119,15 +171,15 @@
 
 .campaign-list {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface);
 }
 
 .campaign-entry { padding: 17px 20px 18px; }
 .campaign-entry + .campaign-entry { border-top: 1px solid var(--border); }
 .campaign-entry:hover, .campaign-entry:focus-within { background: var(--raised); }
-.campaign-entry:first-child { border-start-start-radius: 12px; border-start-end-radius: 12px; }
-.campaign-entry:last-child { border-end-start-radius: 12px; border-end-end-radius: 12px; }
+.campaign-entry:first-child { border-start-start-radius: 10px; border-start-end-radius: 10px; }
+.campaign-entry:last-child { border-end-start-radius: 10px; border-end-end-radius: 10px; }
 
 .campaign-entry-link {
   display: flex;
@@ -159,7 +211,20 @@
 .campaign-entry-context a { color: var(--accent); text-underline-offset: 3px; }
 .campaign-entry-context a:hover { text-decoration: underline; }
 
-.campaign-library .campaign-empty { padding: 36px 20px; border: 1px dashed var(--border); border-radius: 12px; }
+.campaign-library .campaign-empty {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin: 0;
+  padding: clamp(16px, 3vw, 24px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: start;
+}
+.campaign-empty h3 { font-size: 1rem; font-weight: 650; }
+.campaign-empty p { margin: 0; }
+.campaign-empty .btn { margin-top: 5px; }
 
 .campaign-identity {
   display: grid;
@@ -167,9 +232,16 @@
   justify-content: initial;
   gap: 5px 16px;
 }
-.campaign-identity .playbook-mark { grid-row: span 2; align-self: start; border-radius: 13px; }
+.campaign-identity .playbook-mark {
+  grid-row: span 2;
+  align-self: start;
+  width: 32px;
+  height: 38px;
+  border: 0;
+  background: transparent;
+}
 .campaign-title { justify-content: start; }
-.campaign-identity > p { max-width: 74ch; color: var(--muted); line-height: 1.55; }
+.campaign-identity > p { margin-top: 4px; line-height: 1.55; }
 
 .campaign-tabs {
   display: flex;
@@ -267,9 +339,11 @@
 }
 
 @media (max-width: 600px) {
-  .campaign-heading h1 { font-size: 1.75rem; }
+  .campaign-setup { grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 20px; }
+  .campaign-setup ol { padding-left: 1.2rem; font-size: 0.875rem; }
+  .campaign-setup li { padding-block: 8px; }
   .campaign-identity { gap: 10px 12px; }
-  .campaign-identity .playbook-mark { width: 43px; height: 43px; grid-row: auto; }
+  .campaign-identity .playbook-mark { width: 26px; height: 32px; grid-row: auto; }
   .campaign-identity > p { grid-column: 1 / -1; }
   .campaign-title { gap: 5px 8px; }
   .campaign-tabs { gap: 0 12px; margin-top: 16px; }
@@ -300,8 +374,8 @@
   font-weight: 550;
   white-space: nowrap;
 }
-.campaign-deployment-status[data-state="Running"] { color: var(--positive); background: var(--positive-soft); }
-.campaign-deployment-status[data-state="Stopping…"] { color: var(--warning); background: var(--warning-soft); }
+.campaign-deployment-status:is([data-state="Running"], [data-state="Installed"]) { color: var(--positive); background: var(--positive-soft); }
+.campaign-deployment-status:is([data-state="Stopping…"], [data-state="Installation incomplete"], [data-state="Installation unverified"]) { color: var(--warning); background: var(--warning-soft); }
 
 .campaign-planner,
 .campaign-deploy-layout {
@@ -415,7 +489,8 @@
 
 @media (max-width: 600px) {
   .campaign-header-actions { flex: 0 1 auto; gap: 8px; }
-  .campaign-tabs { gap: 0 8px; }
-  .campaign-tabs a { padding-inline: 4px; }
+  .campaign-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 7px; }
+  .campaign-tabs:has(> :nth-child(5)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .campaign-tabs a { justify-content: center; gap: 4px; padding-inline: 1px; font-size: 0.8125rem; }
   .campaign-planner, .campaign-deploy { margin-top: 16px; }
 }

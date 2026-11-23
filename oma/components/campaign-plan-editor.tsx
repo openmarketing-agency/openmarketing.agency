@@ -182,7 +182,7 @@ export function CampaignPlanEditor({ campaignId, saved, active, onDirtyChange }:
           <label className="sr-only" htmlFor="campaign-chat-message">Message oma-agent</label>
           <textarea id="campaign-chat-message" value={message} onChange={(event) => setMessage(event.target.value)}
             placeholder="Suggest a change to this campaign…" rows={3} maxLength={campaignPlanMessageLimit} required disabled={asking} />
-          <button className="btn primary" disabled={asking || !message.trim()}><Send size={15} aria-hidden="true" /> Send</button>
+          <button className="btn secondary" disabled={asking || !message.trim()}><Send size={15} aria-hidden="true" /> Send</button>
         </form>
       </section>
     </div>

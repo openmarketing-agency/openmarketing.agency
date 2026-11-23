@@ -24,15 +24,18 @@
 .record-mark {
   display: grid;
   place-items: center;
-  flex: 0 0 52px;
-  height: 52px;
-  border: 1px solid var(--border);
-  border-radius: 13px;
+  flex: 0 0 36px;
+  height: 45px;
   color: var(--accent);
-  background: var(--accent-soft);
 }
 
-.record-mark:has(img) { background: #fff; }
+.record-mark:has(img) {
+  flex-basis: 52px;
+  height: 52px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
 .record-mark img { object-fit: contain; }
 
 .record-heading h1 {
@@ -97,7 +100,7 @@
 .record-editor {
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
 .record-reading,
@@ -308,13 +311,14 @@
   .record-heading { flex-direction: column; gap: 13px; }
   .record-identity {
     display: grid;
-    grid-template-columns: 43px minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 10px 12px;
   }
   .record-identity > div { display: contents; }
   .record-identity p { grid-column: 1 / -1; margin: 0; }
-  .record-mark { height: 43px; border-radius: 10px; }
+  .record-mark { min-width: 28px; height: 34px; }
+  .record-mark:has(img) { width: 40px; height: 40px; }
   .record-mark img { width: 29px; height: 29px; }
   .record-links:has(li:only-child) {
     display: grid;
@@ -325,12 +329,15 @@
   .record-links:has(li:only-child) h2 { margin: 0; }
   .record-links + .record-links { margin-top: 8px; padding-top: 10px; }
   .record-tabs { margin-top: 14px; }
+  .record-tabs:not(.agent-profile-jump) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .record-tabs:not(.agent-profile-jump) a { padding-inline: 1px; text-align: center; font-size: 0.8125rem; }
   .record-columns, .record-groups { margin-top: 16px; gap: 14px; }
   .record-palette { grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); }
 }
 
 .agent-profile-jump { display: none; }
 .agent-profile-related section { scroll-margin-top: 68px; }
+.agent-profile-related section:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .agent-profile-related section + section { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
 .agent-profile-related h2 {
   display: flex;

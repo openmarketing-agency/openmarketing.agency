@@ -98,7 +98,7 @@ export function HermesChat({ status }: { status: AgentStatus }) {
       <header className="chat-page-heading">
         <div className="surface-heading">
           <span className="playbook-mark"><Bot size={24} aria-hidden="true" /></span>
-          <div><h1 id="chat-heading">Chat with oma-agent</h1><p>Default profile</p></div>
+          <div><h2 id="chat-heading">Default profile</h2></div>
         </div>
         <span role="status" className={status.ready ? "chat-status is-ready" : "chat-status"}>{status.ready ? "Connected" : "Offline"}</span>
       </header>
@@ -106,8 +106,8 @@ export function HermesChat({ status }: { status: AgentStatus }) {
         <div className="runtime-messages" ref={transcript} role="log" aria-label="Conversation">
           {!messages.length && !sending && (
             <div className="runtime-conversation-empty">
-              <h2>What would you like to work on?</h2>
-              <p>Ask about your workspace or get help planning your next campaign.</p>
+              <h3>What would you like to work on?</h3>
+              <p>Send a message to start a conversation.</p>
             </div>
           )}
           {messages.map(({ author, text }, index) => (
@@ -141,7 +141,7 @@ export function HermesChat({ status }: { status: AgentStatus }) {
         </form>}
       </> : (
         <div className="runtime-empty">
-          <h2>Connect to your agent</h2>
+          <h3>Connect to your agent</h3>
           <p>{status.message}</p>
           <button className="btn secondary" disabled={refreshing} onClick={() => startTransition(() => router.refresh())}>
             <RefreshCw size={16} aria-hidden="true" /> {refreshing ? "Checking…" : "Check connection"}

@@ -15,6 +15,20 @@ test("shows an empty campaign list when the agent has saved none", () => {
   assert.doesNotMatch(html, /href="\/campaigns\//);
 });
 
+test("separates unavailable workspace data from an empty campaign list", () => {
+  const html = renderToStaticMarkup(createElement(CampaignLibrary, { error: "Could not reach oma-agent." }));
+  assert.match(html, /Campaign workspace unavailable/);
+  assert.match(html, /role="alert">Could not reach oma-agent\./);
+  assert.doesNotMatch(html, /No campaigns yet/);
+});
+
+test("shows a single setup action and explains when saved links need a retry", () => {
+  const html = renderToStaticMarkup(createElement(CampaignLibrary, { saved: [], setup: { needsRetry: true } }));
+  assert.match(html, /Your project links are saved/);
+  assert.match(html, /href="\/onboarding"[^>]*>Finish project setup/);
+  assert.doesNotMatch(html, /href="\/chat"|Set up your project/);
+});
+
 test("lists an agent-saved campaign without a bundled fallback", () => {
   const html = renderToStaticMarkup(createElement(CampaignLibrary, {
     saved: [{ id: "seo", name: "Retail search", description: "", version: "", agentCount: 1 }],

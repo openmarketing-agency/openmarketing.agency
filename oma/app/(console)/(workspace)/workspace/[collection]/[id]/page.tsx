@@ -133,7 +133,14 @@ async function RecordDetail({ params, searchParams }: Props) {
             </>
           )}
         </>
-      ) : <p className="form-error" role="alert">{error}</p>}
+      ) : (
+        <header className="record-heading">
+          <div>
+            <h1>Workspace record unavailable</h1>
+            <p className="form-error" role="alert">{error}</p>
+          </div>
+        </header>
+      )}
     </div>
   );
 }
@@ -141,8 +148,8 @@ async function RecordDetail({ params, searchParams }: Props) {
 function RecordColumns({ children, related }: { children: ReactNode; related: ReactNode }) {
   return (
     <div className="record-columns">
-      {related && <aside className="record-related" aria-label="Related workspace records">{related}</aside>}
       {children}
+      {related && <aside className="record-related" aria-label="Related workspace records">{related}</aside>}
     </div>
   );
 }

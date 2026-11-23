@@ -1,16 +1,25 @@
-/** Provides persistent workspace navigation and orientation across the console. */
+/** Provides workspace navigation and account access across console routes. */
 
 "use client";
 
 import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowUpRight, ChevronRight, ClipboardCheck, LogOut, Megaphone, MessageSquare, Plug } from "lucide-react";
+import { ClipboardCheck, LogOut, Megaphone, MessageSquare, Plug } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
 import { Brand } from "@/components/brand";
 
-type ConsoleProps = { email?: string; demo?: boolean; children: ReactNode };
+import "./console-shell.css";
+
+const destinations = [
+  { href: "/dashboard", label: "Campaigns", icon: Megaphone },
+  { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
+  { href: "/connections", label: "Tools", icon: Plug },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
+];
+
+type ConsoleProps = { email?: string; children: ReactNode };
 
 export function ConsoleShell(props: ConsoleProps) {
   return (
@@ -24,74 +33,47 @@ function PathAwareConsole(props: ConsoleProps) {
   return <ConsoleFrame {...props} pathname={usePathname()} />;
 }
 
-function AccountAction({ demo }: { demo: boolean }) {
-  return demo ? (
-    <Link href="/login" className="icon-button" aria-label="Go to sign in"><LogOut size={17} aria-hidden="true" /></Link>
-  ) : (
+function SignOut() {
+  return (
     <form action={logoutAction}>
-      <button className="icon-button" aria-label="Sign out"><LogOut size={17} aria-hidden="true" /></button>
+      <button type="submit" className="icon-button" aria-label="Sign out" title="Sign out">
+        <LogOut size={17} aria-hidden="true" />
+      </button>
     </form>
   );
 }
 
-function ConsoleFrame({ email, demo = false, children, pathname }: ConsoleProps & { pathname: string }) {
-  const home = demo ? "/demo" : "/dashboard";
-  const campaignDetail = pathname.startsWith(demo ? "/demo/campaigns/" : "/campaigns/");
-  const approvalDetail = !demo && pathname.startsWith("/approvals/");
-  const record = !demo && pathname.match(/^\/workspace\/(brands|playbooks|agents)\//)?.[1];
-  const nav = [
-    { href: home, label: "Campaigns", icon: Megaphone, active: pathname === home || campaignDetail || Boolean(record) },
-    ...(!demo ? [{ href: "/approvals", label: "Approvals", icon: ClipboardCheck, active: pathname === "/approvals" || approvalDetail }] : []),
-    { href: demo ? "/demo/connections" : "/connections", label: "Tools", icon: Plug, active: pathname === (demo ? "/demo/connections" : "/connections") },
-    ...(!demo ? [{ href: "/chat", label: "Chat", icon: MessageSquare, active: pathname === "/chat" }] : []),
-  ];
-  const current = campaignDetail ? "Campaign details"
-    : record === "brands" ? "Brand details"
-      : record === "playbooks" ? "Playbook details"
-        : record === "agents" ? "Agent profile"
-          : approvalDetail ? "Review draft" : nav.find(({ active }) => active)?.label ?? "Campaigns";
+function ConsoleFrame({ email, children, pathname }: ConsoleProps & { pathname: string }) {
+  const inCampaignWorkspace = pathname.startsWith("/campaigns/") || pathname.startsWith("/workspace/");
+  const active = inCampaignWorkspace ? destinations[0] : destinations.find(({ href }) =>
+    pathname === href || pathname.startsWith(`${href}/`),
+  );
 
   return (
-    <div className="console-frame">
-      <header className="mobile-header">
-        <Brand href={home} />
-        {email && <AccountAction demo={demo} />}
+    <div className="workbench">
+      <header className="workbench-mobile">
+        <Brand />
+        {active && <span>{active.label}</span>}
+        {email && <SignOut />}
       </header>
-      <aside className="sidebar" aria-label="Main navigation">
-        <div className="sidebar-brand"><Brand href={home} /></div>
-        <nav className="sidebar-navigation" aria-label="Workspace">
-          {nav.map(({ href, label, icon: Icon, active }) => (
-            <Link key={href} href={href} className={`nav-link${active ? " active" : ""}`}
-              aria-current={pathname === href ? "page" : undefined}>
-              <Icon size={19} aria-hidden="true" /> <span>{label}</span>
+      <aside className="workbench-nav">
+        <div className="workbench-brand"><Brand /></div>
+        <nav className="workbench-links" aria-label="Workspace">
+          {destinations.map(({ href, label, icon: Icon }) => (
+            <Link key={href} href={href}
+              aria-current={href === active?.href ? (pathname === href ? "page" : "location") : undefined}>
+              <Icon size={19} strokeWidth={1.7} aria-hidden="true" />
+              <span>{label}</span>
             </Link>
           ))}
         </nav>
-        {email && <div className="sidebar-bottom">
-          <div className="account">
-            <span className="avatar" aria-hidden="true">{email.slice(0, 1).toUpperCase()}</span>
-            <div><strong title={email}>{demo ? "Demo workspace" : email}</strong></div>
-            <AccountAction demo={demo} />
-          </div>
+        {email && <div className="workbench-account">
+          <span className="avatar" aria-hidden="true">{email[0].toUpperCase()}</span>
+          <strong title={email}>{email}</strong>
+          <SignOut />
         </div>}
       </aside>
-      <div className="console-body">
-        <header className="console-topbar">
-          <nav aria-label="Breadcrumb">
-            <Link href={home}>Workspace</Link><ChevronRight size={14} aria-hidden="true" />
-            <span aria-current="page">{current}</span>
-          </nav>
-        </header>
-        <main id="main-content" className="console-sheet">
-          {demo && (
-            <div className="demo-banner">
-              Demo mode · Connections are simulated.
-              <Link href="/register">Create your workspace <ArrowUpRight size={12} aria-hidden="true" /></Link>
-            </div>
-          )}
-          {children}
-        </main>
-      </div>
+      <main id="main-content" tabIndex={-1} className="workbench-main">{children}</main>
     </div>
   );
 }
