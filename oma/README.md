@@ -28,9 +28,11 @@ The database tests create isolated SQLite files in a temporary directory. First 
 
 The Campaigns dashboard shows live oma-agent activity counts and the status of the submitted project setup, including its current tool when the gateway reports one.
 
-## Approval preview
+## Campaign publishing and approvals
 
-Open **Approvals** in the console to review sample drafts by campaign. Saved edits and approval decisions are stored in your browser. The mock chat can shorten copy, suggest a call to action, or apply a specific text replacement. Review decisions in this preview apply to the sample drafts.
+Choose a publishing mode in the campaign’s **Settings**. **Approve** is the default and sends public posts and replies for review. **Control** pauses scheduled work and runs explicitly approved publications. **Yolo** runs automation and auto-approves new publication drafts. **Approvals** shows saved campaign publications with their account, content, media, and reply target. Approving a revision queues the campaign’s publisher agent on its Kanban board. The agent records the result against the reviewed revision. Publication reviews use the native workflow in oma-agent v0.1.20 through the private workspace socket.
+
+Mode changes save to the campaign’s `config.yaml` and sync with the saved revision. Model and MCP changes include their API keys in the private sync request when applicable. The console waits for running campaigns to stop before sync and restarts them after success. Campaigns already stopped stay stopped when syncing settings.
 
 ## Use the API and connections
 

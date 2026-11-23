@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
 import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
+import { approveCampaignPublication } from "@/lib/server/agent-publications";
 import { completeAgentSetup, needsAgentSetup, requireAgentSetup } from "@/lib/server/agent-setup";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
 import { brandUpdate, knowledgeUpdate, playbookUpdate, previewCampaignPlan, saveCampaignConfiguration, saveCampaignMode, saveCampaignPlan, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
@@ -67,6 +68,25 @@ export async function saveCampaignModeAction(
   } catch (error) {
     revalidatePath("/campaigns/" + id);
     return { error: error instanceof WorkspaceRequestError ? error.message : "Couldn’t save the campaign mode." };
+  }
+}
+
+export async function approveCampaignPublicationAction(
+  campaignId: string, publicationId: string, _previous: { error?: string; queued?: boolean }, form: FormData,
+): Promise<{ error?: string; queued?: boolean }> {
+  const user = await requireUser();
+  requireAgentSetup(user.id);
+  const revision = form.get("revision");
+  try {
+    await approveCampaignPublication(campaignId, publicationId, {
+      revision: typeof revision === "string" && /^[0-9]+$/.test(revision) ? Number(revision) : undefined,
+      approver: user.id,
+    });
+    revalidatePath("/approvals");
+    return { queued: true };
+  } catch (error) {
+    revalidatePath("/approvals");
+    return { error: error instanceof WorkspaceRequestError ? error.message : "Couldn’t queue the publisher." };
   }
 }
 

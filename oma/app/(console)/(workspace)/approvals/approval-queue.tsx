@@ -1,104 +1,118 @@
-/** Groups review items by campaign and reflects draft decisions saved in this browser. */
+/** Renders campaign publication previews with their platform, content, and review status. */
 
-"use client";
-
-import { ArrowUpRight, ClipboardCheck, FileText, Mail, MessageSquare } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { ArrowUpRight, ClipboardCheck, FileText, Mail, MessageSquare } from "lucide-react";
+import type { CampaignPublication, CampaignPublicationGroup } from "@/lib/server/agent-publications";
+import { PublicationApproval } from "./publication-approval";
 
-import { useApprovalDrafts } from "@/lib/approval-storage";
-import { approvalCampaigns, approvalStatusLabels, mockApprovals } from "@/lib/approvals";
+const platformLabels: Record<string, string> = {
+  x: "X", twitter: "X", linkedin: "LinkedIn", discord: "Discord", facebook: "Facebook",
+  instagram: "Instagram", reddit: "Reddit", slack: "Slack", email: "Email",
+};
+const statusLabels: Partial<Record<string, string>> = {
+  draft: "Draft", pending_approval: "Needs approval", approved: "Approved", queued: "Queued",
+  publishing: "Publishing", published: "Published", failed: "Publishing failed",
+  rejected: "Rejected", superseded: "Superseded",
+};
+const kindLabels: Record<string, string> = { post: "Post", reply: "Reply", comment: "Comment", email: "Email" };
 
-const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-
-export function ApprovalQueue({ userId }: { userId: string }) {
-  const { drafts } = useApprovalDrafts(userId);
-  const [campaign, setCampaign] = useState("all");
-  const [status, setStatus] = useState("all");
-  const campaignFilter = useRef<HTMLSelectElement>(null);
-  const approvals = mockApprovals.map((item) => ({ ...item, ...drafts[item.id] }));
-  const pending = approvals.filter((item) => item.status === "pending").length;
-  const groups = approvalCampaigns
-    .filter((group) => campaign === "all" || campaign === group.id)
-    .map((group) => ({
-      ...group,
-      items: approvals.filter((item) => item.campaign === group.id && (status === "all" || status === item.status)),
-    }))
-    .filter((group) => group.items.length > 0);
-  const shown = groups.reduce((count, group) => count + group.items.length, 0);
-
+export function PublicationCard({ campaignId, publication }: { campaignId: string; publication: CampaignPublication }) {
+  const { account, content, target, result, status, platform, kind, id, revision } = publication;
+  const platformName = platformLabels[platform] ?? platform.replaceAll("-", " ");
+  const accountName = account.displayName || account.handle || account.id;
+  const Icon = platform === "email" ? Mail : kind === "reply" ? MessageSquare : FileText;
   return (
-    <div className="page-content approvals-page">
-      <header className="approvals-heading">
-        <div>
-          <h1>Approvals</h1>
-          <p>Review and edit sample campaign drafts. Decisions are saved in this browser.</p>
+    <article className="publication-card" id={`publication-${campaignId}-${id}`} data-platform={platform}>
+      <header className="publication-card-heading">
+        <span className="publication-avatar">
+          {account.avatar
+            ? <Image src={account.avatar} alt="" width={36} height={36} referrerPolicy="no-referrer" unoptimized />
+            : <Icon aria-hidden="true" size={19} />}
+        </span>
+        <div className="publication-identity">
+          <h3>{accountName}</h3>
+          <p>{platformName} · {kindLabels[kind] ?? kind}{account.handle && account.handle !== accountName ? ` · ${account.handle}` : ""}</p>
         </div>
-        <span className="approval-preview-label">Approval preview</span>
+        <span className="approval-status" data-status={status}>{statusLabels[status] ?? status.replaceAll("_", " ")}</span>
       </header>
-
-      <div className="approvals-toolbar">
-        <p className="approvals-count" aria-live="polite">
-          <ClipboardCheck size={17} aria-hidden="true" /> {shown} {shown === 1 ? "draft" : "drafts"} shown
-          <span className="approvals-pending">{pending} pending review</span>
-        </p>
-        <div className="approvals-filters">
-          <label>
-            <span>Campaign</span>
-            <select ref={campaignFilter} value={campaign} onChange={(event) => setCampaign(event.target.value)}>
-              <option value="all">All campaigns</option>
-              {approvalCampaigns.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Status</span>
-            <select value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="all">All statuses</option>
-              {Object.entries(approvalStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-        </div>
-      </div>
-
-      {groups.length ? (
-        <div className="approval-groups">
-          {groups.map((group) => (
-            <section className="approval-group" key={group.id} aria-labelledby={"approval-group-" + group.id}>
-              <div className="approval-group-heading">
-                <h2 id={"approval-group-" + group.id}>{group.name}</h2>
-                <span>{group.items.length} {group.items.length === 1 ? "draft" : "drafts"}</span>
-              </div>
-              <ul>
-                {group.items.map((item) => {
-                  const Icon = item.format === "Email" ? Mail : item.channel === "Blog" || item.channel === "Website" ? FileText : MessageSquare;
-                  return (
-                    <li key={item.id}>
-                      <Link href={"/approvals/" + item.id} className="approval-row">
-                        <span className="approval-draft-ident">
-                          <span className="approval-format-icon"><Icon size={17} aria-hidden="true" /></span>
-                          <span><strong>{item.title}</strong><span className="approval-format">{item.format}</span></span>
-                        </span>
-                        <span className="approval-status" data-status={item.status}>{approvalStatusLabels[item.status]}</span>
-                        <time dateTime={item.submitted}>{dateFormat.format(new Date(item.submitted))}</time>
-                        <ArrowUpRight className="approval-row-arrow" size={17} aria-hidden="true" />
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ))}
-        </div>
-      ) : (
-        <div className="approvals-empty">
-          <h2>No drafts match these filters</h2>
-          <button type="button" className="btn secondary" onClick={() => {
-            setCampaign("all");
-            setStatus("all");
-            campaignFilter.current?.focus();
-          }}>Clear filters</button>
-        </div>
+      <dl className="publication-details">
+        <div><dt>Account ID</dt><dd>{account.id}</dd></div>
+        <div><dt>Revision</dt><dd>{revision}</dd></div>
+      </dl>
+      {target && (
+        <figure className="publication-target">
+          <figcaption>
+            Replying to {target.author || target.providerId}
+            {target.url && <a href={target.url} target="_blank" rel="noreferrer">View original <ArrowUpRight size={13} aria-hidden="true" /></a>}
+          </figcaption>
+          {target.text && <blockquote>{target.text}</blockquote>}
+          {target.providerId && <p>Target ID {target.providerId}</p>}
+        </figure>
       )}
+      {content.text && <p className="publication-copy">{content.text}</p>}
+      {content.media.length > 0 && (
+        <ul className="publication-media" aria-label="Publication media">
+          {content.media.map(({ assetId, kind: mediaKind, url, alt }, index) => (
+            <li key={`${index}-${assetId}`}>
+              {url && mediaKind === "image" && <Image src={url} alt={alt} width={640} height={360}
+                referrerPolicy="no-referrer" unoptimized />}
+              {url ? <a href={url} target="_blank" rel="noreferrer">
+                {mediaKind === "image" ? "View image" : "Open attachment"} {index + 1} <ArrowUpRight size={13} aria-hidden="true" />
+              </a> : <p>Attachment {index + 1} · {assetId}</p>}
+              {alt && <p>{alt}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <footer className="publication-card-footer">
+        {result?.url && <a href={result.url} target="_blank" rel="noreferrer">View published item <ArrowUpRight size={14} aria-hidden="true" /></a>}
+        {result?.providerId && <span>Published ID {result.providerId}</span>}
+        {publication.approval?.approvedAt && (
+          <span>{publication.approval.source === "automatic" ? "Automatically approved" : `Approved by ${publication.approval.approvedBy}`} · <time dateTime={publication.approval.approvedAt}>
+            {publication.approval.approvedAt.slice(0, 10)}
+          </time></span>
+        )}
+        {status === "pending_approval" && <PublicationApproval
+          key={revision} campaignId={campaignId} publicationId={id} revision={revision} />}
+      </footer>
+    </article>
+  );
+}
+
+export function ApprovalQueue({ groups, selected, error }: {
+  groups: CampaignPublicationGroup[];
+  selected: boolean;
+  error?: string;
+}) {
+  const pending = groups.reduce((count, group) => count + group.items.filter(({ status }) => status === "pending_approval").length, 0);
+  const hasItems = groups.some(({ items, error, skipped }) => items.length > 0 || error || skipped);
+  return (
+    <div className="page-content approvals-page publication-queue">
+      <header className="approvals-heading">
+        <div><h1>Approvals</h1><p>Review the exact publication before queuing the campaign’s publisher.</p></div>
+        {selected && <Link href="/approvals" className="btn secondary">All campaigns</Link>}
+      </header>
+      {error && <p role="alert" className="form-error">{error}</p>}
+      {hasItems && <p className="approvals-count"><ClipboardCheck size={17} aria-hidden="true" /> {pending} pending review</p>}
+      {groups.filter(({ items, error, skipped }) => items.length > 0 || error || skipped).map((group) => (
+        <section className="approval-group" key={group.id} aria-labelledby={"approval-group-" + group.id}>
+          <div className="approval-group-heading"><h2 id={"approval-group-" + group.id}>{group.name}</h2></div>
+          {group.error && <p role="alert" className="form-error">{group.error}</p>}
+          {group.skipped > 0 && <p role="alert" className="form-error">
+            {group.skipped} {group.skipped === 1 ? "publication has" : "publications have"} unreadable preview data.
+          </p>}
+          <div className="publication-list">
+            {group.items.map((item) => <PublicationCard key={item.id} campaignId={group.id} publication={item} />)}
+          </div>
+          {group.nextCursor && <Link className="btn secondary"
+            href={`/approvals?campaign=${group.id}&before=${group.nextCursor}`}>Older publications</Link>}
+        </section>
+      ))}
+      {!error && !hasItems && <div className="approvals-empty">
+        <h2>No publications to review</h2>
+        <p>Publication drafts submitted by your campaign agents will appear here.</p>
+      </div>}
     </div>
   );
 }
