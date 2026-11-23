@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
 import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
-import { brandUpdate, knowledgeUpdate, playbookUpdate, previewCampaignPlan, saveCampaignConfiguration, saveCampaignPlan, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { approveWorkspacePublication, brandUpdate, knowledgeUpdate, listWorkspacePublications, playbookUpdate, previewCampaignPlan, publicationRevision, saveCampaignConfiguration, saveCampaignPlan, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -92,4 +92,31 @@ export async function deployCampaignAction(
     revalidatePath("/dashboard");
   }
   return result;
+}
+
+export async function loadSavedCampaignPublications(id: string, before?: number) {
+  await requireUser();
+  if (before !== undefined && !publicationRevision.safeParse(before).success) {
+    return { ok: false, status: 422, message: "Invalid publications page." };
+  }
+  try {
+    return { ok: true, page: await listWorkspacePublications(id, before) };
+  } catch (error) {
+    if (error instanceof WorkspaceRequestError) return { ok: false, status: error.status, message: error.message };
+    throw error;
+  }
+}
+
+export async function approveSavedCampaignPublication(id: string, publicationId: string, revision: unknown) {
+  const user = await requireUser();
+  const parsed = publicationRevision.safeParse(revision);
+  if (!parsed.success) return { ok: false, status: 422, message: "A positive publication revision is required." };
+  try {
+    const publication = await approveWorkspacePublication(id, publicationId, parsed.data, user.id);
+    revalidatePath("/campaigns/" + id);
+    return { ok: true, publication };
+  } catch (error) {
+    if (error instanceof WorkspaceRequestError) return { ok: false, status: error.status, message: error.message };
+    throw error;
+  }
 }

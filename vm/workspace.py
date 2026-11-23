@@ -8,6 +8,7 @@ from base64 import b64encode
 from contextlib import ExitStack, contextmanager
 from hashlib import sha256
 from http.server import BaseHTTPRequestHandler
+from importlib.util import find_spec
 from io import StringIO
 from itertools import chain
 import json
@@ -22,7 +23,7 @@ import sqlite3
 import stat
 import subprocess
 import sys
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from markdown_it import MarkdownIt
 
@@ -362,6 +363,7 @@ def project(collection, source, directory, record_id=None):
             "goals": strings(data.get("goals")), "plans": strings(data.get("plans")),
             "board": string(data.get("kanban_board_name")) or string(data.get("kanban_board")),
             "installationState": string(data.get("installation_state")), "model": model_name(data.get("model")),
+            "mode": string(data.get("mode"), "yolo"),
             "lifecycleState": ("paused" if data.get("installation_state") == "installing" else
                                string(data.get("lifecycle_state"), "resumed" if data.get("installation_state") == "installed" else "paused")),
         }
@@ -1073,6 +1075,36 @@ def agent_profile(root, record_id):
         raise WorkspaceError(422, "This agent profile contains invalid text.") from None
 
 
+def campaign_publications(root, campaign_id, query="", *, publication_id=None, request=None):
+    if not valid_id(campaign_id) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", campaign_id):
+        raise WorkspaceError(404, "This campaign was not found.")
+    try:
+        available = find_spec("hermes_cli.oma_campaigns.publications") is not None
+    except ModuleNotFoundError:
+        available = False
+    if not available:
+        raise WorkspaceError(503, "Campaign publications are unavailable in this agent image.")
+    from hermes_cli.oma_campaigns.publications import PublicationError, approve_publication, list_publications
+
+    try:
+        if publication_id is not None:
+            if not isinstance(request, dict) or set(request) != {"revision", "approver"}:
+                raise WorkspaceError(422, "Invalid publication approval request.")
+            return approve_publication(root.parent, campaign_id, publication_id, request["revision"], request["approver"])
+        params = parse_qs(query, keep_blank_values=True, max_num_fields=2)
+        if set(params) - {"before", "limit"} or any(
+            len(values) != 1 or not re.fullmatch(r"[0-9]{1,16}", values[0]) for values in params.values()
+        ):
+            raise WorkspaceError(422, "Invalid publications page.")
+        return list_publications(root.parent, campaign_id, **{key: int(values[0]) for key, values in params.items()})
+    except PublicationError as exc:
+        raise WorkspaceError(exc.status, str(exc)) from None
+    except ValueError:
+        raise WorkspaceError(422, "Invalid publication request or campaign record.") from None
+    except (OSError, sqlite3.Error):
+        raise WorkspaceError(503, "Could not access campaign publications. Retry to finish queuing an approval.") from None
+
+
 class WorkspaceHandler(BaseHTTPRequestHandler):
     def setup(self):
         self.request.settimeout(5)
@@ -1086,11 +1118,13 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         payload = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         self.wfile.write(payload)
 
     def do_GET(self):
+        publications = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications(?:\?(.*))?", self.path)
         document = re.fullmatch(r"/workspace/brands/([^/]+)/documents/([a-f0-9]{16})", self.path)
         logo = re.fullmatch(r"/workspace/brands/([^/]+)/logos/([A-Za-z0-9_-]{1,64})", self.path)
         profile = re.fullmatch(r"/workspace/agents/([^/]+)/profile", self.path)
@@ -1107,6 +1141,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = brand_logo(self.server.root, *logo.groups())
             elif profile:
                 result = agent_profile(self.server.root, profile[1])
+            elif publications:
+                result = campaign_publications(self.server.root, publications[1], publications[2] or "")
             else:
                 self.reply(404, {"message": "Unknown workspace request."})
                 return
@@ -1118,21 +1154,27 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             return
         self.reply(200, result)
 
-    def read_update(self):
+    def read_update(self, max_bytes=MAX_FILE_SIZE):
         length = int(self.headers.get("Content-Length", "0"))
-        if not 0 < length <= MAX_FILE_SIZE:
+        if not 0 < length <= max_bytes:
             raise WorkspaceError(413, "The workspace update is too large.")
         return json.loads(self.rfile.read(length))
 
     def do_POST(self):
+        approval = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications/([^/]+)/approve", self.path)
         path = re.fullmatch(r"/workspace/(campaigns|agents)/([^/]+)/(sync|deploy|plan-chat)", self.path)
         shared_model = self.path == "/workspace/agents/model"
-        if not shared_model and (not path or (path[1] == "agents" and path[3] != "sync")):
+        if not approval and not shared_model and (not path or (path[1] == "agents" and path[3] != "sync")):
             self.reply(404, {"message": "Unknown workspace request."})
             return
         try:
-            request = self.read_update()
-            if shared_model:
+            if approval and self.headers.get_content_type() != "application/json":
+                raise WorkspaceError(415, "Publication approval requires a JSON request.")
+            request = self.read_update(1024 if approval else MAX_FILE_SIZE)
+            if approval:
+                with self.server.edit_lock:
+                    result = campaign_publications(self.server.root, approval[1], publication_id=approval[2], request=request)
+            elif shared_model:
                 with self.server.edit_lock:
                     result = update_standalone_model(self.server.root, request)
             elif path and path[1] == "agents":

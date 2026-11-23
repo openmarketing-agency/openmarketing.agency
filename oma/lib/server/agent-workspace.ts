@@ -6,6 +6,29 @@ import { campaignPlanChatSchema, campaignPlanResponseSchema, campaignPlanSchema 
 
 export const workspaceId = z.string().max(64).regex(/^[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*$/);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
+const publicationCampaignId = z.string().max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+const campaignMode = z.enum(["yolo", "approve", "control"]);
+const publicationId = z.string().regex(/^[a-f0-9]{32}$/);
+export const publicationRevision = z.number().int().positive();
+const publication = z.object({
+  id: publicationId, revision: publicationRevision,
+  status: z.enum(["pending_approval", "approved", "publishing", "published", "failed"]),
+  platform: z.string(), kind: z.enum(["post", "reply"]),
+  account: z.object({ id: z.string(), name: z.string().optional(), handle: z.string().optional(), avatar_url: z.string().optional() }),
+  content: z.object({ text: z.string(), media: z.array(z.object({
+    asset_id: z.string(), kind: z.enum(["image", "video", "document"]), url: z.string().optional(), alt_text: z.string().optional(),
+  })).optional() }),
+  target: z.object({ id: z.string(), url: z.string().optional(), author_name: z.string().optional(),
+    author_handle: z.string().optional(), author_avatar_url: z.string().optional(), text: z.string().optional() }).optional(),
+  approval: z.object({ revision: publicationRevision, source: z.enum(["human", "automatic"]), by: z.string().nullable(), at: z.string() }).nullable(),
+  result: z.object({ provider_id: z.string(), url: z.string().optional(), published_at: z.string() })
+    .or(z.object({ error: z.string() })).nullable(),
+  task_id: z.string().nullable(), created_at: z.string(), updated_at: z.string(),
+});
+const publicationsPage = z.object({
+  campaign_id: publicationCampaignId, mode: campaignMode, publications: z.array(publication), next_cursor: z.number().int().positive().nullable(),
+});
+export type CampaignPublication = z.infer<typeof publication>;
 const strings = z.array(z.string());
 const stringMap = z.record(z.string(), z.string());
 const record = z.object({ id: workspaceId, name: z.string(), description: z.string() });
@@ -38,7 +61,7 @@ const campaign = record.extend({
   playbookId: z.string(), version: z.string(), orchestrator: z.string(), agentIds: strings,
   goals: strings, plans: strings, board: z.string(),
   installationState: z.string().optional(), model: z.string().optional(),
-  lifecycleState: z.string().optional(),
+  lifecycleState: z.string().optional(), mode: campaignMode.optional(),
   configuration: campaignConfiguration.optional(),
 });
 const agent = record.extend({
@@ -336,4 +359,29 @@ export async function saveCampaignConfiguration(
     const operation = deploy ? "deploy" : "sync";
     return { configuration: saved, error: "Settings were saved, but oma-agent could not " + operation + " the campaign. " + recovery };
   }
+}
+
+function publicationsPath(id: string) {
+  if (!publicationCampaignId.safeParse(id).success) throw new WorkspaceRequestError(404, "This campaign was not found.");
+  return `/workspace/campaigns/${id}/publications`;
+}
+
+export async function listWorkspacePublications(id: string, before?: number) {
+  const path = publicationsPath(id);
+  const cursor = before === undefined ? "" : `?before=${publicationRevision.parse(before)}`;
+  const result = publicationsPage.safeParse(await workspaceRequest(path + cursor));
+  if (!result.success || result.data.campaign_id !== id) {
+    throw new WorkspaceRequestError(502, "The agent workspace returned invalid publications.");
+  }
+  return result.data;
+}
+
+export async function approveWorkspacePublication(id: string, item: string, revision: number, approver: string) {
+  const path = publicationsPath(id);
+  if (!publicationId.safeParse(item).success) throw new WorkspaceRequestError(404, "Publication not found.");
+  const result = publication.safeParse(await workspaceRequest(`${path}/${item}/approve`, { revision, approver }, "POST"));
+  if (!result.success || result.data.id !== item || result.data.revision !== revision) {
+    throw new WorkspaceRequestError(502, "The agent workspace returned an invalid approval.");
+  }
+  return result.data;
 }
