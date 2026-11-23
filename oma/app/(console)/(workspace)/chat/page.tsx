@@ -14,7 +14,11 @@ export const metadata = { title: "Chat" };
 async function Chat() {
   await requireUser();
   return (
-    <div className="agent-library-page chat-page">
+    <div className="workspace-page chat-page">
+      <header className="workspace-heading">
+        <h1>Chat with oma-agent</h1>
+        <p>Ask about your workspace or plan what to do next in a campaign.</p>
+      </header>
       <HermesChat status={await agentStatus("default")} />
     </div>
   );

@@ -30,7 +30,12 @@ async function AgentProfile({ params }: Props) {
     return (
       <div className="agent-playbook-page record-detail">
         <Link className="back-link" href="/dashboard"><ArrowLeft size={14} aria-hidden="true" /> Campaigns</Link>
-        <p className="form-error" role="alert">{error}</p>
+        <header className="record-heading">
+          <div>
+            <h1>Agent profile unavailable</h1>
+            <p className="form-error" role="alert">{error}</p>
+          </div>
+        </header>
       </div>
     );
   }

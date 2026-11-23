@@ -112,7 +112,10 @@ export function OnboardingChat({ initial, resetOnOpen }: { initial: OnboardingVi
 
   return (
     <section aria-labelledby="onboarding-conversation-title">
-      <h1 id="onboarding-conversation-title" className="sr-only">Workspace setup conversation</h1>
+      <header className="onboarding-conversation-heading">
+        <h1 id="onboarding-conversation-title">Workspace setup conversation</h1>
+        <p>Continue setup through the configured oma-agent gateway.</p>
+      </header>
       {opening === "checking" && <p className="onboarding-chat-empty" role="status">Loading your setup…</p>}
       {typeof opening === "object" && <p className="onboarding-chat-empty" role="alert">{opening.error}</p>}
       {opening === "ready" && (

@@ -33,13 +33,13 @@ export function LoginForm() {
       <button className="btn primary auth-submit" disabled={pending}>
         {pending ? (
           <>
-            <LoaderCircle size={17} className="spin" />
+            <LoaderCircle size={17} className="spin" aria-hidden="true" />
             Signing in…
           </>
         ) : (
           <>
             Sign in
-            <ArrowRight size={17} />
+            <ArrowRight size={17} aria-hidden="true" />
           </>
         )}
       </button>

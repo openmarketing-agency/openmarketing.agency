@@ -63,6 +63,7 @@ export function ToolkitBrowser({
     : initialSnapshot.configured && !initialSnapshot.connected.length ? "all" : "connected";
   const [tab, setTab] = useState(startingTab);
   const [search, setSearch] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState("");
   const [categories, setCategories] = useState<{ id: string; name: string }[]>(
     [],
@@ -365,86 +366,92 @@ export function ToolkitBrowser({
           <RefreshCw size={16} className={busy === "refresh" ? "spin" : ""} />
         </button>
       </div>
-      <div className="tool-browser-tabs" aria-label="Tool lists">
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            aria-pressed={tab === item.id}
-            disabled={item.id === "all" && !canBrowseCatalog}
-            className={tab === item.id ? "selected" : ""}
-            onClick={() => {
-              if (item.id === "all" && tab !== "all") setLoading(true);
-              setTab(item.id);
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      <div className="tool-browser-filters">
-        <label className="search-box">
-          <Search size={16} />
-          <input
-            aria-label="Search tools"
-            placeholder={
-              canBrowseCatalog && (tab === "all" || isCampaign)
-                ? "Search tools…"
-                : tab === "connected" ? "Search connected tools…" : "Search campaign tools…"
-            }
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              if (isCampaign && canBrowseCatalog) setTab("all");
-              if (canBrowseCatalog && (tab === "all" || isCampaign)) setLoading(true);
-            }}
-          />
-          {search && (
+      {(isCampaign || canBrowseCatalog || connectedIds.length > 0) && <>
+        <div className="tool-browser-tabs" role="group" aria-label="Tool lists">
+          {tabs.map((item) => (
             <button
+              key={item.id}
+              aria-pressed={tab === item.id}
+              disabled={item.id === "all" && !canBrowseCatalog}
+              className={tab === item.id ? "selected" : ""}
               onClick={() => {
-                setSearch("");
-                if (tab === "all") setLoading(true);
+                if (item.id === "all" && tab !== "all") setLoading(true);
+                setTab(item.id);
               }}
-              aria-label="Clear tool search"
             >
-              <X size={14} />
+              {item.label}
             </button>
-          )}
-        </label>
-        {showCategories && canBrowseCatalog && <label className="tool-category-filter">
-          <span className="sr-only">Tool category</span>
-          <select
-            aria-label="Tool category"
-            value={category}
-            onChange={(event) => {
-              setCategory(event.target.value);
-              if (isCampaign && canBrowseCatalog) setTab("all");
-              if (canBrowseCatalog && (tab === "all" || isCampaign)) setLoading(true);
-            }}
-          >
-            <option value="">All categories</option>
-            {(demo
-              ? [
-                  ...new Map(
-                    demoCatalog
-                      .flatMap((tool) => tool.categories)
-                      .map((item) => [item.id, item]),
-                  ).values(),
-                ]
-              : categories
-            ).map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={14} />
-        </label>}
-      </div>
+          ))}
+        </div>
+        <div className="tool-browser-filters">
+          <label className="search-box">
+            <Search size={16} />
+            <input
+              ref={searchInput}
+              aria-label="Search tools"
+              placeholder={
+                canBrowseCatalog && (tab === "all" || isCampaign)
+                  ? "Search tools…"
+                  : tab === "connected" ? "Search connected tools…" : "Search campaign tools…"
+              }
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                if (isCampaign && canBrowseCatalog) setTab("all");
+                if (canBrowseCatalog && (tab === "all" || isCampaign)) setLoading(true);
+              }}
+            />
+            {search && (
+              <button
+                onClick={() => {
+                  setSearch("");
+                  if (tab === "all") setLoading(true);
+                  searchInput.current?.focus();
+                }}
+                aria-label="Clear tool search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </label>
+          {showCategories && canBrowseCatalog && <label className="tool-category-filter">
+            <span className="sr-only">Tool category</span>
+            <select
+              aria-label="Tool category"
+              value={category}
+              onChange={(event) => {
+                setCategory(event.target.value);
+                if (isCampaign && canBrowseCatalog) setTab("all");
+                if (canBrowseCatalog && (tab === "all" || isCampaign)) setLoading(true);
+              }}
+            >
+              <option value="">All categories</option>
+              {(demo
+                ? [
+                    ...new Map(
+                      demoCatalog
+                        .flatMap((tool) => tool.categories)
+                        .map((item) => [item.id, item]),
+                    ).values(),
+                  ]
+                : categories
+              ).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} />
+          </label>}
+        </div>
+      </>}
       {!snapshot.configured && !demo && (
-        <p className="notice">
-          <span>Tool connections need a Composio API key. Set <code>COMPOSIO_API_KEY</code> in the
-            root <code>.env</code> file, then run <code>docker compose up -d</code>.</span>
-        </p>
+        <div className="notice">
+          <div>
+            <strong>Tool provider setup required</strong>
+            <p>Set <code>COMPOSIO_API_KEY</code> in the console environment, then restart the console and refresh connections.</p>
+          </div>
+        </div>
       )}
       {notice && (
         <p role="status" className="notice">

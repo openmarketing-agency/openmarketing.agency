@@ -50,7 +50,7 @@ async function Setup() {
 export default function OnboardingPage() {
   return (
     <Suspense fallback={
-      <main id="main-content" className="onboarding-page">
+      <main id="main-content" tabIndex={-1} className="onboarding-page">
         <p className="onboarding-loading-page" role="status">Loading your setup…</p>
       </main>
     }>

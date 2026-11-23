@@ -1,11 +1,11 @@
 /* Keeps the workspace chat focused on the transcript, current status, and composer. */
-.chat-page { max-width: 58rem; margin-inline: auto; }
+.chat-page { max-width: 70rem; margin-inline: auto; }
 .chat-page .runtime-chat {
   display: flex;
   flex-direction: column;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 10px;
   background: var(--surface);
 }
 .chat-page-heading {
@@ -17,8 +17,8 @@
   padding: 18px 24px;
   border-bottom: 1px solid var(--border);
 }
-.chat-page-heading h1 {
-  font-size: 1.625rem;
+.chat-page-heading h2 {
+  font-size: 1.0625rem;
   line-height: 1.15;
   font-weight: 650;
   letter-spacing: -0.025em;
@@ -39,7 +39,7 @@
   align-content: center;
   flex: 1;
   gap: 10px;
-  min-height: 190px;
+  min-height: 240px;
   padding: 28px 20px;
   text-align: center;
 }
@@ -62,7 +62,7 @@
   margin: auto;
   text-align: center;
 }
-.runtime-conversation-empty h2, .runtime-empty h2 { font-size: 1.125rem; font-weight: 650; }
+.runtime-conversation-empty h3, .runtime-empty h3 { font-size: 1.125rem; font-weight: 650; }
 .runtime-conversation-empty p { margin-top: 5px; }
 .runtime-working {
   display: flex;

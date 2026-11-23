@@ -30,8 +30,9 @@ async function Detail({ params, searchParams }: Props) {
   if (!saved || !records) {
     if (!error) notFound();
     return (
-      <div className="agent-playbook-page">
+      <div className="agent-playbook-page campaign-page">
         <Link className="back-link" href="/dashboard"><ArrowLeft size={14} aria-hidden="true" /> Campaigns</Link>
+        <header className="campaign-heading"><h1>Campaign unavailable</h1></header>
         <p className="form-error" role="alert">{error}</p>
       </div>
     );

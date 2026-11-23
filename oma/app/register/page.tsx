@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Create account" };
 async function Registration() {
   await connection();
   if (!loadSettings().registrationEnabled || getDb().prepare("SELECT 1 FROM users WHERE slot = 1").get()) {
-    return <p className="settings-note">Registration is closed. Sign in with your existing account.</p>;
+    return <p className="settings-note" role="status">Registration is closed. Sign in with your existing account.</p>;
   }
   return <RegisterForm />;
 }

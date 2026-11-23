@@ -1,21 +1,13 @@
-/* Uses the console palette for the setup conversation. */
+/* Keeps the agent-led setup conversation readable while questions and replies update. */
 
 .onboarding-page {
-  --onboarding-ground: color-mix(in srgb, var(--inverse-surface) 76%, black);
-  --onboarding-line: color-mix(in srgb, var(--inverse-border) 58%, var(--onboarding-ground));
-  --onboarding-field: color-mix(in srgb, var(--inverse-surface) 85%, black);
   min-block-size: 100dvh;
-  background: var(--onboarding-ground);
-  color: var(--inverse-text);
-  color-scheme: dark;
-}
-
-.onboarding-page :focus-visible {
-  outline-color: var(--palette-aqua);
+  background: var(--ground);
+  color: var(--text);
 }
 
 .onboarding-header {
-  border-block-end: 1px solid var(--onboarding-line);
+  border-block-end: 1px solid var(--border);
 }
 
 .onboarding-header-inner,
@@ -38,7 +30,7 @@
 }
 
 .onboarding-header-inner a svg {
-  color: var(--palette-aqua);
+  color: var(--accent);
 }
 
 .onboarding-header-actions {
@@ -50,13 +42,13 @@
   min-block-size: 44px;
   padding-inline: 10px;
   border-radius: var(--radius);
-  color: var(--inverse-muted);
+  color: var(--muted);
   font-size: 0.875rem;
 }
 
 .onboarding-sign-out:hover {
-  background: var(--inverse-raised);
-  color: var(--inverse-text);
+  background: var(--raised);
+  color: var(--text);
 }
 
 .onboarding-shell {
@@ -64,13 +56,27 @@
   padding-block: clamp(28px, 6vh, 68px) max(36px, env(safe-area-inset-bottom));
 }
 
+.onboarding-conversation-heading {
+  margin-block-end: 24px;
+  padding-block-end: 18px;
+  border-block-end: 1px solid var(--border);
+}
+
+.onboarding-conversation-heading h1 {
+  font-size: clamp(1.75rem, 4vw, 2.375rem);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.onboarding-conversation-heading p { margin-block-start: 8px; }
+
 .onboarding-loading-page {
   padding: 32px;
-  color: var(--inverse-muted);
+  color: var(--muted);
 }
 
 .onboarding-chat-empty {
-  color: var(--inverse-muted);
+  color: var(--muted);
 }
 
 .onboarding-turn + .onboarding-turn {
@@ -78,7 +84,7 @@
 }
 
 .onboarding-transcript-reply {
-  color: var(--inverse-muted);
+  color: var(--muted);
 }
 
 .onboarding-user-message {
@@ -89,10 +95,10 @@
 
 .onboarding-user-message p {
   max-inline-size: min(88%, 56ch);
-  padding: 9px 13px;
-  border-radius: 12px 12px 3px 12px;
-  background: var(--inverse-active);
-  color: var(--inverse-text);
+  padding: 10px 14px;
+  border-radius: 10px 10px 3px 10px;
+  background: var(--accent-soft);
+  color: var(--text);
   font-size: 0.9375rem;
   line-height: 1.5;
   overflow-wrap: anywhere;
@@ -112,7 +118,7 @@
   align-items: center;
   gap: 10px;
   font-size: 0.9375rem;
-  color: var(--inverse-muted);
+  color: var(--muted);
 }
 
 .onboarding-typing span {
@@ -124,7 +130,7 @@
   inline-size: 5px;
   block-size: 5px;
   border-radius: 50%;
-  background: var(--palette-aqua);
+  background: var(--accent);
   animation: onboarding-typing 1.2s ease-in-out infinite alternate;
 }
 
@@ -151,7 +157,7 @@
   inline-size: 100%;
   min-block-size: 44px;
   padding: 8px 12px;
-  border: 1px solid var(--inverse-border);
+  border: 1px solid var(--control);
   border-radius: var(--radius);
   text-align: start;
   font-size: 0.9375rem;
@@ -162,19 +168,21 @@
   justify-content: space-between;
 }
 
+.onboarding-options :is(button, label) { background: var(--surface); }
+
 .onboarding-options button svg {
-  color: var(--inverse-muted);
+  color: var(--muted);
 }
 
 .onboarding-options input {
-  accent-color: var(--palette-aqua);
+  accent-color: var(--accent);
 }
 
 .onboarding-options button:hover:not(:disabled),
 .onboarding-options label:hover,
 .onboarding-options label:has(:checked) {
-  background: var(--inverse-raised);
-  border-color: var(--palette-aqua);
+  background: var(--raised);
+  border-color: var(--accent);
 }
 
 .onboarding-composer {
@@ -189,15 +197,15 @@
   inline-size: 100%;
   min-block-size: 44px;
   padding-inline: 12px;
-  border: 1px solid var(--inverse-border);
+  border: 1px solid var(--control);
   border-radius: var(--radius);
-  background: var(--onboarding-field);
+  background: var(--surface);
   font-size: 1rem;
-  caret-color: var(--palette-aqua);
+  caret-color: var(--accent);
 }
 
 .onboarding-custom-answer input::placeholder {
-  color: var(--inverse-muted);
+  color: var(--muted);
 }
 
 .onboarding-skip,
@@ -213,30 +221,30 @@
 }
 
 .onboarding-skip {
-  color: var(--inverse-muted);
+  color: var(--muted);
 }
 
 .onboarding-skip:hover:not(:disabled) {
-  background: var(--inverse-raised);
-  color: var(--inverse-text);
+  background: var(--raised);
+  color: var(--text);
 }
 
 .onboarding-send,
 .onboarding-enter {
-  background: var(--palette-aqua);
-  color: var(--onboarding-ground);
+  background: var(--accent);
+  color: var(--surface);
   font-weight: 600;
 }
 
 .onboarding-send:disabled {
-  background: var(--inverse-raised);
-  color: var(--inverse-muted);
+  background: var(--raised);
+  color: var(--muted);
   opacity: 1;
 }
 
 .onboarding-send:hover:not(:disabled),
 .onboarding-enter:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--palette-aqua) 75%, var(--inverse-text));
+  background: var(--accent-hover);
 }
 
 .onboarding-enter {
@@ -249,19 +257,19 @@
   align-items: center;
   gap: 0 12px;
   margin-block-start: 10px;
-  color: var(--negative-border);
+  color: var(--negative);
 }
 
 .onboarding-reply-error button {
   min-block-size: 44px;
-  color: var(--palette-aqua);
+  color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
 .onboarding-write-status {
   margin-block-start: 8px;
-  color: var(--inverse-muted);
+  color: var(--muted);
 }
 
 @media (max-width: 540px) {

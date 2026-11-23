@@ -1,0 +1,44 @@
+/* Sets the rhythm and control sizing for account entry and standalone error pages. */
+
+.entry-form-panel {
+  width: min(100%, 460px);
+  margin: clamp(18px, 8vh, 84px) auto 0;
+  padding: clamp(20px, 4vw, 36px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.entry-form-panel h1 {
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.entry-form-panel h1 + p { margin-top: 10px; font-size: 15px; }
+.entry-form-panel .settings-note { margin-top: 20px; }
+.entry-form-panel .auth-form { margin-top: 26px; }
+.entry-form-panel .auth-field input { min-height: 46px; border-radius: var(--radius); font-size: 16px; caret-color: var(--accent); }
+.entry-form-panel .password-input input { padding-inline-end: 48px; }
+
+.entry-form-panel .password-input button {
+  inset: 1px 1px auto auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: var(--radius);
+}
+
+.entry-form-panel .password-input button:hover { color: var(--accent); }
+.entry-form-panel .password-input button:focus-visible { outline-offset: -3px; }
+.entry-form-panel .auth-submit { min-height: 46px; font-size: 14px; }
+.entry-form-panel .workspace-entry-switch { align-items: center; justify-content: flex-start; }
+.entry-form-panel .workspace-entry-switch a { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; }
+.entry-missing-page .btn { margin-top: 20px; }
+
+@media (max-width: 520px) {
+  .entry-form-panel { margin-top: 15px; }
+}

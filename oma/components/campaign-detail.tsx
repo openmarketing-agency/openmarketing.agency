@@ -64,6 +64,7 @@ export function CampaignDetail({
     : campaign.installationState === "installing" ? "Installation incomplete"
       : campaign.board ? "Installation unverified" : "Draft";
   const needsDeployment = deploymentState === "Draft" || deploymentState === "Installation incomplete";
+  const settingsLinkToDeployment = view === "settings" && needsDeployment && Boolean(campaign.configuration);
   const { configuration, name, description, goals, plans } = campaign;
 
   function viewLink(nextView: View) {
@@ -111,8 +112,10 @@ export function CampaignDetail({
           {configuration && view === "overview" && (
             <Link className="btn secondary" {...viewLink("edit")}><Pencil size={15} aria-hidden="true" /> Edit plan</Link>
           )}
-          {view !== "deploy" && (
-            <Link className="btn primary" {...viewLink("deploy")}><Rocket size={16} aria-hidden="true" /> Deploy campaign</Link>
+          {view !== "deploy" && !settingsLinkToDeployment && (
+            <Link className={view === "edit" || view === "settings" ? "btn secondary" : "btn primary"} {...viewLink("deploy")}>
+              <Rocket size={16} aria-hidden="true" /> {needsDeployment ? "Deploy campaign" : "Review deployment"}
+            </Link>
           )}
         </div>
       </div>
@@ -156,7 +159,7 @@ export function CampaignDetail({
       {view === "deploy" && (
         <section className="campaign-deploy" aria-labelledby="campaign-deploy-heading">
           <h2 id="campaign-deploy-heading">Review deployment</h2>
-          <p>Deploying provisions the agent profiles and campaign board, then syncs the model and selected tools. Publishing and scheduling are separate actions.</p>
+          <p>Deployment prepares the agent profiles and campaign board, then applies the model and selected tools. Publishing and scheduling have their own controls.</p>
           {planDirty ? (
             <div className="campaign-next-action">
               <p>Save or discard the open plan edits before deploying.</p>

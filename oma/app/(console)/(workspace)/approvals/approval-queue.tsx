@@ -4,7 +4,7 @@
 
 import { ArrowUpRight, ClipboardCheck, FileText, Mail, MessageSquare } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useApprovalDrafts } from "@/lib/approval-storage";
 import { approvalCampaigns, approvalStatusLabels, mockApprovals } from "@/lib/approvals";
@@ -15,6 +15,7 @@ export function ApprovalQueue({ userId }: { userId: string }) {
   const { drafts } = useApprovalDrafts(userId);
   const [campaign, setCampaign] = useState("all");
   const [status, setStatus] = useState("all");
+  const campaignFilter = useRef<HTMLSelectElement>(null);
   const approvals = mockApprovals.map((item) => ({ ...item, ...drafts[item.id] }));
   const pending = approvals.filter((item) => item.status === "pending").length;
   const groups = approvalCampaigns
@@ -31,9 +32,9 @@ export function ApprovalQueue({ userId }: { userId: string }) {
       <header className="approvals-heading">
         <div>
           <h1>Approvals</h1>
-          <p>Review campaign drafts and make edits before approving them.</p>
+          <p>Review and edit sample campaign drafts. Decisions are saved in this browser.</p>
         </div>
-        <span className="approval-preview-label">Sample drafts</span>
+        <span className="approval-preview-label">Approval preview</span>
       </header>
 
       <div className="approvals-toolbar">
@@ -44,7 +45,7 @@ export function ApprovalQueue({ userId }: { userId: string }) {
         <div className="approvals-filters">
           <label>
             <span>Campaign</span>
-            <select value={campaign} onChange={(event) => setCampaign(event.target.value)}>
+            <select ref={campaignFilter} value={campaign} onChange={(event) => setCampaign(event.target.value)}>
               <option value="all">All campaigns</option>
               {approvalCampaigns.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
             </select>
@@ -91,7 +92,11 @@ export function ApprovalQueue({ userId }: { userId: string }) {
       ) : (
         <div className="approvals-empty">
           <h2>No drafts match these filters</h2>
-          <button type="button" className="btn secondary" onClick={() => { setCampaign("all"); setStatus("all"); }}>Clear filters</button>
+          <button type="button" className="btn secondary" onClick={() => {
+            setCampaign("all");
+            setStatus("all");
+            campaignFilter.current?.focus();
+          }}>Clear filters</button>
         </div>
       )}
     </div>
