@@ -5,7 +5,6 @@
 
 # Docker's legacy builder ignores vm/Dockerfile.dockerignore. Keep these VM inputs allowlisted here too.
 !vm/bootstrap.py
-!vm/campaign-compatibility.patch
 !vm/register_campaign_suggestions.py
 !vm/start.sh
 !vm/sync_standalone.py

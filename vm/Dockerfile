@@ -1,4 +1,4 @@
-ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.21@sha256:baadedfcf8a311614e466dbe18c72b9954218b4ccdd2ec071bcc57ecc42c06c3
+ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.22
 
 FROM ${OMA_AGENT_IMAGE} AS agent
 USER root
@@ -41,8 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=omactl-package /tmp/omactl/bin/omactl /usr/local/bin/omactl
 COPY --from=omactl-package /tmp/omactl/catalog /opt/omactl/catalog
 COPY --from=omactl-package /tmp/omactl/LICENSE /opt/omactl/LICENSE
-COPY vm/bootstrap.py vm/campaign-compatibility.patch vm/register_campaign_suggestions.py vm/start.sh vm/sync_standalone.py vm/workspace.py /opt/oma/
-RUN git -C /opt/hermes apply /opt/oma/campaign-compatibility.patch
+COPY vm/bootstrap.py vm/register_campaign_suggestions.py vm/start.sh vm/sync_standalone.py vm/workspace.py /opt/oma/
 RUN /opt/hermes/.venv/bin/python /opt/oma/register_campaign_suggestions.py \
     /opt/hermes/hermes_cli/oma_campaigns/schemas/campaign.schema.json
 
