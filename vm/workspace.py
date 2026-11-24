@@ -20,7 +20,8 @@ from secrets import token_hex
 from signal import SIGKILL
 from socketserver import ThreadingUnixStreamServer
 from tempfile import TemporaryFile
-from threading import Lock
+from threading import Lock, Thread
+from time import sleep
 import sqlite3
 import stat
 import subprocess
@@ -1276,6 +1277,18 @@ def sync_campaign_configuration(root, campaign_id, request, *, deploy=False):
         return campaign_configuration(read_file(record)[0])
 
 
+def campaign_lifecycle_status(root, campaign_id):
+    """Read the saved lifecycle without performing a pause, sync, or resume."""
+    with editable_record(root, "campaigns", campaign_id) as (_, source, _):
+        data = parse_record(source, campaign_id)
+        installed = data.get("installation_state")
+        state = "paused" if installed == "installing" else data.get(
+            "lifecycle_state", "resumed" if installed == "installed" else "paused")
+        if state not in ("paused", "pausing", "resumed"):
+            raise WorkspaceError(422, "The campaign's lifecycle state is invalid.")
+        return {"state": state, "revision": sha256(source).hexdigest()}
+
+
 def change_campaign_lifecycle(root, campaign_id, request):
     if (not isinstance(request, dict) or request.keys() - {"revision"} != {"state"}
             or request["state"] not in ("paused", "resumed")
@@ -1462,6 +1475,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         logo = re.fullmatch(r"/workspace/brands/([^/]+)/logos/([A-Za-z0-9_-]{1,64})", self.path)
         profile = re.fullmatch(r"/workspace/agents/([^/]+)/profile", self.path)
         kanban = re.fullmatch(r"/workspace/campaigns/([^/]+)/kanban", self.path)
+        lifecycle = re.fullmatch(r"/workspace/campaigns/([^/]+)/lifecycle", self.path)
         try:
             if self.path == "/workspace":
                 result = records(self.server.root)
@@ -1475,6 +1489,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = campaign_publications(self.server.root, publication_list[1], publication_list[2] or "")
             elif kanban:
                 result = campaign_kanban_status(self.server.root, kanban[1])
+            elif lifecycle:
+                result = campaign_lifecycle_status(self.server.root, lifecycle[1])
             elif document:
                 result = brand_document(self.server.root, *document.groups())
             elif logo:
@@ -1583,6 +1599,54 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self.reply(status, result)
 
 
+def pending_pause_revision(root, campaign_id):
+    """Return a revision only while the saved campaign still wants to pause."""
+    current = campaign_lifecycle_status(root, campaign_id)
+    return current["revision"] if current["state"] == "pausing" else None
+
+
+def pending_campaign_pauses(root):
+    """Capture pending pauses before this service accepts new console requests."""
+    try:
+        with open_directory(root) as workspace, open_directory("campaigns", workspace) as campaigns:
+            ids = sorted(filter(valid_id, os.listdir(campaigns)))
+    except OSError:
+        return []
+    pending = []
+    for campaign_id in ids:
+        try:
+            if pending_pause_revision(root, campaign_id):
+                pending.append(campaign_id)
+        except (WorkspaceError, OSError):
+            continue
+    return pending
+
+
+def recover_campaign_pauses(root, pending, edit_lock):
+    """Retry interrupted pauses through the normal lifecycle without resuming campaign work."""
+    while pending:
+        retry = []
+        for campaign_id in pending:
+            try:
+                with edit_lock:
+                    revision = pending_pause_revision(root, campaign_id)
+                    if not revision:
+                        continue
+                    result = change_campaign_lifecycle(root, campaign_id, {"state": "paused", "revision": revision})
+                if result["state"] == "paused":
+                    print(f"Completed interrupted pause for campaign {campaign_id}.", file=sys.stderr)
+                else:
+                    retry.append(campaign_id)
+            except WorkspaceError as error:
+                if error.status not in (404, 422):
+                    retry.append(campaign_id)
+            except OSError:
+                retry.append(campaign_id)
+        pending = retry
+        if pending:
+            sleep(5)
+
+
 if __name__ == "__main__":
     socket_path = Path(os.environ.get("OMA_WORKSPACE_SOCKET", "/run/oma-console/workspace.sock"))
     socket_path.unlink(missing_ok=True)
@@ -1592,4 +1656,7 @@ if __name__ == "__main__":
         server.plan_chat_lock = Lock()
         server.root = Path(os.environ["HERMES_HOME"]) / "oma"
         socket_path.chmod(0o660)
+        pending = pending_campaign_pauses(server.root)
+        if pending:
+            Thread(target=recover_campaign_pauses, args=(server.root, pending, server.edit_lock), daemon=True).start()
         server.serve_forever()

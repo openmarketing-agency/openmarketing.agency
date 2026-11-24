@@ -39,6 +39,7 @@ guest /opt/hermes/.venv/bin/python - < "$root/tests/bundled_campaign_sync.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_deploy.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/test_campaign_publications.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_kanban.py"
+guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_pause_recovery.py"
 guest bash -euo pipefail -c '
     test -x /usr/local/bin/omactl
     omactl version --json | python -c "import json, sys; assert json.load(sys.stdin)[\"data\"][\"version\"] == sys.argv[1]" "$1"
