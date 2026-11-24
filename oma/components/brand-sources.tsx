@@ -71,8 +71,15 @@ export function BrandChannels({ brand }: { brand: SavedBrand }) {
 }
 
 export function BrandResearch({ brand, path, selected }: Props) {
-  const hasDocuments = Boolean(brand.designSource || brand.documents?.length);
+  const hasDocuments = Boolean(brand.designSource || brand.documents?.length || brand.internalDocumentation);
   const researchPath = path + "?view=research";
+  const documentHref = (id: string) => researchPath + "&document=" + id + "#brand-document";
+  const reference = (file: string, label: string) => {
+    const document = brand.documents?.find(({ path }) => path === file.split("#")[0]);
+    return document
+      ? <Link href={documentHref(document.id)} title={file} prefetch={false}>{label}</Link>
+      : <small>{file}</small>;
+  };
   return (
     <div className="record-groups" id="brand-research">
       {selected ? (
@@ -89,11 +96,14 @@ export function BrandResearch({ brand, path, selected }: Props) {
             <h2>Documents</h2>
             {brand.designSource && <ExternalLink url={brand.designSource} label="Design system source" />}
           </div>
+          {brand.internalDocumentation && (
+            <p>Internal documentation: {labelFor(brand.internalDocumentation.mode)} · {reference(brand.internalDocumentation.index, "Read index")}</p>
+          )}
           {!!brand.documents?.length && (
             <ul className="workspace-document-list">
               {brand.documents.map(({ id, title, path: file }) => (
                 <li key={file}>
-                  <Link href={researchPath + "&document=" + id + "#brand-document"} prefetch={false}>
+                  <Link href={documentHref(id)} prefetch={false}>
                     <FileText size={17} aria-hidden="true" />
                     <span>{labelFor(title)}<small>{file}</small></span>
                     <ArrowRight size={15} aria-hidden="true" />
@@ -108,11 +118,12 @@ export function BrandResearch({ brand, path, selected }: Props) {
         <section className="record-group workspace-sources">
           <h2>Repositories</h2>
           <dl className="workspace-source-list">
-            {brand.repositories.map(({ label, url, commit }, index) => (
+            {brand.repositories.map(({ label, url, commit, notes }, index) => (
               <div key={index}>
                 <dt>{labelFor(label)}</dt>
                 <dd><ExternalLink url={url} />
                   {commit && <span className="workspace-source-status" title={commit}>Analyzed commit {commit.slice(0, 7)}</span>}
+                  {notes && reference(notes, "Read repository notes")}
                 </dd>
               </div>
             ))}
@@ -123,12 +134,13 @@ export function BrandResearch({ brand, path, selected }: Props) {
         <section className="record-group workspace-sources">
           <h2>Competitors</h2>
           <dl className="workspace-source-list">
-            {brand.competitors.map(({ label, url, sources }, index) => (
+            {brand.competitors.map(({ id, label, url, sources, report }, index) => (
               <div key={index}>
-                <dt>{label}</dt>
+                <dt>{label}{id && id !== label && <small>{id}</small>}</dt>
                 <dd>
                   {url && <ExternalLink url={url} />}
                   {sources.map((source, i) => <ExternalLink key={i} url={source} label={"Source " + (i + 1)} />)}
+                  {report && reference(report, "Read competitor report")}
                 </dd>
               </div>
             ))}
@@ -139,10 +151,13 @@ export function BrandResearch({ brand, path, selected }: Props) {
         <section className="record-group workspace-sources">
           <h2>Public website signals</h2>
           <dl className="workspace-source-list">
-            {brand.signals.map(({ label, status, signal }) => (
+            {brand.signals.map(({ label, status, signal, evidence }) => (
               <div key={label}>
                 <dt>{labelFor(label)}</dt>
-                <dd><span className="workspace-source-status">{signalLabels[status]}</span>{signal && <p>{signal}</p>}</dd>
+                <dd>
+                  <span className="workspace-source-status">{signalLabels[status]}</span>{signal && <p>{signal}</p>}
+                  {evidence && reference(evidence, evidence.includes("#") ? "Read evidence · " + evidence.split("#")[1] : "Read evidence")}
+                </dd>
               </div>
             ))}
           </dl>

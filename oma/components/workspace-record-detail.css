@@ -205,7 +205,7 @@
 }
 
 .record-empty { color: var(--muted); }
-.record-group > :is(.workspace-source-list, .record-palette, .record-logos) { margin-top: 14px; }
+.record-group > :is(.workspace-source-list, .record-palette, .record-asset-grid) { margin-top: 14px; }
 
 .record-group .workspace-source-list { gap: 0; }
 .record-group .workspace-source-list > div { padding-block: 12px; }
@@ -249,7 +249,7 @@
 
 .record-detail .record-document .back-link { margin-bottom: 12px; }
 
-.record-logos,
+.record-asset-grid,
 .record-palette {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
@@ -259,11 +259,11 @@
   margin-bottom: 0;
 }
 
-.record-logos { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.record-asset-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }
 
-.record-logos li,
+.record-asset-grid li,
 .record-palette > div { min-width: 0; }
-.record-logo-preview,
+.record-asset-preview,
 .record-swatch {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -271,23 +271,36 @@
   background: var(--raised);
 }
 
-.record-logo-preview {
+.record-asset-preview {
+  position: relative;
   display: grid;
   place-items: center;
-  height: 136px;
-  padding: 16px;
+  height: 152px;
+  overflow: hidden;
+  text-align: center;
 }
-.record-logo-preview:has(img) { background: #fff; }
-.record-logo-preview img {
-  width: 100%;
-  height: 102px;
-  object-fit: contain;
+.record-asset-image { background: #fff; }
+.record-asset-image img { object-fit: contain; }
+.record-asset-grid[data-category="screenshots"] .record-asset-image img { object-fit: cover; object-position: top; }
+.record-asset-grid[data-category="logos"] .record-asset-image img,
+.record-asset-grid[data-category="icons"] .record-asset-image img { padding: 12px; }
+.record-asset-unavailable,
+.record-font-preview { align-content: center; gap: 6px; padding: 12px; }
+.record-font-preview strong { font-size: 2rem; }
+.record-asset-links { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 5px; }
+.record-asset-links a { display: inline-flex; gap: 4px; align-items: center; font-size: 0.82rem; }
+.record-asset-grid li { overflow-wrap: anywhere; }
+.record-knowledge-source {
+  display: block;
+  color: var(--muted);
+  margin-top: 16px;
+  overflow-wrap: anywhere;
 }
 
 .record-swatch { height: 56px; }
-.record-logos strong,
+.record-asset-grid strong,
 .record-palette dt { font-weight: 600; }
-.record-logos small,
+.record-asset-grid small,
 .record-palette dd { display: block; color: var(--muted); font-size: 0.82rem; }
 
 .record-editor {
