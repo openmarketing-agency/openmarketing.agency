@@ -210,6 +210,44 @@ test("projects authorized run progress with sanitized public replies and reporte
 
 });
 
+test("chat reports progress from the same scoped poll as its prompt and final answer", async (t) => {
+  useGateway(t);
+  const endpoint = "http://vm:8642/p/default/v1/runs";
+  let payload: object = { status: "queued" };
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url === endpoint) return Response.json({ run_id: "run_chat_progress" }, { status: 202 });
+    assert.equal(url, endpoint + "/run_chat_progress");
+    return Response.json(payload);
+  });
+  const { handle } = await startAgentRun(account, message, "default");
+  const read = () => getAgentRun(account, handle, "default");
+  assert.deepEqual(await read(), { status: "running", phase: "queued" });
+
+  payload = { status: "running", tool: "web_search", progress_at: 1700000000, reasoning: "private reasoning" };
+  assert.deepEqual(await read(), {
+    status: "running", phase: "running", tool: "web_search", updatedAt: "2023-11-14T22:13:20.000Z",
+  });
+  payload = { status: "started", tool: key, progress_at: null };
+  assert.deepEqual(await read(), { status: "running", phase: "running" });
+
+  payload = { status: "running", pending_controls: [{
+    kind: "clarify", prompt_id: "ask-1", execution_generation: 2, question: "Which site?", choices: [], multi_select: false,
+  }] };
+  assert.deepEqual(await read(), { status: "running", phase: "waiting_for_answer", prompt: {
+    id: "ask-1", generation: 2, kind: "clarify", question: "Which site?", choices: [], multiSelect: false,
+  } });
+  payload = { status: "waiting_for_approval", tool: "terminal", pending_controls: [{
+    kind: "approval", prompt_id: "approve-1", execution_generation: 2, command: "echo ok", description: "Confirm action",
+  }] };
+  assert.deepEqual(await read(), { status: "running", phase: "waiting_for_approval", prompt: {
+    id: "approve-1", generation: 2, kind: "approval", command: "echo ok", description: "Confirm action",
+  } });
+  payload = { status: "stopping", tool: "terminal" };
+  assert.deepEqual(await read(), { status: "running", phase: "stopping" });
+  payload = { status: "completed", output: "Final reply" };
+  assert.deepEqual(await read(), { status: "completed", answer: "Final reply" });
+});
+
 test("streams only public assistant text for the owner and redacts a credential split across deltas", async (t) => {
   useGateway(t);
   const runEndpoint = "http://vm:8642/p/seo__orchestrator/v1/runs";
