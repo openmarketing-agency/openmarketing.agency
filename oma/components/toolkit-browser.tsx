@@ -278,13 +278,13 @@ export function ToolkitBrowser({
             window.location.assign(result.url);
             return;
           }
-          if (result.error || !result.connected) {
+          if (!result.connected) {
             setError(result.error ?? "The connection couldn’t be started.");
             return;
           }
           const fresh = await refreshConnectionsAction(scope);
           update(fresh.snapshot, fresh.selected ?? selected, tool);
-          if (fresh.error) setError(fresh.error);
+          if (result.error || fresh.error) setError(result.error ?? fresh.error ?? "");
           setNotice(`${tool.name} ${tool.noAuth ? "enabled" : "connected"}.`);
         }
       } catch {

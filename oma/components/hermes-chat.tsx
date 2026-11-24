@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { Bot, Plus, RefreshCw, Send } from "lucide-react";
 
-import { answerChatPrompt, readChatTurn, readOlderChatMessages, sendChatMessage } from "@/app/actions/chat";
+import { answerChatPrompt, readChatTurn, readOlderChatMessages, sendChatMessage, syncCompletedCampaignChat } from "@/app/actions/chat";
 import { maxChatMessageLength, type ActiveAgentRun, type AgentStatus, type ChatHistory, type ChatMessage } from "@/lib/agent-chat";
+import type { CampaignChanges } from "@/lib/server/agent-workspace";
 import { AgentActivity } from "./agent-activity";
 import { ChatProgress } from "./chat-progress";
 import { HermesPrompt } from "./hermes-prompt";
@@ -25,10 +26,20 @@ function runInTab(key: string | undefined) {
   }
 }
 
-function rememberRun(key: string, handle: string | null) {
+function readCampaignSnapshot(key: string): unknown {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(key + ":changes") ?? "null");
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberRun(key: string, handle: string | null, changes?: CampaignChanges) {
   try {
     if (handle) window.sessionStorage.setItem(key, handle);
     else window.sessionStorage.removeItem(key);
+    if (changes) window.sessionStorage.setItem(key + ":changes", JSON.stringify(changes));
+    else window.sessionStorage.removeItem(key + ":changes");
   } catch {
     // The conversation remains in Hermes even when browser storage is unavailable.
   }
@@ -58,6 +69,8 @@ export function HermesChat({
   const [currentHandle, setCurrentHandle] = useState<string | null>();
   const [run, setRun] = useState<ActiveAgentRun>();
   const [error, setError] = useState("");
+  const [syncStatus, setSyncStatus] = useState("");
+  const campaignSnapshot = useRef<CampaignChanges | undefined>(undefined);
   const transcript = useRef<HTMLDivElement>(null);
   const scrollDistanceFromEnd = useRef<number | undefined>(undefined);
   const thread = useRef(history.active?.id);
@@ -104,11 +117,27 @@ export function HermesChat({
           retry = setTimeout(() => void poll(run), 1500);
           return;
         }
-        if (thread.current) rememberRun(runKey(thread.current, campaignId), null);
+        const key = thread.current ? runKey(thread.current, campaignId) : undefined;
+        const before = campaignSnapshot.current ?? (key ? readCampaignSnapshot(key) : undefined);
+        let syncError: string | undefined;
+        setRun(undefined);
+        if (campaignId && before && result.ok && result.data.status === "completed") {
+          setSyncStatus("Checking for campaign changes…");
+          try {
+            const change = await syncCompletedCampaignChat(campaignId, run, before);
+            syncError = change?.error;
+            if (!cancelled) setSyncStatus(change?.synced ? "Campaign changes synced." : change?.staged ? "Campaign changes saved for first start." : "");
+          } catch {
+            syncError = "Couldn’t confirm the campaign sync. Open Agents to retry.";
+            if (!cancelled) setSyncStatus("");
+          }
+        }
+        if (key) rememberRun(key, null);
+        if (cancelled) return;
+        campaignSnapshot.current = undefined;
         setCurrentHandle(null);
         setPending(undefined);
-        setRun(undefined);
-        setError(result.ok ? (result.data.status === "failed" ? "oma-agent couldn’t finish this turn." : "") : result.message);
+        setError(syncError ?? (result.ok ? (result.data.status === "failed" ? "oma-agent couldn’t finish this turn." : "") : result.message));
         router.refresh();
       } catch {
         if (cancelled) return;
@@ -140,6 +169,7 @@ export function HermesChat({
     setMessage("");
     setSending(true);
     setError("");
+    setSyncStatus("");
     try {
       const result = await sendChatMessage(threadId, turn.id, turn.text, campaignId);
       if (!result.ok) {
@@ -150,7 +180,8 @@ export function HermesChat({
         }
         return;
       }
-      rememberRun(runKey(threadId, campaignId), result.data.handle);
+      campaignSnapshot.current = result.data.changes;
+      rememberRun(runKey(threadId, campaignId), result.data.handle, result.data.changes);
       setCurrentHandle(result.data.handle);
     } catch {
       setError("The connection was interrupted. Your message is ready to retry.");
@@ -221,7 +252,10 @@ export function HermesChat({
         ))}
         {pending && <div className="runtime-message from-user"><strong>You</strong><p>{pending.text}</p></div>}
       </div>
-      {status.ready && (sending || handle) && <ChatProgress run={run} sending={sending} reconnecting={!!handle && !!error} />}
+      {syncStatus ? <div className="runtime-progress">
+        <p className="runtime-progress-state" role="status">{syncStatus}</p>
+      </div> : status.ready && (sending || handle) &&
+        <ChatProgress run={run} sending={sending} reconnecting={!!handle && !!error} />}
       {(error || history.error) && <p className="form-error chat-error" role="alert">{error || history.error}</p>}
       {!status.ready ? (
         <div className="runtime-composer runtime-chat-offline">

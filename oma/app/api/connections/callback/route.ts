@@ -1,8 +1,11 @@
+import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionUser } from "@/lib/dal";
 import { appOrigin, toolConnections } from "@/lib/composio";
 import { accessCookieOptions } from "@/lib/cookies";
+import { refreshCampaignToolConnection } from "@/lib/server/agent-workspace";
+import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
 import {
   CONNECTION_COOKIE,
   CONNECTION_CALLBACK_PATH,
@@ -30,6 +33,18 @@ export async function GET(request: NextRequest) {
       );
     } catch {
       result = "failed";
+    }
+  }
+  if (result === "connected" && attempt?.playbookId && attempt.returnTo.startsWith("/campaigns/")) {
+    try {
+      const sync = await refreshCampaignToolConnection(attempt.playbookId, attempt.toolId,
+        (required) => generateCampaignMcpUrl(user.id, required));
+      if (sync?.error) result = "connected-sync-failed";
+    } catch {
+      result = "connected-sync-failed";
+    } finally {
+      revalidatePath("/campaigns/" + attempt.playbookId);
+      revalidatePath("/dashboard");
     }
   }
   const target = new URL(attempt?.returnTo ?? "/connections", appOrigin());

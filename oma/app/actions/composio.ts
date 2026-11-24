@@ -1,5 +1,6 @@
 "use server";
 import { randomBytes } from "node:crypto";
+import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { requireUser } from "@/lib/dal";
 import {
@@ -14,7 +15,7 @@ import {
   WORKSPACE_SCOPE,
   type ToolConnectionScope,
 } from "@/lib/agent-connections";
-import { changeToolSelection, readSelectedToolSlugs, selectionError } from "@/lib/tool-workspace";
+import { changeToolSelection, generateCampaignMcpUrl, readSelectedToolSlugs, selectionError } from "@/lib/tool-workspace";
 import { accessCookieOptions } from "@/lib/cookies";
 import {
   CONNECTION_COOKIE,
@@ -23,7 +24,7 @@ import {
 } from "@/lib/connection-attempt";
 import { type CatalogQuery, toolkitSlug } from "@/lib/tool-catalog";
 import { ToolConnectionConfigurationError } from "@/lib/tool-connection-service";
-import { loadAgentWorkspace, WorkspaceRequestError } from "@/lib/server/agent-workspace";
+import { loadAgentWorkspace, refreshCampaignToolConnection, WorkspaceRequestError } from "@/lib/server/agent-workspace";
 
 export async function refreshConnectionsAction(scope: ToolConnectionScope = WORKSPACE_SCOPE) {
   const user = await requireUser();
@@ -89,7 +90,19 @@ export async function connectToolAction(
         return { error: selectionError(error) };
       }
     }
-    if (result.connected) return { connected: true };
+    if (result.connected) {
+      if (campaignId === null) return { connected: true };
+      try {
+        const sync = await refreshCampaignToolConnection(campaignId, slug,
+          (required) => generateCampaignMcpUrl(user.id, required));
+        return { connected: true, error: sync?.error };
+      } catch {
+        return { connected: true, error: "Tool connected. Review the campaign tools and retry syncing." };
+      } finally {
+        revalidatePath("/campaigns/" + campaignId);
+        revalidatePath("/dashboard");
+      }
+    }
     const attempt = {
       userId: user.id,
       ownerId: user.id,

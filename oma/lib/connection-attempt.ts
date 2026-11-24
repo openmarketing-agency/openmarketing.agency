@@ -62,6 +62,8 @@ export function connectionFeedback(
   const messages: Record<string, string> = {
     connected:
       "Your connection status has been updated. Current tool access is shown below.",
+    "connected-sync-failed":
+      "Tool connected. Review the required tools and save them again to retry syncing.",
     pending:
       "Authorization is still pending. Finish signing in, then refresh the connections.",
     failed:
