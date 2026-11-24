@@ -5,7 +5,7 @@
 import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ClipboardCheck, LogOut, Megaphone, Plug, Settings } from "lucide-react";
+import { ClipboardCheck, ListTodo, LogOut, Megaphone, Plug, Settings } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
 import { Brand } from "@/components/brand";
@@ -14,6 +14,7 @@ import "./console-shell.css";
 
 const destinations = [
   { href: "/dashboard", label: "Campaigns", icon: Megaphone },
+  { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/connections", label: "Tools", icon: Plug },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -79,7 +80,7 @@ function ConsoleFrame({ email, children, conversation, pathname, selectedChat }:
           <SignOut />
         </div>}
       </aside>
-      {conversation ? (
+      {conversation && pathname !== "/tasks" ? (
         <div className="workbench-content">
           {main}
           <aside className="workbench-chat" aria-label="Workspace conversation">{conversation}</aside>

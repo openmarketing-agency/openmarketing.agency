@@ -67,6 +67,7 @@ try {
   assert.ok(ready, "The console did not start");
   await assertRedirect("/", "/dashboard");
   await assertRedirect("/dashboard", "/login?next=%2Fdashboard");
+  await assertRedirect("/tasks", "/login?next=%2Ftasks");
   await assertPage("/login?next=%2Fdashboard", "Sign in");
   await assertPage("/register", "Create account");
 
@@ -87,6 +88,8 @@ try {
   for (const path of ["/dashboard", "/settings", "/connections", "/approvals"]) {
     await assertPage(path, "Workspace chat", headers);
   }
+  await assertPage("/dashboard", 'href="/tasks"', headers);
+  await assertPage("/tasks", "Tasks unavailable", headers);
   await assertPage("/campaigns/fixture?view=deploy", "Campaign chat", headers);
   const lifecyclePath = "/api/campaigns/fixture/lifecycle";
   assert.ok([307, 401].includes((await request(lifecyclePath)).status));

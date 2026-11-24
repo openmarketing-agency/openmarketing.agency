@@ -5,6 +5,7 @@ fixed by the service, and runtime configuration and credentials stay private.
 """
 
 from base64 import b64encode
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing, contextmanager
 from hashlib import sha256
 from http.client import HTTPConnection, HTTPException
@@ -1503,6 +1504,45 @@ def progress_task(task):
     }
 
 
+def board_tasks(result):
+    columns = result.get("columns")
+    if not isinstance(columns, list) or any(
+        not isinstance(column, dict) or not isinstance(column.get("tasks"), list) for column in columns
+    ):
+        raise WorkspaceError(502, "Kanban returned invalid task columns.")
+    tasks = [task for column in columns for task in column["tasks"]]
+    if any(not isinstance(task, dict) or not KANBAN_SLUG.fullmatch(string(task.get("id")))
+           or not KANBAN_SLUG.fullmatch(string(task.get("status"))) for task in tasks):
+        raise WorkspaceError(502, "Kanban returned invalid tasks.")
+    return tasks
+
+
+def workspace_tasks(home):
+    status, result = read_kanban_dashboard(home, "/boards")
+    if status != 200 or not isinstance(result.get("boards"), list):
+        raise WorkspaceError(503, "Could not list the Kanban boards.")
+
+    def load_board(board):
+        slug = board["slug"]
+        name = progress_content(board.get("name"), 160) or slug
+        try:
+            status, data = read_kanban_dashboard(home, "/board?" + urlencode({"board": slug}))
+            if status != 200:
+                raise WorkspaceError(503, "Board unavailable.")
+            tasks = [
+                {**progress_task(task), "commentCount": max(0, task["comment_count"]) if type(task.get("comment_count")) is int else 0}
+                for task in board_tasks(data) if task["status"] != "archived"
+            ]
+            return {"slug": slug, "name": name, "tasks": tasks, "unavailable": False}
+        except WorkspaceError:
+            return {"slug": slug, "name": name, "tasks": [], "unavailable": True}
+
+    boards = {board["slug"]: board for board in objects(result["boards"])
+              if KANBAN_SLUG.fullmatch(string(board.get("slug"))) and not board.get("archived")}
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        return {"boards": list(pool.map(load_board, boards.values()))}
+
+
 def campaign_schedule(root, campaign_id, data):
     """Read the scheduler's snapshot without invoking native cron store repair paths."""
     if data.get("installation_state") != "installed":
@@ -1558,15 +1598,8 @@ def campaign_progress(root, campaign_id):
             result = read_campaign_board(root.parent, slug, "/board")
             if result is None:
                 board = {"state": "missing"}
-            elif isinstance(result.get("columns"), list):
-                columns = objects(result["columns"])
-                if len(columns) != len(result["columns"]) or any(not isinstance(column.get("tasks"), list) for column in columns):
-                    raise WorkspaceError(502, "Kanban returned invalid task columns.")
-                tasks = [task for column in columns for task in column["tasks"]]
-                if any(not isinstance(task, dict) or not KANBAN_SLUG.fullmatch(string(task.get("id")))
-                       or not KANBAN_SLUG.fullmatch(string(task.get("status"))) for task in tasks):
-                    raise WorkspaceError(502, "Kanban returned invalid tasks.")
-                board = {"state": "ready", "tasks": [progress_task(task) for task in tasks]}
+            else:
+                board = {"state": "ready", "tasks": [progress_task(task) for task in board_tasks(result)]}
     except WorkspaceError:
         # Keep native schedules available during an independent Kanban failure.
         pass
@@ -1583,9 +1616,7 @@ def campaign_task_activity(root, campaign_id, task_id):
     task = result["task"]
     return {
         "body": progress_content(task.get("body"), 6000), "result": progress_content(task.get("latest_summary") or task.get("result"), 6000),
-        "blockReason": next((progress_content(mapping(event.get("payload")).get("reason"), 1000)
-                             for event in reversed(objects(result.get("events"))) if event.get("kind") == "blocked"), "")
-        if task.get("status") == "blocked" else "",
+        "blockReason": task_block_reason(task, result),
         "events": [
             {"id": event["id"], "kind": progress_text(event.get("kind"), 40), "at": progress_timestamp(event.get("created_at"))}
             for event in reversed(objects(result.get("events"))[-20:]) if type(event.get("id")) is int
@@ -1598,6 +1629,71 @@ def campaign_task_activity(root, campaign_id, task_id):
             for run in reversed(objects(result.get("runs"))[-10:]) if type(run.get("id")) is int
         ],
     }
+
+def task_block_reason(task, result):
+    if task.get("status") != "blocked":
+        return ""
+    return next((progress_content(mapping(event.get("payload")).get("reason"), 1000)
+                 for event in reversed(objects(result.get("events"))) if event.get("kind") == "blocked"), "")
+
+
+def workspace_task_detail(home, slug, task_id):
+    path = "/tasks/" + task_id + "?" + urlencode({"board": slug})
+    status, result = read_kanban_dashboard(home, path)
+    task = mapping(result.get("task"))
+    if status == 404 or task.get("status") == "archived":
+        raise WorkspaceError(404, "Task not found on this board.")
+    if status != 200 or task.get("id") != task_id or not KANBAN_SLUG.fullmatch(string(task.get("status"))):
+        raise WorkspaceError(503, "Could not read this task.")
+    return {
+        "task": progress_task(task), "body": progress_content(task.get("body"), 6000),
+        "blockReason": task_block_reason(task, result),
+        "comments": [
+            {"id": item["id"], "author": progress_content(item.get("author"), 254),
+             "body": progress_content(item.get("body"), 4000), "at": progress_timestamp(item.get("created_at"))}
+            for item in objects(result.get("comments")) if type(item.get("id")) is int
+        ],
+    }
+
+
+def update_workspace_task(slug, task_id, request):
+    from hermes_cli import kanban_db
+    from hermes_cli.kanban_db_connect import connect_closing
+
+    if not isinstance(request, dict):
+        raise WorkspaceError(422, "Invalid task update.")
+    comment = request.get("action") == "comment" and set(request) == {"action", "author", "body"}
+    unblock = request == {"action": "unblock"}
+    body, author = string(request.get("body")).strip(), string(request.get("author")).strip()
+    if not (unblock or (comment and 0 < len(body) <= 4000 and 0 < len(author) <= 254)):
+        raise WorkspaceError(422, "Invalid task update.")
+    if not kanban_db.board_exists(slug) or kanban_db.read_board_metadata(slug).get("archived"):
+        raise WorkspaceError(404, "Kanban board not found.")
+    board_dir = kanban_db.board_dir(slug)
+    if any(path.is_symlink() for path in (board_dir, board_dir / "board.json", kanban_db.kanban_db_path(board=slug))):
+        raise WorkspaceError(404, "Kanban board not found.")
+    try:
+        with connect_closing(board=slug) as conn:
+            if comment:
+                with kanban_db.write_txn(conn):
+                    task = kanban_db.get_task(conn, task_id)
+                    if task is None or task.status == "archived":
+                        raise WorkspaceError(404, "Task not found on this board.")
+                    kanban_db.add_comment(conn, task_id, author, body)
+                return {"ok": True}
+
+            task = kanban_db.get_task(conn, task_id)
+            if task is None or task.status == "archived":
+                raise WorkspaceError(404, "Task not found on this board.")
+            # Use the native unblock operation rather than forcing Ready: it rechecks dependencies
+            # and won't overwrite a task that another operator already resumed.
+            if task.status != "blocked" or not kanban_db.unblock_task(conn, task_id):
+                raise WorkspaceError(409, "This task is no longer blocked. Refresh the list and check its status.")
+            updated = kanban_db.get_task(conn, task_id)
+            return {"status": updated.status if updated else ""}
+    except sqlite3.Error:
+        raise WorkspaceError(503, "Could not confirm the task update. Refresh the list before retrying.") from None
+
 
 def brand_document(root, record_id, document_id):
     with editable_record(root, "brands", record_id) as (record, source, _):
@@ -1644,6 +1740,8 @@ def agent_profile(root, record_id):
 
 
 class WorkspaceHandler(BaseHTTPRequestHandler):
+    task_path = re.compile(r"/workspace/tasks/([a-z0-9][a-z0-9_-]{0,63})/([a-z0-9][a-z0-9_-]{0,63})")
+
     def setup(self):
         self.request.settimeout(5)
         super().setup()
@@ -1671,6 +1769,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         changes = re.fullmatch(r"/workspace/campaigns/([^/]+)/changes", self.path)
         progress = re.fullmatch(r"/workspace/campaigns/([^/]+)/progress", self.path)
         task = re.fullmatch(r"/workspace/campaigns/([^/]+)/tasks/([^/]+)", self.path)
+        workspace_task = self.task_path.fullmatch(self.path)
         try:
             if self.path == "/workspace":
                 result = records(self.server.root)
@@ -1684,6 +1783,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = campaign_change_snapshot(self.server.root, changes[1])
             elif self.path == "/workspace/tool-selections":
                 result = tool_selections(self.server.root)
+            elif self.path == "/workspace/tasks":
+                result = workspace_tasks(self.server.root.parent)
+            elif workspace_task:
+                result = workspace_task_detail(self.server.root.parent, *workspace_task.groups())
             elif publication_list:
                 result = campaign_publications(self.server.root, publication_list[1], publication_list[2] or "")
             elif kanban:
@@ -1722,14 +1825,19 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         path = re.fullmatch(r"/workspace/(campaigns|agents)/([^/]+)/(sync|deploy|plan-chat)", self.path)
         shared_model = self.path == "/workspace/agents/model"
         selection_import = self.path == "/workspace/tool-selections/import"
-        if not (shared_model or selection_import or approval) and (not path or (path[1] == "agents" and path[3] != "sync")):
+        task = self.task_path.fullmatch(self.path)
+        if not (shared_model or selection_import or approval or task) and (not path or (path[1] == "agents" and path[3] != "sync")):
             self.reply(404, {"message": "Unknown workspace request."})
             return
         try:
             if approval and self.headers.get_content_type() != "application/json":
                 raise WorkspaceError(415, "Publication approval requires a JSON request.")
-            request = self.read_update(1024 if approval else MAX_FILE_SIZE)
-            if approval:
+            if task and self.headers.get_content_type() != "application/json":
+                raise WorkspaceError(415, "Task updates require a JSON request.")
+            request = self.read_update(1024 if approval else 32 * 1024 if task else MAX_FILE_SIZE)
+            if task:
+                result = update_workspace_task(*task.groups(), request)
+            elif approval:
                 with self.server.edit_lock:
                     result = approve_campaign_publication(self.server.root, *approval.groups(), request)
             elif shared_model:
