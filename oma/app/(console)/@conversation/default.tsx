@@ -1,7 +1,7 @@
-/** Keeps the conversation rail usable when a console route has no matching chat segment. */
+/** Renders the workspace conversation when a console page has no dedicated conversation entry. */
 
-import Conversation from "./[...section]/page";
+import { Conversation } from "./conversation";
 
 export default function DefaultConversation() {
-  return <Conversation params={Promise.resolve({ section: [] })} searchParams={Promise.resolve({})} />;
+  return <Conversation />;
 }
