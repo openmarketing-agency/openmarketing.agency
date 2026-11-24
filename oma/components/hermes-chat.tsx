@@ -3,10 +3,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { Bot, Plus, RefreshCw, Send } from "lucide-react";
 
-import { answerChatPrompt, readChatTurn, readOlderChatMessages, sendChatMessage, syncCompletedCampaignChat } from "@/app/actions/chat";
+import { answerChatPrompt, readChatTurn, readOlderChatMessages, sendChatMessage, steerChatMessage, syncCompletedCampaignChat } from "@/app/actions/chat";
 import { maxChatMessageLength, type ActiveAgentRun, type AgentStatus, type ChatHistory, type ChatMessage } from "@/lib/agent-chat";
 import type { CampaignChanges } from "@/lib/server/agent-workspace";
 import { AgentActivity } from "./agent-activity";
@@ -45,6 +45,23 @@ function rememberRun(key: string, handle: string | null, changes?: CampaignChang
   }
 }
 
+function draftInTab(key: string | undefined) {
+  try {
+    return key ? window.sessionStorage.getItem(key + ":draft") ?? "" : "";
+  } catch {
+    return "";
+  }
+}
+
+function handOffDraft(key: string, draft: string) {
+  try {
+    if (draft) window.sessionStorage.setItem(key + ":draft", draft);
+    else window.sessionStorage.removeItem(key + ":draft");
+  } catch {
+    // Only unsent text is handed off when the first turn attaches to saved history.
+  }
+}
+
 const subscribeToTab = (notify: () => void) => {
   window.addEventListener("storage", notify);
   return () => window.removeEventListener("storage", notify);
@@ -60,11 +77,17 @@ export function HermesChat({
   const router = useRouter();
   const headingId = useId();
   const [navigating, startTransition] = useTransition();
-  const [message, setMessage] = useState("");
+  const [draft, setDraft] = useState<string>();
+  const latestDraft = useRef<string | undefined>(undefined);
   const [older, setOlder] = useState<ChatMessage[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null | undefined>(undefined);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [sending, setSending] = useState(false);
+  const [steering, setSteering] = useState(false);
+  const [guidanceError, setGuidanceError] = useState("");
+  const [guidance, setGuidance] = useState<Array<{ id: string; handle: string; text: string }>>([]);
+  const steeringRequest = useRef(false);
+  const recoveredSteer = useRef<string | undefined>(undefined);
   const [pending, setPending] = useState<{ id: string; text: string }>();
   const [currentHandle, setCurrentHandle] = useState<string | null>();
   const [run, setRun] = useState<ActiveAgentRun>();
@@ -76,9 +99,19 @@ export function HermesChat({
   const thread = useRef(history.active?.id);
   const storageKey = history.active ? runKey(history.active.id, campaignId) : undefined;
   const storedHandle = useSyncExternalStore(subscribeToTab, () => runInTab(storageKey), () => null);
+  const handedOffDraft = useSyncExternalStore(subscribeToTab, () => draftInTab(storageKey), () => "");
+  const message = draft ?? handedOffDraft;
+  const setMessage = useCallback((update: string | ((current: string) => string)) => {
+    const key = thread.current ? runKey(thread.current, campaignId) : undefined;
+    const current = latestDraft.current ?? draftInTab(key);
+    const next = typeof update === "string" ? update : update(current);
+    latestDraft.current = next;
+    setDraft(next);
+    if (key && next !== current) handOffDraft(key, "");
+  }, [campaignId]);
   const handle = currentHandle === undefined ? storedHandle : currentHandle;
   const prompt = run?.prompt;
-  const canSend = status.ready && !handle && !pending && !sending && !navigating;
+  const canSend = status.ready && !navigating && !sending && !steering && (Boolean(handle) || !pending);
   const offset = nextOffset === undefined ? history.active?.nextOffset : nextOffset;
   const recent = history.active?.messages;
   const recentIds = new Set(recent?.map(({ id }) => id));
@@ -90,7 +123,7 @@ export function HermesChat({
       log.scrollTop = log.scrollHeight - (scrollDistanceFromEnd.current ?? 0);
       scrollDistanceFromEnd.current = undefined;
     }
-  }, [older, recent, pending, prompt]);
+  }, [older, recent, pending, prompt, guidance]);
 
   useEffect(() => {
     if (!handle || !status.ready) return;
@@ -137,7 +170,19 @@ export function HermesChat({
         campaignSnapshot.current = undefined;
         setCurrentHandle(null);
         setPending(undefined);
+        const pendingSteer = result.ok && result.data.status !== "running" ? result.data.pendingSteer : undefined;
+        if (pendingSteer) {
+          const suffix = campaignId ? "\n\nCampaign ID: " + campaignId : "";
+          const text = suffix && pendingSteer.endsWith(suffix) ? pendingSteer.slice(0, -suffix.length) : pendingSteer;
+          if (text.trim()) {
+            recoveredSteer.current = run;
+            setMessage((draft) => !draft.trim() || draft.trim() === text ? text : text + "\n\n" + draft);
+            setGuidanceError("The turn finished before using your guidance. You can send it as a follow-up.");
+          }
+        }
         setError(syncError ?? (result.ok ? (result.data.status === "failed" ? "oma-agent couldn’t finish this turn." : "") : result.message));
+        // Attaching the first turn to saved history remounts the composer under the native thread ID.
+        if (key && key !== storageKey) handOffDraft(key, latestDraft.current ?? "");
         router.refresh();
       } catch {
         if (cancelled) return;
@@ -147,7 +192,7 @@ export function HermesChat({
     }
     void poll(handle);
     return () => { cancelled = true; clearTimeout(retry); };
-  }, [campaignId, handle, router, status.ready]);
+  }, [campaignId, handle, router, setMessage, status.ready, storageKey]);
 
   function openChat(id: string) {
     const url = new URL(window.location.href);
@@ -155,8 +200,37 @@ export function HermesChat({
     startTransition(() => router.push(url.pathname + url.search + url.hash, { scroll: false }));
   }
 
+  async function sendGuidance(activeHandle: string, text: string) {
+    if (steeringRequest.current) return;
+    steeringRequest.current = true;
+    setSteering(true);
+    setGuidanceError("");
+    try {
+      const result = await steerChatMessage(activeHandle, text, campaignId);
+      if (!result.ok) {
+        setGuidanceError(result.message);
+        return;
+      }
+      const id = crypto.randomUUID();
+      setGuidance((messages) => [...messages, { id, handle: activeHandle, text }]);
+      if (recoveredSteer.current !== activeHandle) {
+        // Keep any new draft the user typed while this request was in flight.
+        setMessage((draft) => draft.trim() === text ? "" : draft);
+      }
+    } catch {
+      setGuidanceError("Couldn’t confirm that oma-agent received your guidance.");
+    } finally {
+      steeringRequest.current = false;
+      setSteering(false);
+    }
+  }
+
   async function send(text: string, retry = false) {
-    if (!text || !status.ready || sending || navigating || (retry ? !pending || !!handle : !canSend)) return;
+    if (!text || !status.ready || sending || steeringRequest.current || navigating || (retry ? !pending || !!handle : !canSend)) return;
+    if (handle) {
+      await sendGuidance(handle, text);
+      return;
+    }
     thread.current ??= crypto.randomUUID();
     const threadId = thread.current;
     if (!history.active) {
@@ -169,6 +243,8 @@ export function HermesChat({
     setMessage("");
     setSending(true);
     setError("");
+    setGuidanceError("");
+    setGuidance([]);
     setSyncStatus("");
     try {
       const result = await sendChatMessage(threadId, turn.id, turn.text, campaignId);
@@ -176,7 +252,7 @@ export function HermesChat({
         setError(result.message);
         if ([401, 403, 404, 409, 422].includes(result.status)) {
           setPending(undefined);
-          setMessage(turn.text);
+          setMessage((draft) => draft ? turn.text + "\n\n" + draft : turn.text);
         }
         return;
       }
@@ -251,12 +327,16 @@ export function HermesChat({
           </div>
         ))}
         {pending && <div className="runtime-message from-user"><strong>You</strong><p>{pending.text}</p></div>}
+        {guidance.filter((item) => item.handle === handle).map(({ id, text }) => (
+          <div key={id} className="runtime-message from-user"><strong>You</strong><p>{text}</p></div>
+        ))}
       </div>
       {syncStatus ? <div className="runtime-progress">
         <p className="runtime-progress-state" role="status">{syncStatus}</p>
       </div> : status.ready && (sending || handle) &&
         <ChatProgress run={run} sending={sending} reconnecting={!!handle && !!error} />}
       {(error || history.error) && <p className="form-error chat-error" role="alert">{error || history.error}</p>}
+      {guidanceError && <p className="form-error chat-error" role="status">{guidanceError}</p>}
       {!status.ready ? (
         <div className="runtime-composer runtime-chat-offline">
           <p>{status.message}</p>
@@ -264,29 +344,32 @@ export function HermesChat({
             <RefreshCw size={16} aria-hidden="true" /> {navigating ? "Checking…" : "Check connection"}
           </button>
         </div>
-      ) : pending && !handle ? (
-        <div className="runtime-composer runtime-chat-offline">
-          <button type="button" className="btn primary" disabled={sending || navigating}
-            onClick={() => void send(pending.text, true)}>{sending ? "Sending…" : "Retry message"}</button>
-        </div>
-      ) : prompt && handle ? <HermesPrompt key={prompt.id + ":" + prompt.generation} prompt={prompt} onAnswer={async (answer) => {
-        const { id, generation, kind } = prompt;
-        const result = await answerChatPrompt(handle, { id, generation, kind, answer });
-        return result.ok ? undefined : result.message;
-      }} /> : <form className="runtime-form runtime-composer" onSubmit={(event) => { event.preventDefault(); void send(message.trim()); }}>
-        <label className="sr-only" htmlFor={headingId + "-message"}>Message oma-agent</label>
-        <textarea id={headingId + "-message"} value={message} onChange={(event) => setMessage(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void send(message.trim());
-            }
-          }}
-          placeholder="Message oma-agent…" maxLength={maxChatMessageLength} rows={3} required disabled={!canSend} />
-        <button className="btn primary" disabled={!canSend || !message.trim()}>
-          <Send size={16} aria-hidden="true" /> {campaignId ? "Send" : "Send message"}
-        </button>
-      </form>}
+      ) : <>
+        {pending && !handle && !sending && <div className="runtime-composer runtime-chat-offline">
+          <button type="button" className="btn primary" disabled={navigating}
+            onClick={() => void send(pending.text, true)}>Retry message</button>
+        </div>}
+        {prompt && handle && <HermesPrompt key={prompt.id + ":" + prompt.generation} prompt={prompt} onAnswer={async (answer) => {
+          const { id, generation, kind } = prompt;
+          const result = await answerChatPrompt(handle, { id, generation, kind, answer });
+          return result.ok ? undefined : result.message;
+        }} />}
+        <form className="runtime-form runtime-composer" onSubmit={(event) => { event.preventDefault(); void send(message.trim()); }}>
+          <label className="sr-only" htmlFor={headingId + "-message"}>Message oma-agent</label>
+          <textarea id={headingId + "-message"} value={message} onChange={(event) => setMessage(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void send(message.trim());
+              }
+            }}
+            placeholder={handle ? "Steer this turn…" : "Message oma-agent…"}
+            maxLength={maxChatMessageLength} rows={3} required disabled={navigating} />
+          <button className="btn primary" disabled={!canSend || !message.trim()}>
+            <Send size={16} aria-hidden="true" /> {steering ? "Sending…" : handle ? "Send guidance" : campaignId ? "Send" : "Send message"}
+          </button>
+        </form>
+      </>}
     </section>
   );
 }
