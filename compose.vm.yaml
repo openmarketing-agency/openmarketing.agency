@@ -10,6 +10,8 @@ services:
       OMA_WORKSPACE_SOCKET: /run/oma-console/workspace.sock
 
   vm:
+    # Hermes uses the hostname to identify the owner of a Kanban claim on the persistent VM volume.
+    hostname: ${COMPOSE_PROJECT_NAME:-oma-local}-vm
     platform: ${OMA_VM_PLATFORM:-}
     build:
       context: .
