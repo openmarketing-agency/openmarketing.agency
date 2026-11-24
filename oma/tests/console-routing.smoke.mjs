@@ -88,6 +88,12 @@ try {
     await assertPage(path, "Workspace chat", headers);
   }
   await assertPage("/campaigns/fixture?view=deploy", "Campaign chat", headers);
+  const lifecyclePath = "/api/campaigns/fixture/lifecycle";
+  assert.ok([307, 401].includes((await request(lifecyclePath)).status));
+  assert.equal((await request("/api/campaigns/bad!/lifecycle", { headers })).status, 404);
+  const lifecycle = await request(lifecyclePath, { headers });
+  assert.equal(lifecycle.status, 503, "Missing workspace must be reported as unavailable");
+  assert.equal(lifecycle.headers.get("cache-control"), "private, no-store");
   console.log("Public auth and signed-in chat routes passed.");
 } finally {
   app.kill();

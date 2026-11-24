@@ -2,9 +2,9 @@
 
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Megaphone, Rocket } from "lucide-react";
 
 import { CampaignKanban } from "@/components/campaign-kanban";
@@ -45,6 +45,39 @@ export function CampaignDetail({
   agentCount: number;
 }) {
   const query = useSearchParams();
+  const router = useRouter();
+  const { id: campaignId, lifecycleState } = campaign;
+
+  useEffect(() => {
+    if (lifecycleState !== "pausing") return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function checkPause() {
+      if (!controller.signal.aborted) {
+        try {
+          if (!document.hidden) {
+            const response = await fetch(`/api/campaigns/${campaignId}/lifecycle`, {
+              signal: controller.signal, cache: "no-store",
+            });
+            if (response.ok) {
+              const { state } = await response.json();
+              if (!controller.signal.aborted && (state === "paused" || state === "resumed")) router.refresh();
+            }
+          }
+        } catch {
+          // The workspace may be temporarily unreachable while the VM restarts.
+        } finally {
+          if (!controller.signal.aborted) timer = setTimeout(() => void checkPause(), 4000);
+        }
+      }
+    }
+    void checkPause();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [campaignId, lifecycleState, router]);
+
   const requestedView = query.get("view");
   const view: View = requestedView === "deploy" ? requestedView
     : views.find(({ id }) => id === requestedView)?.id
