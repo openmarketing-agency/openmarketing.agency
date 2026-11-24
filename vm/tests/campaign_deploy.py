@@ -91,13 +91,13 @@ def verify(home):
     validate_record("campaign", data, record)
     validate_record("campaign", {**data, "integrations": ["discord", "facebook"]}, record)
     for invalid in ("discord", {"discord": True}, [42], [{"id": "discord"}],
-                    ["https://discord.com"], ["discord", "discord"], ["unknown-integration"]):
+                    ["https://discord.com"], ["discord", "discord"]):
         try:
             validate_record("campaign", {**data, "integrations": invalid}, record)
         except ValueError as error:
             assert "integrations" in str(error)
         else:
-            raise AssertionError("Campaign integrations must be unique canonical IDs")
+            raise AssertionError("Campaign integration IDs must be unique and syntactically valid")
     for invalid in ("github", ["GitHub"], ["github\n"], ["github", "github"]):
         try:
             validate_record("campaign", {**data, "tool_suggestions": invalid}, record)
@@ -195,8 +195,8 @@ def verify(home):
     if jobs.exists():
         assert not json.loads(jobs.read_bytes())["jobs"]
     assert "model" not in deployed and result["modelId"] == ""
-    assert "model" not in safe_load(agent.read_bytes())
-    assert safe_load(agent.read_bytes())["effective"]["model"]["default"] == "default-model"
+    saved_agent = safe_load(agent.read_bytes())
+    assert "model" not in saved_agent and "model" not in saved_agent.get("effective", {})
     assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "default-model"
     assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == default_key
     assert sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}}, deploy=True) == result
@@ -206,6 +206,10 @@ def verify(home):
     synced = sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}})
     assert synced["modelId"] == "" and "model" not in safe_load(record.read_bytes())
     assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "rotated-model"
+    assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == default_key
+    synced = sync_campaign_configuration(root, campaign_id, {
+        "revision": synced["revision"], "env": {"OPENROUTER_API_KEY": rotated_key},
+    })
     assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == rotated_key
 
     override = {
@@ -226,13 +230,14 @@ def verify(home):
     })
     synced = sync_campaign_configuration(root, campaign_id, {"revision": staged["revision"], "env": {}})
     assert synced["modelId"] == "" and "model" not in safe_load(record.read_bytes())
-    assert safe_load(agent.read_bytes())["effective"]["model"]["default"] == "rotated-model"
+    saved_agent = safe_load(agent.read_bytes())
+    assert "model" not in saved_agent and "model" not in saved_agent.get("effective", {})
     assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "rotated-model"
     assert safe_load(reviewer.read_bytes())["model"] == reviewer_model
     assert safe_load((home / "profiles" / reviewer_id / "config.yaml").read_bytes())["model"] == reviewer_model
 
     running = change_campaign_lifecycle(root, campaign_id, {"state": "resumed"})
-    assert running["state"] == "resumed" and running["missingIntegrations"] == []
+    assert running["state"] == "resumed"
     assert safe_load(record.read_bytes())["lifecycle_state"] == "resumed"
     assert change_campaign_lifecycle(root, campaign_id, {"state": "resumed"}) == running
     try:
@@ -242,10 +247,13 @@ def verify(home):
     else:
         raise AssertionError("A running campaign must stop before syncing.")
     assert change_campaign_lifecycle(root, campaign_id, {"state": "paused"})["state"] == "paused"
-    record.write_text(json.dumps({**safe_load(record.read_bytes()), "integrations": ["discord"]}))
-    blocked = change_campaign_lifecycle(root, campaign_id, {"state": "resumed"})
-    assert blocked["state"] == "paused" and blocked["missingIntegrations"] == ["discord"]
-    assert safe_load(record.read_bytes())["lifecycle_state"] == "paused"
+    declarations = ["discord", "workspace-managed-tool"]
+    record.write_text(json.dumps({**safe_load(record.read_bytes()), "integrations": declarations}))
+    revision = campaign_configuration(record.read_bytes())["revision"]
+    sync_campaign_configuration(root, campaign_id, {"revision": revision, "env": {}})
+    resumed = change_campaign_lifecycle(root, campaign_id, {"state": "resumed"})
+    assert resumed["state"] == "resumed"
+    assert safe_load(record.read_bytes())["integrations"] == declarations
 
     draft = {
         "platform": "x", "kind": "reply", "account": {"id": "fixture-account", "name": "Fixture"},

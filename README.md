@@ -6,11 +6,11 @@ New to the codebase? See the [architecture and workflow diagrams](docs/architect
 
 ## Run the full stack locally
 
-Use Docker Engine with Compose 2.24.4+ on an x86-64 Linux host or VM that supports privileged containers and nested Docker. No model API key is needed to start. To supply OpenRouter credentials at startup, set `OPENROUTER_API_KEY` in a private `.env` using [`.env.example`](.env.example) as a reference. If you already have a private environment file elsewhere, set `COMPOSE_ENV_FILES` to its path, then start the stack from this checkout.
+Use Docker Engine with Compose 2.24.4+ on a Linux host or VM that supports privileged containers and nested Docker. Source builds follow the Docker engine's native architecture (`linux/amd64` or `linux/arm64`); leave `DOCKER_DEFAULT_PLATFORM` unset to use that default. No model API key is needed to start. To supply OpenRouter credentials at startup, set `OPENROUTER_API_KEY` in a private `.env` using [`.env.example`](.env.example) as a reference. If you already have a private environment file elsewhere, set `COMPOSE_ENV_FILES` to its path, then start the stack from this checkout.
 
 ```sh
-make dev         # Console hot reload and the full runtime
-make production  # Production console build and the same full runtime
+make dev         # Console hot reload, the full runtime, and Camofox
+make production  # Production console build and the full runtime without Camofox
 ```
 
 The default OpenRouter model is [GPT-4.1 Mini](https://openrouter.ai/openai/gpt-4.1-mini). Set `OMA_HERMES_MODEL` in the environment file to choose a different initial model. Enter your provider key in the console after signing in. For direct Hermes use, credentials are also managed in [Hermes Dashboard → Keys](http://localhost:9119/env). OpenRouter inference still requires a valid key and network access. Set `OMA_INIT_CATALOG=0` to start Hermes without initializing the optional app catalog.
@@ -41,9 +41,9 @@ The campaign chat stays open on the right as you move between campaign sections.
 
 With a compatible agent image, trusted local processes can edit `/opt/data/oma/agents/{default,maintenance}/config.yaml` and then call `POST /workspace/agents/<id>/sync` over the private workspace Unix socket with JSON `{}` or `{"revision":"<sha256 of saved YAML>"}`. To apply an API key with a staged provider selection, include `"env": {"HERMES_MODEL_API_KEY": "<provider API key>"}` alongside the exact saved revision. The endpoint applies the saved model and reasoning settings. Trusted socket callers can also supply named profile credentials explicitly in `env` for agent or campaign sync. Values are passed to the native sync process over standard input. `409` means the saved file changed before it could be applied.
 
-Use **Deploy and start** to sync the campaign’s MCP connection and optional model override, deploy the campaign, then request `PUT /workspace/campaigns/<id>/lifecycle` with `{"state":"resumed"}`. A draft’s sync validates settings before deploy creates its board and agent profiles and applies those settings. Installed campaigns reuse their board and profiles. The lifecycle endpoint also accepts `{"state":"paused"}`. If oma-agent cannot verify a required integration, the campaign stays paused and the console shows which integration needs attention.
+Use **Deploy and start** to check integrations in the console, sync the campaign’s MCP configuration and optional model override, deploy the campaign, then request `PUT /workspace/campaigns/<id>/lifecycle` with `{"state":"resumed"}`. A draft’s sync validates settings before deploy creates its board and agent profiles and applies those settings. Installed campaigns reuse their board and profiles.
 
-Trusted local callers can also pause or resume with `PUT /workspace/campaigns/<id>/lifecycle`. A `202` response with `state: pausing` means work is still stopping. A response with `missingIntegrations` lists required accounts that must be connected before resume. Send the current `revision` to guard a lifecycle change against concurrent edits.
+Trusted local callers can also pause or resume with `PUT /workspace/campaigns/<id>/lifecycle`. A `202` response with `state: pausing` means work is still stopping. Resuming requires a configured model. Neither agent sync nor lifecycle checks integration catalog membership, brand evidence, or provider connections. Send the current `revision` to guard a lifecycle change against concurrent edits.
 
 In **Approvals**, review the exact publication revision, account, content, attachments, and reply target. The console reads `GET /workspace/campaigns/<id>/publications` with optional `before` and `limit` query parameters. The private `POST /workspace/campaigns/<id>/publications/<publication-id>/approve` endpoint receives the reviewed revision and the signed-in operator's ID, then queues the publisher. A stale revision returns `409`.
 
@@ -53,17 +53,21 @@ The console serves [API documentation](http://localhost:3000/docs) and a [databa
 
 The console and bundled agent both run under Docker. Quitting Docker Engine stops both. Run `make dev` or `make production` to start them together again. Press Ctrl+C in the `make dev` terminal, or run `docker compose -f compose.yaml -f compose.vm.yaml down`, to stop the full stack. Use the same environment file for Compose commands. The console stores SQLite and its signing key in `.oma-data/`. The VM volume holds Hermes profiles, gateway keys, the nested Docker engine, and catalog app data. Stop the stack before taking filesystem backups. Keep a secure copy of any configured signing or integration encryption keys.
 
-### Optional Camofox browser sidecar
+### Camofox browser sidecar
 
-Camofox runs on the private Compose network and has no published port. Generate a key once in a separate private file, and keep using that file when recreating the stack:
+Camofox runs on the private Compose network and has no published port. `make dev` uses `openssl` to generate `.env.camofox` on first run and reuses it on later runs. Keep this file private. A `CAMOFOX_API_KEY` set in the shell or your regular Compose environment file takes precedence over the generated key.
+
+To run Camofox with the production console build, use the overlay explicitly. If `.env.camofox` doesn't exist yet, generate it first. Add `--env-file .env` after `--env-file .env.camofox` if you also use a root `.env` file:
 
 ```sh
 mkdir -p -m 700 .oma-data
-(set -C; umask 077; printf 'CAMOFOX_API_KEY=%s\n' "$(openssl rand -hex 32)" > .env.camofox)
-docker compose --env-file .env --env-file .env.camofox -f compose.yaml -f compose.vm.yaml -f compose.camofox.yaml up --build -d --wait
+if [ ! -f .env.camofox ]; then
+  (set -Ce; umask 077; key=$(openssl rand -hex 32); printf 'CAMOFOX_API_KEY=%s\n' "$key" > .env.camofox)
+fi
+docker compose --env-file .env.camofox -f compose.yaml -f compose.vm.yaml -f compose.camofox.yaml up --build -d --wait
 ```
 
-The VM writes `CAMOFOX_URL=http://camofox:9377` and the key into the `default` and `maintenance` profiles’ `.env` files before starting Hermes. The key is also required for Camofox API requests other than health checks. It is not sent to Next.js. This runs the upstream browser image separately; it does not bundle the browser into the Apache-2.0 OMA image.
+Before starting Hermes, the VM writes `CAMOFOX_URL=http://camofox:9377` and `CAMOFOX_API_KEY` to the mounted Hermes home: `/opt/data/.env` for `default` and `/opt/data/profiles/maintenance/.env` for `maintenance`. It preserves unrelated entries. The key is required for Camofox API requests other than health checks and is not sent to Next.js. This runs the upstream browser image separately; it does not bundle the browser into the Apache-2.0 OMA image.
 
 ### Console only
 
@@ -102,11 +106,11 @@ The [release](https://github.com/openmarketing-agency/openmarketing.agency/relea
 To build and smoke-test the standalone image from this checkout:
 
 ```sh
-docker build --platform linux/amd64 -f vm/Dockerfile -t oma-vm:local .
+docker build -f vm/Dockerfile -t oma-vm:local .
 bash vm/tests/smoke.sh oma-vm:local
 ```
 
-The source for [omactl](https://github.com/openmarketing-agency/omactl) stays in its own repository. The VM build verifies and installs its pinned binary and catalog release.
+On AMD64, the VM build verifies and installs the pinned [omactl](https://github.com/openmarketing-agency/omactl) release package. On ARM64, it compiles the same pinned version and bundles its catalog. The prebuilt bare-metal release remains AMD64-only.
 
 ## Release
 

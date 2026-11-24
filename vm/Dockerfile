@@ -1,4 +1,4 @@
-ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.22@sha256:dc42f0f9760d1566be41ff8a66c620efd8a3a606cff02d4ecb60605ac0725556
+ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.22
 
 FROM ${OMA_AGENT_IMAGE} AS agent
 USER root
@@ -6,11 +6,31 @@ USER root
 FROM agent AS omactl-package
 ARG OMACTL_TAG=v0.1.0
 ARG OMACTL_SHA256=24bbb2443de35879b8952f9db8cb61e2f59b5d4e2bc33bba5eb6f10d71f03f40
+ARG OMACTL_SOURCE_COMMIT=cacffcfbc4562e3c0119bfcd57e03659ac984613
 WORKDIR /tmp/omactl
-RUN curl -fsSL --retry 3 "https://github.com/openmarketing-agency/omactl/releases/download/$OMACTL_TAG/omactl-linux-x64.tar.gz" -o package.tar.gz \
-    && printf '%s  package.tar.gz\n' "$OMACTL_SHA256" | sha256sum -c - \
-    && tar -xzf package.tar.gz --no-same-owner \
-    && test -x bin/omactl && test -s catalog/catalog.json
+# The pinned release publishes only an x64 package. Build its ARM64 counterpart from the same source.
+# Use the base image's architecture so this also works with Docker's legacy builder.
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) \
+        curl -fsSL --retry 3 "https://github.com/openmarketing-agency/omactl/releases/download/$OMACTL_TAG/omactl-linux-x64.tar.gz" -o package.tar.gz; \
+        printf '%s  package.tar.gz\n' "$OMACTL_SHA256" | sha256sum -c -; \
+        tar -xzf package.tar.gz --no-same-owner ;; \
+      arm64) \
+        curl -fsSL --retry 3 https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-linux-aarch64.zip -o bun.zip; \
+        printf '%s  bun.zip\n' baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e | sha256sum -c -; \
+        python3 -m zipfile -e bun.zip .; \
+        install -m 0755 bun-linux-aarch64/bun /usr/local/bin/bun; \
+        git init -q source; \
+        git -C source fetch --depth 1 https://github.com/openmarketing-agency/omactl.git "$OMACTL_SOURCE_COMMIT"; \
+        git -C source checkout -q --detach FETCH_HEAD; \
+        (cd source && bun install --frozen-lockfile && bun run build --current); \
+        install -D -m 0755 source/dist/omactl-linux-arm64 bin/omactl; \
+        cp -a source/catalog source/LICENSE . ;; \
+      *) echo 'omactl requires linux/amd64 or linux/arm64' >&2; exit 1 ;; \
+    esac; \
+    test -s catalog/catalog.json; \
+    bin/omactl version --json | python3 -c 'import json, sys; assert json.load(sys.stdin)["data"]["version"] == sys.argv[1]' "${OMACTL_TAG#v}"
 
 FROM agent
 # The base's /usr/bin/tini is a dispatcher to s6. Use the Debian init binary.
@@ -21,8 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=omactl-package /tmp/omactl/bin/omactl /usr/local/bin/omactl
 COPY --from=omactl-package /tmp/omactl/catalog /opt/omactl/catalog
 COPY --from=omactl-package /tmp/omactl/LICENSE /opt/omactl/LICENSE
-COPY vm/bootstrap.py vm/campaign-compatibility.patch vm/register_campaign_suggestions.py vm/start.sh vm/sync_standalone.py vm/workspace.py /opt/oma/
-RUN git -C /opt/hermes apply /opt/oma/campaign-compatibility.patch
+COPY vm/bootstrap.py vm/register_campaign_suggestions.py vm/start.sh vm/sync_standalone.py vm/workspace.py /opt/oma/
 RUN /opt/hermes/.venv/bin/python /opt/oma/register_campaign_suggestions.py \
     /opt/hermes/hermes_cli/oma_campaigns/schemas/campaign.schema.json
 
