@@ -1,39 +1,16 @@
-# Retains console campaign defaults and Composio checks on the bundled oma-agent image.
---- a/hermes_cli/oma_campaigns/lifecycle.py
-+++ b/hermes_cli/oma_campaigns/lifecycle.py
-@@ -13,6 +13,8 @@
- from hermes_cli.config import atomic_config_write
- from hermes_cli.config_backend import require_file_tooling
- from hermes_cli.kanban_db_connect import _dispatch_tick_lock, connect_closing
-+from hermes_cli.oma_campaigns.defaults import snapshot
-+from hermes_cli.oma_campaigns.integrations import missing_integrations
- from hermes_cli.oma_campaigns.install import _campaign_config_path, _campaigns_dir, _install_lock, _status
- from hermes_cli.oma_campaigns.schema import validate_record
- from hermes_cli.oma_campaigns.source import _member, read_mapping
-@@ -136,15 +138,21 @@
-             atomic_config_write(path, config)
-             if target == "paused":
-                 return {**result, "state": "paused"}
--        model = config.get("model")
-+        resolved, _ = snapshot(home, config)
-+        model = resolved.get("model")
-         model_id = model.get("default") if isinstance(model, dict) else model
-         if not isinstance(model_id, str) or not model_id.strip():
-             return {**result, "state": "paused", "missing_model": True}
-+        connection_home = (home / "profiles" / status["orchestrator"]
-+                           if config.get("mcp_servers", {}).get("composio") else home)
-+        missing = missing_integrations(home, config.get("integrations", []), connection_home=connection_home)
-+        if missing:
-+            return {**result, "state": "paused", "missing_integrations": missing}
-         if config.get("mode") == "control":
-             _control_cron(profiles, park=True)
-         else:
-             _control_cron(profiles, park=False)
--            if config.get("mode") in ("yolo", "approve"):
-+            if config.get("mode", "approve") in ("yolo", "approve"):
-                 _activate_new_jobs(profiles)
-             _skip_missed_recurring_jobs(profiles)
-         atomic_config_write(path, {**config, "lifecycle_state": "resumed"})
+# Retains console Composio checks and inherited model behavior on the bundled oma-agent image.
+--- a/hermes_cli/oma_campaigns/__main__.py
++++ b/hermes_cli/oma_campaigns/__main__.py
+@@ -47,7 +47,8 @@ def main(argv=None) -> int:
+             return 0
+         result = handlers[args.command](default_home(), args)
+         print(json.dumps(result, indent=2))
+-        return 3 if args.command == "lifecycle" and result.get("missing_model") is True else 0
++        blocked = args.command == "lifecycle" and (result.get("missing_model") or result.get("missing_integrations"))
++        return 3 if blocked else 0
+     except (ValueError, OSError) as exc:
+         print(f"OMA campaigns: {exc}", file=sys.stderr)
+         return 1
 --- a/hermes_cli/oma_campaigns/integrations.py
 +++ b/hermes_cli/oma_campaigns/integrations.py
 @@ -1,9 +1,14 @@
@@ -51,7 +28,7 @@
 
  from hermes_cli.oma_campaigns.schema import validate_record
  from hermes_cli.oma_campaigns.source import _member, read_mapping
-@@ -34,3 +39,74 @@
+@@ -34,3 +39,74 @@ def brand_candidates(home: Path) -> dict:
      canonical = {aliases.get(key, key.replace("_", "-")) for key in observed}
      supported = {key for key in canonical if catalog.get(key, {}).get("composio")}
      return {"candidates": sorted(supported), "unmapped": sorted(canonical - supported)}
@@ -126,226 +103,44 @@
 +        return asyncio.run(_search_composio(url, headers, queries))
 +    except Exception:  # health: allow BLE001 -- fail closed without emitting sensitive URL/header diagnostics
 +        return set()
---- a/hermes_cli/oma_campaigns/__main__.py
-+++ b/hermes_cli/oma_campaigns/__main__.py
-@@ -47,7 +47,8 @@
-             return 0
-         result = handlers[args.command](default_home(), args)
-         print(json.dumps(result, indent=2))
--        return 3 if args.command == "lifecycle" and result.get("missing_model") is True else 0
-+        blocked = args.command == "lifecycle" and (result.get("missing_model") or result.get("missing_integrations"))
-+        return 3 if blocked else 0
-     except (ValueError, OSError) as exc:
-         print(f"OMA campaigns: {exc}", file=sys.stderr)
-         return 1
---- a/hermes_cli/oma_campaigns/install.py
-+++ b/hermes_cli/oma_campaigns/install.py
-@@ -84,7 +84,7 @@
-         state = "installed" if ready else "draft"
-     lifecycle = config.get("lifecycle_state", "resumed" if state == "installed" else "paused")
-     return {**record, "state": state, "present_profiles": present,
--            "lifecycle_state": lifecycle, "mode": config.get("mode", "yolo"), "integrations": config.get("integrations", []),
-+            "lifecycle_state": lifecycle, "mode": config.get("mode", "approve"), "integrations": config.get("integrations", []),
-             "kanban_board": board if recorded else None,
-             "kanban_board_name": metadata["name"] if metadata else None}
-
-@@ -331,11 +331,11 @@
-         paths = {agent.id: (_agent_data_dir(home, agent.id, "saves"), _agent_data_dir(home, agent.id, "tmp"))
-                  for agent in campaign.agents}
-         inherited = "model" not in config
--        config, model_credential = snapshot(home, config)
--        inherited = inherited and "model" in config
-+        resolved_campaign, model_credential = snapshot(home, config)
-+        inherited = inherited and "model" in resolved_campaign
-         for name in model_credential:
-             require_env_writable(name, "set")
--        defaults = settings_from(config, campaign_id)
-+        defaults = settings_from(resolved_campaign, campaign_id)
-         effective = {agent.id: resolve_settings(defaults, settings_from(agent.config, agent.id))
-                      for agent in campaign.agents}
-         board = f"campaign-{campaign.id}"
-@@ -348,13 +348,14 @@
-             for agent in campaign.agents
-         }
-         for agent in campaign.agents:
--            configs[agent.id], _ = apply_profile_settings(configs[agent.id], authored[agent.id], config, agent.id,
-+            configs[agent.id], _ = apply_profile_settings(configs[agent.id], authored[agent.id], resolved_campaign, agent.id,
-                                                           orchestrator=agent.id == campaign.orchestrator, campaign=True)
-         camofox, skipped_camofox = _configure_camofox(home, configs)
-         credentials = {agent.id: {**(model_credential if "model" not in agent.config else {}),
-                                   **camofox.get(agent.id, {})} for agent in campaign.agents}
-         if (board_dir := kanban_db.board_dir(board)).exists() or board_dir.is_symlink():
-             raise ValueError(f"Kanban board {board!r} already exists; refusing to reuse an unrelated board")
-+        config.setdefault("integrations", [])
-         atomic_config_write(config_path, {**config, "kanban_board": board, "installation_state": "installing",
-                                           "lifecycle_state": "paused"})
-         try:
---- a/hermes_cli/oma_campaigns/publications.py
-+++ b/hermes_cli/oma_campaigns/publications.py
-@@ -152,7 +152,7 @@
-         rows = conn.execute(
-             _SELECT + " WHERE (? IS NULL OR p.seq < ?) ORDER BY p.seq DESC LIMIT ?", (before, before, limit + 1),
-         ).fetchall() if conn else []
--    return {"campaign_id": campaign_id, "mode": config.get("mode", "yolo"),
-+    return {"campaign_id": campaign_id, "mode": config.get("mode", "approve"),
-             "publications": [_view(row) for row in rows[:limit]],
-             "next_cursor": rows[limit - 1]["seq"] if len(rows) > limit else None}
-
-@@ -178,7 +178,7 @@
-     if agent_id not in config["agents"]:
-         raise PublicationError(403, "The agent does not belong to this campaign.")
-     payload = _draft_json(draft)
--    automatic = publication_id is None and config.get("mode", "yolo") == "yolo"
-+    automatic = publication_id is None and config.get("mode", "approve") == "yolo"
-     at = _now()
-     with _db(directory, write=True) as conn:
-         if publication_id is None:
-@@ -204,7 +204,7 @@
-
- def approve_publication(home: Path, campaign_id: str, publication_id: str, revision: int, approver: str) -> dict:
-     directory, config = _campaign(home, campaign_id)
--    if config.get("mode") not in ("approve", "control"):
-+    if config.get("mode", "approve") not in ("approve", "control"):
-         raise PublicationError(409, "This campaign does not use manual publication approval.")
-     if not isinstance(approver, str) or not 0 < len(approver) <= 128 or not approver.isprintable() or not approver.strip():
-         raise PublicationError(422, "A valid approver is required.")
-@@ -253,7 +253,7 @@
-     with _db(directory, write=True) as conn:
-         row = _row(conn, publication_id)
-         _check_revision(row, revision)
--        mode = config.get("mode", "yolo")
-+        mode = config.get("mode", "approve")
-         if (config.get("lifecycle_state", "resumed") != "resumed"
-                 or row["status"] != "approved" or not row["task_id"]
-                 or (mode in ("approve", "control") and not row["approved_by"])):
---- a/hermes_cli/oma_campaigns/admission.py
-+++ b/hermes_cli/oma_campaigns/admission.py
-@@ -30,7 +30,7 @@
-         return True
-     if profile is not None and profile not in roster:
-         return False
--    mode = run.get("mode", "yolo")
-+    mode = run.get("mode", "approve")
-     if mode not in ("yolo", "approve", "control") or (cron and mode == "control"):
-         return True
-     installed = run.get("installation_state") == "installed"
---- a/hermes_cli/oma_campaigns/schemas/campaign.schema.json
-+++ b/hermes_cli/oma_campaigns/schemas/campaign.schema.json
-@@ -18,7 +18,7 @@
-     "goals": { "$ref": "#/$defs/text_list" },
-     "plans": { "$ref": "#/$defs/text_list" },
-     "integrations": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/properties/id" }, "description": "Canonical OMA integration IDs required to resume." },
--    "mode": { "enum": ["yolo", "approve", "control"], "default": "yolo", "description": "Campaign automation and publishing policy; separate from lifecycle." },
-+    "mode": { "enum": ["yolo", "approve", "control"], "default": "approve", "description": "Campaign automation and publishing policy; separate from lifecycle." },
-     "lifecycle_state": { "enum": ["paused", "pausing", "resumed"], "readOnly": true },
-     "kanban_board": { "type": "string", "pattern": "^campaign-[a-z0-9]+(?:-[a-z0-9]+)*(?![\\s\\S])" },
-     "kanban_board_name": { "$ref": "#/$defs/text" },
---- a/skills/oma/oma-campaigns/SKILL.md
-+++ b/skills/oma/oma-campaigns/SKILL.md
-@@ -70,7 +70,7 @@
-
- ## Campaign Integrations
-
--- Every campaign must declare a non-empty `integrations` list in its `config.yaml`. Use unique canonical OMA catalog IDs, not display names, URLs, or connector aliases. Select the smallest set that the campaign needs for its plans and measurement; don't copy the brand's entire inventory. If no catalog integration fits, leave the campaign unprovisioned and report the gap rather than adding an unrelated integration.
-+- Every campaign must declare an `integrations` list in its `config.yaml`. Use unique canonical OMA catalog IDs, not display names, URLs, or connector aliases. Select the smallest set that the campaign needs for its plans and measurement; don't copy the brand's entire inventory. Write `integrations: []` if the campaign needs none. Report a blocker if a required service has no supported integration.
- - Start with the saved brand's `integrations` and `channels` (social, blog, newsletter). Use `integrations` in the launcher to shortlist observed integrations and verified social channels; it is not the full catalog. Prefer verified, suitable existing connections. When a required connection is missing, consult the OMA integrations catalog and [integration intake guide](references/integration-intake.md), then ask the user to connect the smallest set required by the plan. Include media generation only if a role actually needs it; ask for the provider and scope, not raw credentials.
- - Brand evidence and a saved integration ID do not prove access. Before activating the campaign or enabling its jobs, verify each required connection for the intended account or property and the owning profile's needed read or write permissions. If a required connection is missing or unverified, save the campaign without activating it or enabling jobs and report what must be connected. This is a skill check, not a gate enforced by the YAML validator or lifecycle command.
-
-@@ -111,6 +111,6 @@
-
- ## Verification
-
--Check that the saved campaign declares a non-empty `integrations` list and that each ID serves a need in the plan or its measurement. Report any missing declaration on existing campaigns during inspection; don't silently change their records or running state. Report which required connections were verified and which still block activation.
-+Check that the saved campaign declares an `integrations` list and that each ID serves a need in the plan or its measurement. Report any missing declaration on existing campaigns during inspection; don't silently change their records or running state. Report which required connections were verified and which still block activation.
-
- Verify the campaign config, the canonical roster (including the orchestrator and publisher), the agent records and saves paths, and the routing from `status <id>`. Check that the publisher's persona specifies what it can publish or edit and that its profile appears in `present_profiles` after provisioning. Read the saved orchestrator job prompt and confirm it names the channels and tells the agent what activity to check; if scheduling was in scope, verify the registered prompt, cadence, and state in the orchestrator's own cron store. New agents get a `tmp/` directory beside their `config.yaml` for scratch files. Report what was provisioned, which jobs were registered or skipped, and any blockers. A saved job, an enabled job, a healthy scheduler, and an observed run are separate outcomes.
---- a/hermes_cli/oma_campaigns/sync.py
-+++ b/hermes_cli/oma_campaigns/sync.py
-@@ -17,6 +17,7 @@
- from hermes_cli.oma_campaigns.credentials import (
-     apply_credential_updates, key_status, plan_credential_updates, read_sync_env, validate_sync_env,
- )
-+from hermes_cli.oma_campaigns.defaults import snapshot
- from hermes_cli.oma_campaigns.install import (
-     _agent_data_dir, _campaign_config_path, _campaigns_dir, _install_lock, _status, campaign_soul, default_home,
- )
-@@ -44,6 +45,8 @@
-     path: Path
-     saved: dict = field(repr=False)
-     status: dict
-+    resolved: dict = field(repr=False)
-+    inherited: dict[str, str] = field(repr=False)
-
-     def render_soul(self, home: Path, agent_id: str, soul: str) -> str:
-         return campaign_soul(
-@@ -114,7 +117,7 @@
-     campaign_id = campaign.status["id"] if campaign else None
-     record, digest = _read_saved(record_path, agent_id, campaign_id, revision)
-     source_soul = _read_soul(_member(directory, "SOUL.md"))
--    if (source_soul is not None or campaign is not None) and not (source_soul or "").strip():
-+    if source_soul is not None and not source_soul.strip():
-         raise ValueError(f"{agent_id}: SOUL.md is missing or empty")
-     rendered = campaign.render_soul(home, agent_id, source_soul) if campaign and source_soul is not None else source_soul
-     profile = profile_dir(home, agent_id)
-@@ -122,14 +125,20 @@
-     before = config_version(native_path)
-     native = require_readable_config_before_write(native_path)
-     native_soul = _read_soul(_member(profile, "SOUL.md"))
--    defaults = campaign.saved if campaign else {}
-+    if campaign and source_soul is None and not (native_soul or "").strip():
-+        raise ValueError(f"{agent_id}: SOUL.md is missing or empty")
-+    defaults = campaign.resolved if campaign else {}
-+    if campaign and "model" not in record:
-+        env = {**env, **campaign.inherited}
-     resolved = resolve_settings(settings_from(defaults, campaign_id or agent_id), settings_from(record, agent_id))
-     next_native = {**native, **resolved}
-     updated = [key for key, value in resolved.items() if native.get(key) != value]
--    if (campaign and "mcp_servers" in record.get("effective", {}) and "mcp_servers" not in resolved
--            and "mcp_servers" in next_native):
--        del next_native["mcp_servers"]
--        updated.append("mcp_servers")
-+    previous = record.get("effective", {})
-+    if campaign:
-+        for key in ("model", "mcp_servers"):
-+            if key in previous and key not in resolved and key in next_native:
-+                del next_native[key]
-+                updated.append(key)
-     next_native, profile_changes = apply_profile_settings(
-         next_native, record, defaults, agent_id, campaign=campaign is not None,
-         orchestrator=bool(campaign and agent_id == campaign.status["orchestrator"]),
-@@ -195,7 +204,8 @@
-     if status["state"] != "installed":
-         raise ValueError(f"Campaign {campaign_id!r} is not fully installed; no settings were synced")
-     validate_record("campaign", saved, path)
--    return _Campaign(path, saved, status)
-+    resolved, inherited = snapshot(home, saved)
-+    return _Campaign(path, saved, status, resolved, inherited)
-
-
- def _verify_campaign(campaign: _Campaign) -> None:
---- a/hermes_cli/oma_campaigns/settings.py
-+++ b/hermes_cli/oma_campaigns/settings.py
-@@ -115,7 +115,7 @@
-
- def reasoning_effort(record: dict, context: str):
-     value = cfg_get(record, "agent", "reasoning_effort", default=_OMITTED)
--    if value is not _OMITTED and value is not None and value is not False and value not in (*VALID_REASONING_EFFORTS, "none"):
-+    if value is not _OMITTED and value is not None and value is not False and value not in ("", *VALID_REASONING_EFFORTS, "none"):
-         raise ValueError(f"{context}: invalid agent.reasoning_effort")
-     return value
-
-@@ -154,6 +154,9 @@
- def materialize_agent_settings(record: dict, resolved: dict) -> dict:
-     """Keep model overrides authored; never turn an inherited model into an override."""
-     new = {key: value for key, value in record.items() if key != "effective"}
--    if "mcp_servers" in resolved:
--        new["effective"] = {"mcp_servers": resolved["mcp_servers"]}
-+    effective = {key: resolved[key] for key in ("model", "mcp_servers") if key in resolved}
-+    if "model" in record:
-+        effective.pop("model", None)
-+    if effective:
-+        new["effective"] = effective
-     return new
+--- a/hermes_cli/oma_campaigns/lifecycle.py
++++ b/hermes_cli/oma_campaigns/lifecycle.py
+@@ -13,6 +13,7 @@ from hermes_cli import kanban_db
+ from hermes_cli.config import atomic_config_write, read_user_config_raw
+ from hermes_cli.config_backend import require_file_tooling
+ from hermes_cli.kanban_db_connect import _dispatch_tick_lock, connect_closing
++from hermes_cli.oma_campaigns.integrations import missing_integrations
+ from hermes_cli.oma_campaigns.install import _campaign_config_path, _campaigns_dir, _install_lock, _status
+ from hermes_cli.oma_campaigns.schema import validate_record
+ from hermes_cli.oma_campaigns.source import DEFAULT_CAMPAIGN_MODE, _member, read_mapping
+@@ -136,11 +137,15 @@ def set_lifecycle(home: Path, campaign_id: str, target: str) -> dict:
+             atomic_config_write(path, config)
+             if target == "paused":
+                 return {**result, "state": "paused"}
+-        # Resume checks the model selection, not credentials or integration reachability.
+         model = config["model"] if "model" in config else read_user_config_raw(home / "config.yaml").get("model")
+         model_id = model.get("default") if isinstance(model, dict) else model
+         if not isinstance(model_id, str) or not model_id.strip():
+             return {**result, "state": "paused", "missing_model": True}
++        connection_home = (home / "profiles" / status["orchestrator"]
++                           if config.get("mcp_servers", {}).get("composio") else home)
++        missing = missing_integrations(home, config.get("integrations", []), connection_home=connection_home)
++        if missing:
++            return {**result, "state": "paused", "missing_integrations": missing}
+         mode = config.get("mode", DEFAULT_CAMPAIGN_MODE)
+         if mode == "control":
+             _control_cron(profiles, park=True)
+--- a/hermes_cli/oma_campaigns/schema.py
++++ b/hermes_cli/oma_campaigns/schema.py
+@@ -27,3 +27,8 @@ def validate_record(kind: str, record: dict, context: str | Path) -> None:
+             missing = ", ".join(key for key in error.validator_value if key not in error.instance)
+             raise ValueError(f"{context}: invalid OMA {kind} {field} (missing: {missing})")
+         raise ValueError(f"{context}: invalid OMA {kind} {field} ({error.validator})")
++    if kind == "campaign" and record.get("integrations"):
++        from hermes_cli.oma_campaigns.integrations import integration_catalog
++
++        if set(record["integrations"]) - integration_catalog().keys():
++            raise ValueError(f"{context}: invalid OMA campaign integrations (use canonical catalog IDs)")
 --- a/hermes_cli/oma_campaigns/schemas/agent.schema.json
 +++ b/hermes_cli/oma_campaigns/schemas/agent.schema.json
 @@ -15,7 +15,7 @@
@@ -357,3 +152,52 @@
      },
      "all-keys": { "$ref": "#/$defs/key_names", "readOnly": true },
      "available-keys": { "$ref": "#/$defs/key_names", "readOnly": true },
+--- a/hermes_cli/oma_campaigns/settings.py
++++ b/hermes_cli/oma_campaigns/settings.py
+@@ -154,6 +154,9 @@ def resolve_settings(defaults: dict, overrides: dict) -> dict:
+ def materialize_agent_settings(record: dict, resolved: dict) -> dict:
+     """Keep model overrides authored; never turn an inherited model into an override."""
+     new = {key: value for key, value in record.items() if key != "effective"}
+-    if "mcp_servers" in resolved:
+-        new["effective"] = {"mcp_servers": resolved["mcp_servers"]}
++    effective = {key: resolved[key] for key in ("model", "mcp_servers") if key in resolved}
++    if "model" in record:
++        effective.pop("model", None)
++    if effective:
++        new["effective"] = effective
+     return new
+--- a/hermes_cli/oma_campaigns/sync.py
++++ b/hermes_cli/oma_campaigns/sync.py
+@@ -146,8 +146,8 @@ def _plan_agent(home: Path, agent_id: str, env: dict[str, str], *, campaign: _Ca
+     )
+     stored = load_env_file(_member(profile, ".env"))
+     if campaign and "model" not in record:
+-        inherited = {name: value for name, value in campaign.inherited_credential.items() if not stored.get(name)}
+-        env = {**inherited, **env}
++        # Apply a rotated default credential to profiles that inherit the model.
++        env = {**env, **campaign.inherited_credential}
+     credentials = plan_credential_updates(profile, set(env), stored, env)
+     required = credential_keys(settings_from(next_native, agent_id))
+     names, available = key_status(required, {**stored, **credentials})
+--- a/skills/oma/oma-campaigns/SKILL.md
++++ b/skills/oma/oma-campaigns/SKILL.md
+@@ -72,9 +72,9 @@ Use exactly one orchestrator, `<campaign_id>__orchestrator`, in the ordered `age
+
+ ## Campaign Integrations
+
+-- Every campaign must declare a non-empty `integrations` list in its `config.yaml`. Use unique canonical OMA catalog IDs, not display names, URLs, or connector aliases. Select the smallest set that the campaign needs for its plans and measurement; don't copy the brand's entire inventory. If no catalog integration fits, leave the campaign unprovisioned and report the gap rather than adding an unrelated integration.
++- Every campaign must declare an `integrations` list in its `config.yaml`. Use unique canonical OMA catalog IDs, not display names, URLs, or connector aliases. Select the smallest set that the campaign needs for its plans and measurement; don't copy the brand's entire inventory. Write `integrations: []` if the campaign needs none. Report a blocker if a required service has no supported integration.
+ - Start with the saved brand's `integrations` and `channels` (social, blog, newsletter). Use `integrations` in the launcher to shortlist observed integrations and verified social channels; it is not the full catalog. Prefer verified, suitable existing connections. When a required connection is missing, consult the OMA integrations catalog and [integration intake guide](references/integration-intake.md), then ask the user to connect the smallest set required by the plan. Include media generation only if a role actually needs it; ask for the provider and scope, not raw credentials.
+-- Brand evidence and a saved integration ID do not prove access. Before activating the campaign or enabling its jobs, verify each required connection for the intended account or property and the owning profile's needed read or write permissions. If a required connection is missing or unverified, save the campaign without activating it or enabling jobs and report what must be connected. This is a skill check, not a gate enforced by the YAML validator or lifecycle command.
++- Brand evidence and a saved integration ID do not prove access. Before activating the campaign or enabling its jobs, verify each required connection for the intended account or property and the owning profile's needed read or write permissions. If a required connection is missing or unverified, save the campaign without activating it or enabling jobs and report what must be connected. The lifecycle command also checks required Composio connections before resuming.
+
+ ## Publishing Agent
+
+@@ -109,6 +109,6 @@ Use exactly one orchestrator, `<campaign_id>__orchestrator`, in the ordered `age
+
+ ## Verification
+
+-Check that the saved campaign declares a non-empty `integrations` list and that each ID serves a need in the plan or its measurement. Report any missing declaration on existing campaigns during inspection; don't silently change their records or running state. Report which required connections were verified and which still block activation.
++Check that the saved campaign declares an `integrations` list and that each ID serves a need in the plan or its measurement. Report any missing declaration on existing campaigns during inspection; don't silently change their records or running state. Report which required connections were verified and which still block activation.
+
+ Verify the campaign config, the canonical roster (including the orchestrator and publisher), the agent records and saves paths, and the routing from `status <id>`. Check that the publisher's persona specifies what it can publish or edit and that its profile appears in `present_profiles` after provisioning. Read the saved orchestrator job prompt and confirm it names the channels and tells the agent what activity to check; if scheduling was in scope, verify the registered prompt, cadence, and state in the orchestrator's own cron store. New agents get a `tmp/` directory beside their `config.yaml` for scratch files. Report what was provisioned, which jobs were registered or skipped, and any blockers. A saved job, an enabled job, a healthy scheduler, and an observed run are separate outcomes.
