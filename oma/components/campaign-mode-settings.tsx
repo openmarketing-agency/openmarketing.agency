@@ -13,9 +13,10 @@ const options: Record<CampaignMode, { label: string; description: string }> = {
   yolo: { label: "Yolo", description: "Run automation and auto-approve new publication drafts." },
 };
 
-export function CampaignModeSettings({ campaignId, configuration }: {
+export function CampaignModeSettings({ campaignId, configuration, installed }: {
   campaignId: string;
   configuration: CampaignConfiguration;
+  installed: boolean;
 }) {
   const saved = configuration.mode ?? "approve";
   const [mode, setMode] = useState(saved);
@@ -34,7 +35,7 @@ export function CampaignModeSettings({ campaignId, configuration }: {
         </select>
         <p id="campaign-mode-description">{options[mode].description}</p>
         {result.error && <p role="alert" className="form-error">{result.error}</p>}
-        {result.saved && !pending && mode === saved && <p role="status">Mode saved and synced.</p>}
+        {result.saved && !pending && mode === saved && <p role="status">{installed ? "Mode synced." : "Mode saved for first start."}</p>}
         <div className="campaign-mode-actions">
           <button type="submit" className="btn primary" disabled={pending || (mode === saved && !result.error)}>
             {pending ? "Saving and syncing…" : "Save mode"}

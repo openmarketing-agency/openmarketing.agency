@@ -170,12 +170,12 @@ flowchart TD
     Records["GET /workspace"]
     Board["GET /workspace/campaigns/{id}/kanban"]
     Stats["VM reads board ID from config.yaml and calls Kanban stats"]
-    Tabs["Plan, Agents, Tools, Settings"]
+    Tabs["Plan, Agents, Tools, Run settings"]
     Chat["Shared chat panel"]
     Action["Authenticated chat server action"]
     Context["Validate saved campaign ID and append it to the message"]
     Runs["Hermes Runs API · default profile"]
-    Next["Poll the run, show responses, and refresh campaign on completion"]
+    Next["Poll the run, sync any saved campaign edits on completion, and refresh"]
 
     Dash --> Records --> Tabs
     Dash --> Board --> Stats --> Tabs
@@ -255,32 +255,34 @@ sequenceDiagram
     participant WS as Private workspace
     participant H as Hermes campaign runtime
 
-    User->>Next: Save mode, Save and sync, or Deploy and start
+    User->>Next: Save changes, sync agent edits, start, or resume
     Next->>WS: Read saved campaign, lifecycle, and revision
-    opt Model or MCP update with required integrations
+    opt Model or MCP update, first start, or resume with required integrations
         Next->>C: Validate required accounts and build hosted MCP session
         C-->>Next: Session URL or missing connection error
     end
-    opt Campaign running or still pausing
+    opt Editing a campaign that is running or still pausing
         Next->>WS: PUT /workspace/campaigns/{id}/lifecycle with state paused
         WS->>H: Pause campaign and wait for stopped state
         WS-->>Next: Paused with current revision
     end
-    alt Publishing mode change
-        Next->>WS: PUT /workspace/campaigns/{id}/mode
+    alt Plan, publishing mode, or saved agent changes
+        opt Editing plan or mode
+            Next->>WS: PUT /workspace/campaigns/{id}/plan or /mode
+        end
         Next->>WS: POST /workspace/campaigns/{id}/sync with revision only
-    else Model or MCP update
+    else Model or tool update, first start, or resume
         Next->>WS: PUT /workspace/campaigns/{id}/config
         Next->>WS: POST /workspace/campaigns/{id}/sync with revision and env
     end
     WS->>H: Apply settings to installed profiles or validate a draft for deploy
     H-->>Next: Sync result via workspace service
-    opt Deploy and start after successful sync
+    opt First start of a draft after successful sync
         Next->>WS: POST /workspace/campaigns/{id}/deploy with revision and env
         WS->>H: Provision or reuse the board and profiles, then apply settings
         WS-->>Next: Deployed revision
     end
-    opt Deploy and start succeeded, or campaign was running before a successful save
+    opt First start, resume, or successful edit of a running campaign
         Next->>WS: PUT /workspace/campaigns/{id}/lifecycle with state resumed
         WS->>H: Verify prerequisites and start campaign
         WS-->>Next: Lifecycle state and any missing integrations
@@ -288,7 +290,7 @@ sequenceDiagram
     Next-->>User: Refresh campaign settings and show result
 ```
 
-- Model overrides are optional. Campaign profiles inherit the default model and its credential when there is no override. A model or MCP update sends only the relevant credential values in the private sync or deploy body. Mode-only sync omits the credential body.
+- Model overrides are optional. Campaign profiles inherit the default model and its credential when there is no override. A model or MCP update sends only the relevant credential values in the private sync or deploy body. Plan, mode, and agent sync omit the credential body. Resume uses the existing deployment.
 - **Approve** is the default mode and requires review before publication. **Yolo** runs automation and auto-approves new drafts. **Control** pauses scheduled work and runs explicitly approved publications.
 - Each mutation uses the latest revision from the previous step. A stale revision gives `409` and requires a reload. A save can succeed before sync fails. If a running campaign was paused for the change, it remains paused until a successful sync and resume.
 

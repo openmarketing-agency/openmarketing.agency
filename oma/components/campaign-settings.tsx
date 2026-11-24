@@ -7,18 +7,19 @@ import { deployCampaignAction, saveCampaignSettingsAction } from "@/app/actions/
 import type { CampaignConfiguration } from "@/lib/server/agent-workspace";
 
 export function CampaignSettings({
-  campaignId, configuration, deploy = false,
+  campaignId, configuration, firstStart = false, canStart = true,
 }: {
   campaignId: string;
   configuration: CampaignConfiguration;
-  deploy?: boolean;
+  firstStart?: boolean;
+  canStart?: boolean;
 }) {
   const [provider, setProvider] = useState(configuration.provider);
   const [modelId, setModelId] = useState(configuration.modelId);
   const [baseUrl, setBaseUrl] = useState(configuration.baseUrl);
   const modelKey = useRef<HTMLInputElement>(null);
-  const [result, action, pending] = useActionState((deploy ? deployCampaignAction : saveCampaignSettingsAction).bind(null, campaignId), {});
-  const saved = result.configuration ?? configuration;
+  const [result, action, pending] = useActionState((firstStart ? deployCampaignAction : saveCampaignSettingsAction).bind(null, campaignId), {});
+  const saved = configuration;
   const modelMatches = provider.trim() === saved.provider
     && modelId === saved.modelId && baseUrl === saved.baseUrl;
   function useDefaultModel() {
@@ -29,11 +30,11 @@ export function CampaignSettings({
   }
 
   return (
-    <section className="campaign-settings" aria-label={deploy ? "Deployment settings" : "Campaign settings"}>
+    <details className="campaign-edit-disclosure campaign-model-editor">
+      <summary>Model override <span>Optional</span></summary>
       <form action={action} className="workspace-editor">
         <input type="hidden" name="revision" value={saved.revision} />
         <fieldset disabled={pending}>
-          <legend>Model override (optional)</legend>
           <div className="campaign-settings-intro">
             <p>Leave the model fields blank to use the default agent’s model.</p>
             {(provider || modelId || baseUrl) && (
@@ -65,11 +66,12 @@ export function CampaignSettings({
         </fieldset>
         {result.error && <p className="form-error" role="alert">{result.error}</p>}
         {(result.state === "resumed" || (result.synced && modelMatches)) &&
-          <p className="workspace-save-status" role="status">{deploy ? "Campaign deployed and started." : "Settings saved and synced to oma-agent."}</p>}
-        <button className="btn primary" type="submit" disabled={pending}>
-          {deploy ? (pending ? "Syncing, deploying, and starting…" : "Deploy and start") : (pending ? "Saving and syncing…" : "Save and sync")}
+          <p className="workspace-save-status" role="status">{firstStart ? "Campaign started." : "Model settings synced."}</p>}
+        {firstStart && !canStart && <p>Set up the required tools before starting with an override.</p>}
+        <button className="btn primary" type="submit" disabled={pending || (firstStart && !canStart)}>
+          {pending ? "Syncing model settings…" : firstStart ? "Save model and start" : "Save model"}
         </button>
       </form>
-    </section>
+    </details>
   );
 }

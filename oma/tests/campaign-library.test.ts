@@ -71,16 +71,16 @@ const campaign: SavedCampaign = {
 };
 const workspace: AgentWorkspace = { campaigns: [campaign], agents: [], brands: [], playbooks: [], skipped: 0 };
 
-test("shows running, stopped, and stopping states without treating drafts as running", () => {
-  for (const [lifecycleState, expected] of [["resumed", "Running"], ["paused", "Stopped"], ["pausing", "Stopping…"]]) {
+test("distinguishes running, paused, and draft campaigns and keeps status in the header", () => {
+  for (const [lifecycleState, expected] of [["resumed", "Running"], ["paused", "Paused"], ["pausing", "Pausing…"]]) {
     const installed = { ...campaign, installationState: "installed", lifecycleState };
     assert.equal(campaignLifecycleLabel(installed), expected);
     const overview = renderToStaticMarkup(createElement(CampaignOverview, { workspace, campaign: installed }));
-    assert.ok(overview.includes(`<dt>Status</dt><dd>${expected}</dd>`));
+    assert.doesNotMatch(overview, /<dt>Status<\/dt>|<dt>Installation<\/dt>/);
   }
-  assert.equal(campaignLifecycleLabel(campaign), "Stopped");
+  assert.equal(campaignLifecycleLabel(campaign), "Draft");
   assert.equal(campaignLifecycleLabel({ ...campaign, installationState: "installed" }), "Running");
-  assert.equal(campaignLifecycleLabel({ ...campaign, installationState: "installing", lifecycleState: "resumed" }), "Stopped");
+  assert.equal(campaignLifecycleLabel({ ...campaign, installationState: "installing", lifecycleState: "resumed" }), "Setup incomplete");
 });
 
 test("leaves campaign details empty when records are absent", () => {

@@ -40,17 +40,17 @@ export function campaignAgentIds(workspace: AgentWorkspace, campaign: SavedCampa
 }
 
 export function campaignLifecycleLabel(campaign: SavedCampaign) {
-  if (campaign.installationState === "installing") return "Stopped";
-  if (campaign.lifecycleState === "pausing") return "Stopping…";
+  if (campaign.installationState === "installing") return "Setup incomplete";
+  if (campaign.lifecycleState === "pausing") return "Pausing…";
   if (campaign.lifecycleState === "resumed" || (!campaign.lifecycleState && campaign.installationState === "installed")) return "Running";
-  return "Stopped";
+  return campaign.installationState === "installed" ? "Paused" : "Draft";
 }
 
 export function CampaignOverview({ workspace, campaign }: { workspace: AgentWorkspace; campaign: SavedCampaign }) {
   const playbook = workspace.playbooks.find((item) => item.id === campaign.playbookId);
   const brand = workspace.brands.find((item) => item.id === playbook?.brandId);
   const hasPlan = campaign.goals.length > 0 || campaign.plans.length > 0;
-  const hasDetails = Boolean(playbook?.brandId || campaign.playbookId || campaign.board || campaign.model || campaign.installationState || campaign.lifecycleState);
+  const hasDetails = Boolean(playbook?.brandId || campaign.playbookId || campaign.board || campaign.model);
   return (
     <div className="campaign-overview">
       {hasPlan && (
@@ -73,7 +73,6 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
         <aside className="campaign-context" aria-labelledby="campaign-context-heading">
           <h2 id="campaign-context-heading">Campaign details</h2>
           <dl>
-            <div><dt>Status</dt><dd>{campaignLifecycleLabel(campaign)}</dd></div>
             {playbook?.brandId && <div><dt>Brand</dt><dd>{brand ? (
               <Link href={"/workspace/brands/" + brand.id}>{brand.name}<ArrowRight size={15} aria-hidden="true" /></Link>
             ) : playbook.brandId}</dd></div>}
@@ -81,10 +80,6 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
               <Link href={"/workspace/playbooks/" + playbook.id}>{playbook.name}<ArrowRight size={15} aria-hidden="true" /></Link>
             ) : campaign.playbookId}</dd></div>}
             {campaign.board && <div><dt>Board</dt><dd>{campaign.board}</dd></div>}
-            {campaign.installationState && (
-              <div><dt>Installation</dt><dd>{campaign.installationState === "installed" ? "Installed"
-                : campaign.installationState === "installing" ? "Installing" : campaign.installationState}</dd></div>
-            )}
             {campaign.model && <div><dt>Campaign model</dt><dd>{campaign.model}</dd></div>}
           </dl>
         </aside>

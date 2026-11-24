@@ -2,17 +2,20 @@
 
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Megaphone, Rocket } from "lucide-react";
+import { ArrowLeft, Megaphone, Pause, Play } from "lucide-react";
 
+import { changeCampaignRunAction } from "@/app/actions/workspace";
+import { CampaignAgentSync, CampaignPlanEditor, CampaignToolEditor } from "@/components/campaign-editors";
 import { CampaignKanban } from "@/components/campaign-kanban";
 import { CampaignModeSettings } from "@/components/campaign-mode-settings";
 import { CampaignSettings } from "@/components/campaign-settings";
 import { ToolkitBrowser } from "@/components/toolkit-browser";
+import { campaignLifecycleLabel } from "@/components/workspace-records";
 import { campaignConnectionScope } from "@/lib/agent-connections";
-import type { CampaignKanbanStatus, SavedCampaign } from "@/lib/server/agent-workspace";
+import type { CampaignKanbanStatus, RequiredIntegration, SavedCampaign } from "@/lib/server/agent-workspace";
 import type { Toolkit } from "@/lib/tool-catalog";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 
@@ -20,10 +23,10 @@ const views = [
   { id: "overview", label: "Plan" },
   { id: "agents", label: "Agents" },
   { id: "tools", label: "Tools" },
-  { id: "settings", label: "Settings" },
+  { id: "settings", label: "Run settings" },
 ] as const;
 
-type View = typeof views[number]["id"] | "deploy";
+type View = typeof views[number]["id"];
 
 export function CampaignDetail({
   campaign,
@@ -34,6 +37,7 @@ export function CampaignDetail({
   overview,
   agents,
   agentCount,
+  integrationCatalog,
 }: {
   campaign: SavedCampaign;
   kanban: CampaignKanbanStatus;
@@ -43,6 +47,7 @@ export function CampaignDetail({
   overview: ReactNode;
   agents: ReactNode;
   agentCount: number;
+  integrationCatalog?: RequiredIntegration[];
 }) {
   const query = useSearchParams();
   const router = useRouter();
@@ -79,50 +84,40 @@ export function CampaignDetail({
   }, [campaignId, lifecycleState, router]);
 
   const requestedView = query.get("view");
-  const view: View = requestedView === "deploy" ? requestedView
+  const view: View = requestedView === "deploy" || requestedView === "mcp" ? "settings"
     : views.find(({ id }) => id === requestedView)?.id
-      ?? (requestedView === "mcp" ? "settings" : requestedView === "team" || query.has("agent") ? "tools" : "overview");
+      ?? (requestedView === "team" || query.has("agent") ? "tools" : "overview");
   const path = "/campaigns/" + campaign.id;
-  const [snapshot, setSnapshot] = useState(initialSnapshot);
-  const [metadata, setMetadata] = useState(initialMetadata);
-  const lifecycleLabel = campaign.lifecycleState === "pausing" ? "Stopping…"
-    : campaign.lifecycleState === "paused" ? "Stopped" : "Running";
-  const deploymentState = campaign.installationState === "installed" ? lifecycleLabel
-    : campaign.installationState === "installing" ? "Installation incomplete"
-      : campaign.board ? "Installation unverified" : "Draft";
-  const needsDeployment = deploymentState === "Draft" || deploymentState === "Installation incomplete";
-  const settingsLinkToDeployment = view === "settings" && needsDeployment && Boolean(campaign.configuration);
-  const { configuration, name, description, goals, plans } = campaign;
+  const [connections, setConnections] = useState<{
+    initial: ConnectionSnapshot; snapshot: ConnectionSnapshot; metadata: Toolkit[];
+  }>();
+  const localConnections = connections?.initial === initialSnapshot ? connections : undefined;
+  const snapshot = localConnections?.snapshot ?? initialSnapshot;
+  const metadata = localConnections?.metadata ?? initialMetadata;
+  const [runResult, runAction, runPending] = useActionState(changeCampaignRunAction.bind(null, campaign.id), {});
+  const installed = campaign.installationState === "installed";
+  const deploymentState = campaignLifecycleLabel(campaign);
+  const running = deploymentState === "Running";
+  const pausing = deploymentState === "Pausing…";
+  const { configuration, name, description } = campaign;
   const requiredIntegrations = campaign.requiredIntegrations ?? [];
   const error = campaign.integrationConfigInvalid
-    ? "Use a list of unique integration IDs such as discord or facebook in config.yaml."
+    ? "Review and save the required tools before starting."
     : undefined;
   const pendingIntegrations = requiredIntegrations.filter(({ slug }) =>
     !slug || (!snapshot.connected.includes(slug) && !metadata.some((tool) => tool.slug === slug && tool.noAuth)));
+  const blocked = Boolean(error || pendingIntegrations.length);
+  const runLabel = running ? "Pause campaign" : installed ? "Resume campaign" : "Start campaign";
 
   function viewLink(nextView: View) {
-    return {
-      href: path + "?view=" + nextView,
-      prefetch: false,
-      onNavigate: (event: { preventDefault: () => void }) => {
-        event.preventDefault();
-        selectView(nextView);
-      },
-    };
-  }
-
-  function selectView(nextView: View) {
-    if (nextView === view) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set("view", nextView);
-    url.searchParams.delete("agent");
-    url.hash = "";
-    window.history.pushState(null, "", url);
+    const params = new URLSearchParams(query.toString());
+    params.set("view", nextView);
+    params.delete("agent");
+    return { href: path + "?" + params.toString(), prefetch: false, scroll: false };
   }
 
   function updateConnections(nextSnapshot: ConnectionSnapshot, items: Toolkit[]) {
-    setSnapshot(nextSnapshot);
-    setMetadata(items);
+    setConnections({ initial: initialSnapshot, snapshot: nextSnapshot, metadata: items });
   }
 
   return (
@@ -142,13 +137,30 @@ export function CampaignDetail({
           <CampaignKanban status={kanban} />
         </header>
         <div className="campaign-header-actions">
-          {view !== "deploy" && !settingsLinkToDeployment && (
-            <Link className={view === "settings" ? "btn secondary" : "btn primary"} {...viewLink("deploy")}>
-              <Rocket size={16} aria-hidden="true" /> {needsDeployment ? "Deploy campaign" : "Review deployment"}
-            </Link>
-          )}
+          {configuration && (!running && blocked && !pausing && view !== "tools" ? (
+            <Link className="btn primary" {...viewLink("tools")}>Set up required tools</Link>
+          ) : (
+            <form action={runAction}>
+              <input type="hidden" name="revision" value={configuration.revision} />
+              <input type="hidden" name="state" value={running ? "paused" : "resumed"} />
+              <button className={running ? "btn secondary" : "btn primary"}
+                disabled={runPending || pausing || (!running && blocked)}>
+                {running ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
+                {runPending ? (running ? "Pausing…" : "Starting…") : pausing ? "Pausing…" : runLabel}
+              </button>
+            </form>
+          ))}
         </div>
       </div>
+      {runResult.error && !runPending && <p className="form-error" role="alert">{runResult.error}</p>}
+      {!running && !pausing && configuration && (
+        <p className="campaign-run-guide">
+          {error ? "Review and save the required tool list."
+            : blocked ? (installed ? "Connect the required tools before resuming." : "Connect the required tools before starting.")
+            : installed ? "Resume when you’re ready for the agents to continue."
+            : "Starting sets up the agents and their Kanban board."}
+        </p>
+      )}
       <nav className="campaign-tabs" aria-label="Campaign sections">
         {views.map(({ id, label }) => (
           <Link key={id} {...viewLink(id)}
@@ -156,15 +168,24 @@ export function CampaignDetail({
             {label}{id === "agents" && agentCount > 0 && <span className="campaign-tab-count">{agentCount}</span>}
           </Link>
         ))}
-        {view === "deploy" && <Link {...viewLink("deploy")} aria-current="page">Deploy</Link>}
       </nav>
       {error && view === "tools" && <p role="alert" className="form-error">{error}</p>}
 
-      {view === "overview" && overview}
-      {view === "agents" && agents}
+      {view === "overview" && <>
+        {configuration && <CampaignPlanEditor campaign={campaign} revision={configuration.revision} />}
+        {overview}
+      </>}
+      {view === "agents" && <>
+        {configuration && <CampaignAgentSync campaignId={campaign.id} revision={configuration.revision} />}
+        {agents}
+      </>}
       {view === "tools" && (
         <div className="campaign-tools">
-          <ToolkitBrowser scope={campaignConnectionScope(campaign.id)}
+          {configuration && integrationCatalog && <CampaignToolEditor
+            campaignId={campaign.id} revision={configuration.revision}
+            required={requiredIntegrations} catalog={integrationCatalog} />}
+          {configuration && !integrationCatalog && <p className="campaign-run-guide">Rebuild the agent workspace to edit the required tools here.</p>}
+          <ToolkitBrowser key={requiredIntegrations.map(({ id }) => id).join(",")} scope={campaignConnectionScope(campaign.id)}
             snapshot={snapshot} metadata={metadata}
             requiredIntegrations={requiredIntegrations}
             feedback={feedback} onChange={updateConnections} />
@@ -172,49 +193,14 @@ export function CampaignDetail({
       )}
       {view === "settings" && (configuration ? (
         <>
-          <CampaignModeSettings campaignId={campaign.id} configuration={configuration} />
-          {needsDeployment ? (
-            <section className="campaign-next-action">
-              <h2>Model settings</h2>
-              <p>You can override the default agent’s model when you deploy.</p>
-              <Link className="btn primary" {...viewLink("deploy")}>Review deployment <Rocket size={15} aria-hidden="true" /></Link>
-            </section>
-          ) : (
-            <CampaignSettings key={configuration.mode ?? "approve"} campaignId={campaign.id} configuration={configuration} />
-          )}
+          <p className="campaign-run-guide">{running
+            ? "Saving changes briefly pauses the campaign. It resumes after sync succeeds."
+            : "The campaign can use the default agent’s model and ask for publishing approval."}</p>
+          <CampaignModeSettings campaignId={campaign.id} configuration={configuration} installed={installed} />
+          <CampaignSettings key={configuration.mode ?? "approve"} campaignId={campaign.id}
+            configuration={configuration} firstStart={!installed} canStart={!blocked && !runPending} />
         </>
-      ) : (
-        <p className="notice">Campaign settings are unavailable. Rebuild the oma-agent workspace service to enable them.</p>
-      ))}
-      {view === "deploy" && (
-        <section className="campaign-deploy" aria-labelledby="campaign-deploy-heading">
-          <h2 id="campaign-deploy-heading">Review deployment</h2>
-          <p>Connect the required tools, review the optional model settings, then deploy and start the campaign.</p>
-          {configuration ? (
-            <div className="campaign-deploy-layout">
-              <aside className="campaign-context">
-                <h3>Campaign summary</h3>
-                <dl>
-                  <div><dt>Plan</dt><dd><Link {...viewLink("overview")}>{goals.length} {goals.length === 1 ? "goal" : "goals"} · {plans.length} {plans.length === 1 ? "step" : "steps"}</Link></dd></div>
-                  <div><dt>Agents</dt><dd><Link {...viewLink("agents")}>{agentCount} {agentCount === 1 ? "agent" : "agents"}</Link></dd></div>
-                  <div><dt>Tools</dt><dd><Link {...viewLink("tools")}>
-                    {requiredIntegrations.length ? `${requiredIntegrations.length - pendingIntegrations.length} of ${requiredIntegrations.length} required ready`
-                      : "No integrations configured"}
-                  </Link></dd></div>
-                </dl>
-              </aside>
-              {pendingIntegrations.length || error ? (
-                <div className="campaign-next-action">
-                  <p>{error ?? "Connect these required tools before deploying: " + pendingIntegrations.map(({ name }) => name).join(", ") + "."}</p>
-                  <Link className="btn primary" {...viewLink("tools")}>Open campaign tools</Link>
-                </div>
-              ) : (
-                <CampaignSettings key="deploy" deploy campaignId={campaign.id} configuration={configuration} />
-              )}
-            </div>
-          ) : <p className="notice">Deployment requires the current oma-agent workspace service.</p>}
-        </section>
-      )}
+      ) : <p className="notice">Campaign settings are unavailable. Check the agent workspace and reload.</p>)}
     </div>
   );
 }

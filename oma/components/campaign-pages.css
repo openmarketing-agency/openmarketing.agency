@@ -344,8 +344,6 @@
 .campaign-detail > :is(.notice, .form-error) { margin-top: 20px; }
 .campaign-detail .campaign-settings { width: min(100%, 52rem); }
 .campaign-detail .campaign-settings .workspace-editor { margin: 0; max-width: none; }
-.campaign-detail .campaign-settings-intro p,
-.campaign-detail #model-api-key-hint { color: var(--muted); }
 
 @container workbench-main (max-width: 48rem) {
   .campaign-dashboard-layout:has(.campaign-dashboard-sidebar),
@@ -391,37 +389,50 @@
   white-space: nowrap;
 }
 .campaign-deployment-status:is([data-state="Running"], [data-state="Installed"]) { color: var(--positive); background: var(--positive-soft); }
-.campaign-deployment-status:is([data-state="Stopping…"], [data-state="Installation incomplete"], [data-state="Installation unverified"]) { color: var(--warning); background: var(--warning-soft); }
+.campaign-deployment-status:is([data-state="Pausing…"], [data-state="Setup incomplete"]) { color: var(--warning); background: var(--warning-soft); }
 
-.campaign-deploy-layout {
-  display: grid;
-  align-items: start;
-  gap: 20px;
-  margin-top: 24px;
+.campaign-run-guide {
+  max-width: 65ch;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.9375rem;
 }
-.campaign-next-action,
-.campaign-deploy { margin-top: 24px; }
-.campaign-next-action {
-  display: grid;
-  justify-items: start;
-  gap: 10px;
+
+.campaign-edit-disclosure {
   max-width: 52rem;
-  padding: 16px 20px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
+  margin-block: 16px;
+  border-block: 1px solid var(--border);
 }
-.campaign-deploy > h2,
-.campaign-next-action h2 { font-size: 1.25rem; font-weight: 650; }
-.campaign-deploy > p { max-width: 72ch; margin-top: 6px; color: var(--muted); }
-.campaign-deploy-layout { grid-template-columns: minmax(0, 1fr) minmax(13rem, 26%); margin-top: 16px; }
-.campaign-deploy-layout .campaign-context { grid-area: 1 / 2; }
-.campaign-deploy-layout .campaign-context h3 { margin-bottom: 6px; font-weight: 650; }
-.campaign-deploy .campaign-settings { grid-area: 1 / 1; margin-top: 0; width: 100%; }
-
-@container (max-width: 44rem) {
-  .campaign-deploy-layout { grid-template-columns: minmax(0, 1fr); }
-  .campaign-deploy-layout .campaign-context, .campaign-deploy .campaign-settings { grid-area: auto; }
+.campaign-edit-disclosure > summary {
+  padding-block: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.campaign-edit-disclosure > summary span { margin-inline-start: 6px; color: var(--muted); font-size: 0.8125rem; font-weight: 400; }
+.campaign-edit-disclosure .workspace-editor { margin: 0 0 16px; max-width: none; }
+.campaign-edit-disclosure :is(input, textarea) { max-width: 100%; min-width: 0; }
+.campaign-edit-disclosure .workspace-editor p { color: var(--muted); }
+.campaign-edit-disclosure .workspace-editor .form-error { color: var(--negative); }
+.campaign-plan-items { margin-block: 14px; }
+.campaign-plan-items legend { font-weight: 600; margin-bottom: 6px; }
+.campaign-plan-item { display: flex; flex-wrap: wrap; align-items: start; gap: 6px; }
+.campaign-plan-item textarea { flex: 1 1 12rem; }
+.campaign-plan-item .btn { margin: 0; }
+.campaign-tool-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 8px;
+  max-height: 18rem;
+  overflow: auto;
+  border-block: 1px solid var(--border);
+  padding: 10px 0;
+}
+.campaign-tool-choices label { display: flex; align-items: start; gap: 8px; font-size: 0.875rem; }
+.campaign-tool-choices input { margin-top: 3px; }
+.campaign-agent-sync { display: grid; justify-items: start; gap: 8px; margin-top: 20px; color: var(--muted); }
+.campaign-detail :is(.campaign-header-actions, .campaign-edit-disclosure, .campaign-agent-sync) .btn {
+  max-width: 100%;
+  white-space: normal;
 }
 
 @container (max-width: 23rem) {
@@ -429,7 +440,6 @@
   .campaign-header-actions { flex: 0 1 auto; gap: 8px; }
   .campaign-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 8px; }
   .campaign-tabs a { gap: 4px; padding-inline: 1px; font-size: 0.8125rem; }
-  .campaign-deploy { margin-top: 16px; }
 }
 
 @media (max-width: 560px) {

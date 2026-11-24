@@ -8,7 +8,7 @@ import { Loading } from "@/components/ui";
 import { loadCampaignTools } from "@/lib/tool-workspace";
 import { connectionFeedback } from "@/lib/connection-attempt";
 import { requireUser } from "@/lib/dal";
-import { loadAgentWorkspace, readCampaignKanbanStatus, workspaceId } from "@/lib/server/agent-workspace";
+import { loadAgentWorkspace, loadCampaignIntegrationCatalog, readCampaignKanbanStatus, workspaceId } from "@/lib/server/agent-workspace";
 import "@/components/campaign-pages.css";
 
 type Props = {
@@ -37,10 +37,11 @@ async function Detail({ params, searchParams }: Props) {
     );
   }
 
-  const [workspace, query, kanban] = await Promise.all([
+  const [workspace, query, kanban, integrationCatalog] = await Promise.all([
     loadCampaignTools(saved.requiredIntegrations),
     searchParams,
     readCampaignKanbanStatus(saved),
+    loadCampaignIntegrationCatalog(),
   ]);
   const agents = campaignAgentIds(records, saved);
 
@@ -52,6 +53,7 @@ async function Detail({ params, searchParams }: Props) {
       overview={<CampaignOverview workspace={records} campaign={saved} />}
       agents={<CampaignAgents workspace={records} campaign={saved} ids={agents} />}
       agentCount={agents.length}
+      integrationCatalog={integrationCatalog}
       {...workspace}
       feedback={connectionFeedback(query.connection_result)}
     />
