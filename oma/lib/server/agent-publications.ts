@@ -40,11 +40,14 @@ export type CampaignPublicationGroup = {
   error?: string;
 };
 
-export async function listCampaignPublications(campaignId: string, before?: number) {
+export async function listCampaignPublications(campaignId: string, before?: number, limit?: number) {
   if (!workspaceId.safeParse(campaignId).success) throw new WorkspaceRequestError(404, "Campaign not found.");
   const query = cursor.safeParse(before);
   const path = "/workspace/campaigns/" + campaignId + "/publications";
-  const result = publicationList.safeParse(await workspaceRequest(path + (query.success ? "?before=" + query.data : "")));
+  const params = new URLSearchParams();
+  if (query.success) params.set("before", String(query.data));
+  if (limit !== undefined) params.set("limit", String(z.number().int().min(1).max(50).parse(limit)));
+  const result = publicationList.safeParse(await workspaceRequest(path + (params.size ? "?" + params : "")));
   if (!result.success || result.data.campaign_id !== campaignId) {
     throw new WorkspaceRequestError(502, "Couldn’t read the campaign’s publication previews.");
   }

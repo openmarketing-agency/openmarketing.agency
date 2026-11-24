@@ -21,10 +21,10 @@ class WorkspaceConnection(HTTPConnection):
         self.sock.connect(self.host)
 
 
-def fetch(address, campaign_id):
+def fetch(address, campaign_id, view="kanban"):
     client = WorkspaceConnection(address, timeout=10)
     try:
-        client.request("GET", f"/workspace/campaigns/{campaign_id}/kanban")
+        client.request("GET", f"/workspace/campaigns/{campaign_id}/{view}")
         response = client.getresponse()
         return response.status, json.load(response)
     finally:
@@ -45,12 +45,12 @@ try:
         assert not kanban_db.board_exists(slug)
         boards[slug] = kanban_db.create_board(slug, name=name)
     with connect_closing(board=primary) as connection:
-        kanban_db.create_task(connection, title="Investigate", triage=True, board=primary)
+        task_id = kanban_db.create_task(connection, title="Investigate", body="Review the campaign brief", triage=True, board=primary)
         kanban_db.create_task(connection, title="Needs attention", initial_status="blocked", board=primary)
         archived = kanban_db.create_task(connection, title="Archived work", board=primary)
         assert kanban_db.archive_task(connection, archived)
     with connect_closing(board=other) as connection:
-        kanban_db.create_task(connection, title="Different board", board=other)
+        other_task = kanban_db.create_task(connection, title="Different board", board=other)
 
     with TemporaryDirectory(dir=home, prefix="kanban-fixture-") as directory:
         root = Path(directory)
@@ -73,6 +73,19 @@ try:
                 assert fetch(address, "campaign-draft") == (200, {"state": "unconfigured"})
                 assert fetch(address, "campaign-invalid")[0] == 422
                 assert fetch(address, "not-a-campaign")[0] == 404
+                status, progress = fetch(address, "campaign-with-id", "progress")
+                assert status == 200 and progress["board"]["state"] == "ready", progress
+                tasks = progress["board"]["tasks"]
+                assert {(item["title"], item["status"]) for item in tasks} == {
+                    ("Investigate", "triage"), ("Needs attention", "blocked"),
+                }
+                assert all("workspace_path" not in item and "claim_lock" not in item for item in tasks)
+                status, detail = fetch(address, "campaign-with-id", "tasks/" + task_id)
+                assert status == 200 and detail["body"] == "Review the campaign brief"
+                assert any(event["kind"] == "created" for event in detail["events"])
+                assert fetch(address, "campaign-with-id", "tasks/" + other_task)[0] == 404
+                assert fetch(address, "campaign-draft", "progress")[1]["board"]["state"] == "unconfigured"
+                assert fetch(address, "campaign-ambiguous", "progress")[1]["board"]["state"] == "ambiguous"
             finally:
                 server.shutdown()
                 worker.join()
@@ -80,4 +93,4 @@ finally:
     for slug in boards:
         kanban_db.remove_board(slug, archive=False)
 
-print("Campaigns read exact task counts from the Kanban API")
+print("Campaigns read only their board’s counts, tasks, and task history from the Kanban API")

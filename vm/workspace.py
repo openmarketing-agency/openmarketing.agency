@@ -1419,15 +1419,13 @@ def read_kanban_dashboard(home, route):
     return response.status, result
 
 
-def campaign_kanban_status(root, campaign_id):
-    with editable_record(root, "campaigns", campaign_id) as (_, source, _):
-        data = parse_record(source, campaign_id)
+def resolve_campaign_board(home, data):
     slug = string(data.get("kanban_board")).strip()
     name = string(data.get("kanban_board_name")).strip()
     if not slug:
         if not name:
-            return {"state": "unconfigured"}
-        status, result = read_kanban_dashboard(root.parent, "/boards")
+            return None, "unconfigured"
+        status, result = read_kanban_dashboard(home, "/boards")
         if status != 200 or not isinstance(result.get("boards"), list):
             raise WorkspaceError(503, "Could not look up the campaign’s Kanban board.")
         matches = {
@@ -1436,22 +1434,170 @@ def campaign_kanban_status(root, campaign_id):
             and (board["slug"] == name or board.get("name") == name)
         }
         if len(matches) != 1:
-            return {"state": "ambiguous" if matches else "missing"}
+            return None, "ambiguous" if matches else "missing"
         slug = matches.pop()
 
     if not KANBAN_SLUG.fullmatch(slug):
         raise WorkspaceError(422, "The campaign’s Kanban board ID is invalid.")
-    status, result = read_kanban_dashboard(root.parent, "/stats?" + urlencode({"board": slug}))
+    return slug, "ready"
+
+
+def read_campaign_board(home, slug, path):
+    status, result = read_kanban_dashboard(home, path + "?" + urlencode({"board": slug}))
     if status == 404 and result.get("detail") in (
         f"board {slug!r} does not exist", f"board {slug!r} is archived",
     ):
+        return None
+    if status != 200:
+        if status == 404 and path.startswith("/tasks/"):
+            raise WorkspaceError(404, "This task was not found on the campaign board.")
+        raise WorkspaceError(503, "Could not read the campaign’s Kanban board.")
+    return result
+
+
+def read_saved_campaign(root, campaign_id):
+    with editable_record(root, "campaigns", campaign_id) as (_, source, _):
+        return parse_record(source, campaign_id)
+
+
+def campaign_kanban_status(root, campaign_id):
+    slug, state = resolve_campaign_board(root.parent, read_saved_campaign(root, campaign_id))
+    if not slug:
+        return {"state": state}
+    result = read_campaign_board(root.parent, slug, "/stats")
+    if result is None:
         return {"state": "missing"}
     counts = result.get("by_status")
-    if (status != 200 or not isinstance(counts, dict)
+    if (not isinstance(counts, dict)
             or any(not KANBAN_SLUG.fullmatch(key) or type(value) is not int or value < 0 for key, value in counts.items())):
         raise WorkspaceError(503, "Could not read the Kanban board status.")
     return {"state": "ready", "counts": counts}
 
+
+
+def progress_text(value, limit):
+    return string(value).strip()[:limit]
+
+
+def progress_content(value, limit):
+    if not value or not isinstance(value, str):
+        return ""
+    from agent.redact import redact_credential_shapes
+
+    return redact_credential_shapes(value, force=True, redact_url_credentials=True).strip()[:limit]
+
+
+def progress_timestamp(value):
+    return value if type(value) is int and 0 < value < 253402300800 else None
+
+
+def progress_task(task):
+    return {
+        "id": task["id"], "title": progress_content(task.get("title"), 240),
+        "status": progress_text(task.get("status"), 40), "assignee": progress_text(task.get("assignee"), 100),
+        "createdAt": progress_timestamp(task.get("created_at")),
+        "startedAt": progress_timestamp(task.get("current_run_started_at")) or progress_timestamp(task.get("started_at")),
+        "completedAt": progress_timestamp(task.get("completed_at")),
+        "summary": progress_content(task.get("latest_summary"), 400),
+        "failure": progress_content(task.get("last_failure_error"), 500),
+    }
+
+
+def campaign_schedule(root, campaign_id, data):
+    """Read the scheduler's snapshot without invoking native cron store repair paths."""
+    if data.get("installation_state") != "installed":
+        return {"state": "ready", "jobs": []}
+    jobs = []
+    partial = False
+    for agent_id in dict.fromkeys(filter(valid_id, strings(data.get("agents")))):
+        try:
+            with open_directory(root) as workspace, open_directory("agents", workspace) as agents, \
+                    open_directory(agent_id, agents) as agent:
+                record = parse_record(read_file(agent)[0], agent_id)
+            if record.get("campaign_id") != campaign_id:
+                continue
+            declarations = {job["id"]: job for job in objects(record.get("jobs")) if isinstance(job.get("id"), str)}
+            if not declarations:
+                continue
+            with open_directory(root.parent) as home, open_directory("profiles", home) as profiles, \
+                    open_directory(agent_id, profiles) as profile, open_directory("cron", profile) as cron:
+                items = json.loads(read_file(cron, "jobs.json")[0])
+            items = items.get("jobs") if isinstance(items, dict) else items
+            if not isinstance(items, list):
+                raise ValueError("Invalid scheduled-job snapshot")
+            seen = set()
+            for job in objects(items):
+                name = string(job.get("name"))
+                source = string(job.get("oma_job_id")) or (name[4:] if name.startswith("oma:") else "")
+                if source not in declarations:
+                    continue
+                seen.add(source)
+                jobs.append({
+                    "id": agent_id + ":" + source, "agent": agent_id,
+                    "name": progress_text(declarations[source].get("name") or name, 160),
+                    "schedule": progress_text(job.get("schedule_display") or declarations[source].get("schedule"), 120),
+                    "state": progress_text(job.get("state"), 40),
+                    "nextRun": progress_text(job.get("next_run_at"), 48),
+                    "lastRun": progress_text(job.get("last_run_at"), 48),
+                    "lastStatus": progress_text(job.get("last_status"), 40),
+                })
+            partial |= declarations.keys() != seen
+        except (OSError, ValueError, WorkspaceError, YAMLError, RecursionError):
+            partial = True
+    return {"state": "partial" if partial else "ready", "jobs": jobs}
+
+
+def campaign_progress(root, campaign_id):
+    data = read_saved_campaign(root, campaign_id)
+    board = {"state": "unavailable"}
+    try:
+        slug, state = resolve_campaign_board(root.parent, data)
+        if not slug:
+            board = {"state": state}
+        else:
+            result = read_campaign_board(root.parent, slug, "/board")
+            if result is None:
+                board = {"state": "missing"}
+            elif isinstance(result.get("columns"), list):
+                columns = objects(result["columns"])
+                if len(columns) != len(result["columns"]) or any(not isinstance(column.get("tasks"), list) for column in columns):
+                    raise WorkspaceError(502, "Kanban returned invalid task columns.")
+                tasks = [task for column in columns for task in column["tasks"]]
+                if any(not isinstance(task, dict) or not KANBAN_SLUG.fullmatch(string(task.get("id")))
+                       or not KANBAN_SLUG.fullmatch(string(task.get("status"))) for task in tasks):
+                    raise WorkspaceError(502, "Kanban returned invalid tasks.")
+                board = {"state": "ready", "tasks": [progress_task(task) for task in tasks]}
+    except WorkspaceError:
+        # Keep native schedules available during an independent Kanban failure.
+        pass
+    return {"board": board, "schedule": campaign_schedule(root, campaign_id, data)}
+
+
+def campaign_task_activity(root, campaign_id, task_id):
+    if not KANBAN_SLUG.fullmatch(task_id):
+        raise WorkspaceError(404, "This task was not found on the campaign board.")
+    slug, _ = resolve_campaign_board(root.parent, read_saved_campaign(root, campaign_id))
+    result = read_campaign_board(root.parent, slug, "/tasks/" + task_id) if slug else None
+    if result is None or mapping(result.get("task")).get("id") != task_id:
+        raise WorkspaceError(404, "This task was not found on the campaign board.")
+    task = result["task"]
+    return {
+        "body": progress_content(task.get("body"), 6000), "result": progress_content(task.get("latest_summary") or task.get("result"), 6000),
+        "blockReason": next((progress_content(mapping(event.get("payload")).get("reason"), 1000)
+                             for event in reversed(objects(result.get("events"))) if event.get("kind") == "blocked"), "")
+        if task.get("status") == "blocked" else "",
+        "events": [
+            {"id": event["id"], "kind": progress_text(event.get("kind"), 40), "at": progress_timestamp(event.get("created_at"))}
+            for event in reversed(objects(result.get("events"))[-20:]) if type(event.get("id")) is int
+        ],
+        "runs": [
+            {"id": run["id"], "profile": progress_text(run.get("profile"), 100), "status": progress_text(run.get("status"), 40),
+             "outcome": progress_text(run.get("outcome"), 40), "summary": progress_content(run.get("summary"), 2000),
+             "error": progress_content(run.get("error"), 1000), "startedAt": progress_timestamp(run.get("started_at")),
+             "endedAt": progress_timestamp(run.get("ended_at"))}
+            for run in reversed(objects(result.get("runs"))[-10:]) if type(run.get("id")) is int
+        ],
+    }
 
 def brand_document(root, record_id, document_id):
     with editable_record(root, "brands", record_id) as (record, source, _):
@@ -1523,6 +1669,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         kanban = re.fullmatch(r"/workspace/campaigns/([^/]+)/kanban", self.path)
         lifecycle = re.fullmatch(r"/workspace/campaigns/([^/]+)/lifecycle", self.path)
         changes = re.fullmatch(r"/workspace/campaigns/([^/]+)/changes", self.path)
+        progress = re.fullmatch(r"/workspace/campaigns/([^/]+)/progress", self.path)
+        task = re.fullmatch(r"/workspace/campaigns/([^/]+)/tasks/([^/]+)", self.path)
         try:
             if self.path == "/workspace":
                 result = records(self.server.root)
@@ -1542,6 +1690,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = campaign_kanban_status(self.server.root, kanban[1])
             elif lifecycle:
                 result = campaign_lifecycle_status(self.server.root, lifecycle[1])
+            elif progress:
+                result = campaign_progress(self.server.root, progress[1])
+            elif task:
+                result = campaign_task_activity(self.server.root, *task.groups())
             elif document:
                 result = brand_document(self.server.root, *document.groups())
             elif logo:
