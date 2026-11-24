@@ -1,12 +1,10 @@
-/** Loads the conversation history scoped to the campaign in the URL. */
+/** Passes the current campaign ID to the authenticated chat pane. */
 
-import { workspaceId } from "@/lib/server/agent-workspace";
 import { Conversation, type ConversationParams } from "../../conversation";
 
-export default async function CampaignConversationPage({ params, searchParams }: {
+export default function CampaignConversationPage({ params, searchParams }: {
   params: Promise<{ id: string }>;
   searchParams: ConversationParams;
 }) {
-  const campaign = workspaceId.safeParse((await params).id);
-  return <Conversation searchParams={searchParams} campaignId={campaign.data} />;
+  return <Conversation searchParams={searchParams} campaignParams={params} />;
 }

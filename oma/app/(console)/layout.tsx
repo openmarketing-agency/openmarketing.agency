@@ -5,6 +5,9 @@ import { Loading } from "@/components/ui";
 import { requireUser } from "@/lib/dal";
 import { requireAgentSetup } from "@/lib/server/agent-setup";
 
+// Signed-in navigation validates the session against the current request.
+export const instant = false;
+
 type Props = { children: ReactNode; conversation: ReactNode };
 
 async function AuthenticatedConsole({ children, conversation }: Props) {

@@ -47,6 +47,7 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: node tests/console-routing.smoke.mjs
+      - run: node tests/console-routing.smoke.mjs --dev
 
   vm:
     runs-on: ubuntu-24.04

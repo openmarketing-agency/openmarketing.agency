@@ -1,4 +1,4 @@
-/** Checks public auth routes and signed-in chat routing against the production build and a disposable database. */
+/** Checks public auth routes and signed-in chat routing with a disposable database in production or development. */
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -12,17 +12,31 @@ import { setTimeout } from "node:timers/promises";
 const data = await mkdtemp(join(tmpdir(), "oma-routing-"));
 const port = "3217";
 const origin = "http://127.0.0.1:" + port;
-const app = spawn(process.execPath, [".next/standalone/server.js"], {
+const development = process.argv.includes("--dev");
+const command = development
+  ? ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1"]
+  : [".next/standalone/server.js"];
+const app = spawn(process.execPath, command, {
   env: {
+    PATH: process.env.PATH,
     HOSTNAME: "127.0.0.1",
     PORT: port,
     OMA_DATA_DIR: data,
     OMA_SECRET_KEY: randomUUID(),
     NEXT_TELEMETRY_DISABLED: "1",
   },
-  stdio: "inherit",
+  stdio: development ? ["ignore", "pipe", "pipe"] : "inherit",
 });
 const exited = once(app, "exit");
+let developmentOutput = "";
+if (development) {
+  for (const [source, destination] of [[app.stdout, process.stdout], [app.stderr, process.stderr]]) {
+    source.setEncoding("utf8").on("data", (chunk) => {
+      developmentOutput += chunk;
+      destination.write(chunk);
+    });
+  }
+}
 
 function request(path, options) {
   return fetch(origin + path, { redirect: "manual", signal: AbortSignal.timeout(5000), ...options });
@@ -50,7 +64,7 @@ try {
     }
     await setTimeout(100);
   }
-  assert.ok(ready, "The production console did not start");
+  assert.ok(ready, "The console did not start");
   await assertRedirect("/", "/dashboard");
   await assertRedirect("/dashboard", "/login?next=%2Fdashboard");
   await assertPage("/login?next=%2Fdashboard", "Sign in");
@@ -73,10 +87,14 @@ try {
   for (const path of ["/dashboard", "/settings", "/connections", "/approvals"]) {
     await assertPage(path, "Workspace chat", headers);
   }
-  await assertPage("/campaigns/fixture", "Campaign chat", headers);
+  await assertPage("/campaigns/fixture?view=deploy", "Campaign chat", headers);
   console.log("Public auth and signed-in chat routes passed.");
 } finally {
   app.kill();
   await exited;
   await rm(data, { recursive: true, force: true });
+}
+
+if (development) {
+  assert.doesNotMatch(developmentOutput, /encountered uncached data|Could not validate `instant`/);
 }
