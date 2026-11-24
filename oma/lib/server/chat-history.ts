@@ -21,6 +21,7 @@ const transcript = z.object({
     session_id: z.string().optional().catch(undefined),
     role: z.string(),
     content: z.string().nullish().catch(undefined),
+    display_content: z.string().nullish().catch(undefined),
     display_kind: z.string().nullish().catch(undefined),
     tool_calls: z.array(z.unknown()).nullable().optional().catch(undefined),
   })),
@@ -76,8 +77,9 @@ async function readTranscript(sessionId: string, offset: number, campaignId?: st
   for (const row of parsed.data.data) {
     if ((row.role !== "user" && row.role !== "assistant") || typeof row.content !== "string"
       || row.display_kind === "hidden" || row.display_kind === "commentary" || row.tool_calls?.length) continue;
-    const text = row.role === "user" && campaignSuffix && row.content.endsWith(campaignSuffix)
-      ? row.content.slice(0, -campaignSuffix.length) : row.content;
+    const content = row.role === "user" && row.display_kind === "steer" ? row.display_content ?? row.content : row.content;
+    const text = row.role === "user" && campaignSuffix && content.endsWith(campaignSuffix)
+      ? content.slice(0, -campaignSuffix.length) : content;
     if (text.trim()) messages.push({ id: (row.session_id ?? sessionId) + ":" + row.id, role: row.role, text: redact(text) });
   }
   return { messages, nextOffset: parsed.data.data.length === messagePageSize ? offset + messagePageSize : null };

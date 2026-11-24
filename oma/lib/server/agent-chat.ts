@@ -12,12 +12,15 @@ import { loadSettings } from "./settings";
 
 const runId = z.string().regex(/^run_[A-Za-z0-9_-]{1,128}$/);
 export const scopedAgentSessionId = /^oma_[a-f0-9]{32}_([a-f0-9-]{36})$/;
+const chatText = z.string().trim().min(1).max(maxChatMessageLength);
 const turnInput = z.object({
   sessionId: z.union([z.uuid(), z.string().regex(scopedAgentSessionId)]),
   turnId: z.uuid(),
-  message: z.string().trim().min(1).max(maxChatMessageLength),
+  message: chatText,
   campaignId: workspaceId.optional(),
 });
+const steerInput = z.object({ message: chatText, campaignId: workspaceId.optional() });
+const steerReceipt = z.object({ run_id: runId, accepted: z.literal(true) });
 const promptId = z.string().regex(/^[a-zA-Z0-9_-]{1,256}$/);
 const generation = z.number().int().nonnegative();
 const coordinates = { id: promptId, generation };
@@ -37,6 +40,7 @@ const activityFields = {
 };
 const statusSchema = z.object({
   status: z.string(), output: z.string().nullish(), pending_controls: z.array(z.unknown()).optional(),
+  pending_steer: z.string().trim().min(1).optional().catch(undefined),
   ...activityFields,
 });
 const activitySchema = z.object({
@@ -192,8 +196,9 @@ function projectRun(payload: unknown, key: string): AgentRun {
   const parsed = statusSchema.safeParse(payload);
   if (!parsed.success) throw new AgentChatError(502, "oma-agent returned an invalid run status.");
   const run = parsed.data;
-  if (run.status === "completed") return { status: "completed", answer: (run.output ?? "").replaceAll(key, "[redacted]") };
-  if (!runningStatuses.has(run.status)) return { status: "failed" };
+  const pendingSteer = run.pending_steer ? { pendingSteer: run.pending_steer.replaceAll(key, "[redacted]") } : {};
+  if (run.status === "completed") return { status: "completed", answer: (run.output ?? "").replaceAll(key, "[redacted]"), ...pendingSteer };
+  if (!runningStatuses.has(run.status)) return { status: "failed", ...pendingSteer };
   const prompt = pendingRunPrompt(run.pending_controls, key);
   const phase = prompt?.kind === "approval" ? "waiting_for_approval"
     : prompt?.kind === "clarify" ? "waiting_for_answer"
@@ -222,18 +227,20 @@ export async function agentStatus(scope?: ProfileScope): Promise<AgentStatus> {
   }
 }
 
+async function messageWithCampaignContext(message: string, campaignId?: string) {
+  if (!campaignId) return message;
+  const { records } = await loadAgentWorkspace();
+  if (!records) throw new AgentChatError(503, "The campaign workspace is unavailable. Try again.");
+  const campaign = records.campaigns.find(({ id }) => id === campaignId);
+  if (!campaign) throw new AgentChatError(404, "This campaign was not found.");
+  return message + "\n\nCampaign ID: " + campaign.id;
+}
+
 export async function startAgentRun(userId: string, input: unknown, scope?: ProfileScope) {
   const parsed = turnInput.safeParse(input);
   if (!parsed.success) throw new AgentChatError(422, "Enter a valid chat message and try again.");
   const { sessionId, turnId, message, campaignId } = parsed.data;
-  let agentMessage = message;
-  if (campaignId) {
-    const { records } = await loadAgentWorkspace();
-    if (!records) throw new AgentChatError(503, "The campaign workspace is unavailable. Try again.");
-    const campaign = records.campaigns.find(({ id }) => id === campaignId);
-    if (!campaign) throw new AgentChatError(404, "This campaign was not found.");
-    agentMessage += "\n\nCampaign ID: " + campaign.id;
-  }
+  const agentMessage = await messageWithCampaignContext(message, campaignId);
   const config = await gateway(campaignId ? "default" : scope);
   const response = await sendRequest(config, "/runs", {
     turnId, body: { session_id: sessionId, input: agentMessage },
@@ -242,6 +249,27 @@ export async function startAgentRun(userId: string, input: unknown, scope?: Prof
   if (!result.success) throw new AgentChatError(502, "oma-agent didn’t return a valid run identifier.");
   const id = result.data.run_id;
   return { handle: `${id}.${signature(userId, config, id)}` };
+}
+
+/** Give the signed-in user's current default-profile run guidance at its next tool boundary. */
+export async function steerAgentRun(userId: string, handle: unknown, input: unknown) {
+  const parsed = steerInput.safeParse(input);
+  if (!parsed.success) throw new AgentChatError(422, "Enter a valid chat message and try again.");
+  const config = await gateway("default");
+  const id = readHandle(userId, config, handle);
+  const message = await messageWithCampaignContext(parsed.data.message, parsed.data.campaignId);
+  try {
+    const response = await sendRequest(config, `/runs/${id}/steer`, { body: { input: message } });
+    const result = steerReceipt.safeParse(await readJson(response));
+    if (!result.success || result.data.run_id !== id) {
+      throw new AgentChatError(502, "Couldn’t confirm that oma-agent received your guidance.");
+    }
+  } catch (error) {
+    if (error instanceof AgentChatError && error.status === 409) {
+      throw new AgentChatError(409, "This turn can’t take guidance right now. Your message is still in the composer.");
+    }
+    throw error;
+  }
 }
 
 export async function getAgentRun(userId: string, handle: unknown, scope?: ProfileScope): Promise<AgentRun> {

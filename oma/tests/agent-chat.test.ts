@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 
-import { AgentChatError, agentStatus, answerAgentPrompt, getAgentActivityCounts, getAgentRun, getAgentRunProgress, startAgentRun, streamAgentRunActivity } from "../lib/server/agent-chat";
+import { AgentChatError, agentStatus, answerAgentPrompt, getAgentActivityCounts, getAgentRun, getAgentRunProgress, startAgentRun, steerAgentRun, streamAgentRunActivity } from "../lib/server/agent-chat";
 
 const key = "fixture-agent-key";
 const account = "fixture-owner";
@@ -80,6 +80,41 @@ test("starts and polls a scoped run, submits its clarification, and redacts the 
   assert.deepEqual(await getAgentRun(account, handle), { status: "completed", answer: "Done. [redacted]" });
 });
 
+test("steers the current default-profile run and reports unconsumed guidance safely", async (t) => {
+  useGateway(t);
+  const url = "http://vm:8642/p/default/v1/runs";
+  let response = Response.json({ run_id: "run_guidance", accepted: true });
+  const requests = t.mock.method(globalThis, "fetch", async (target: string, options: RequestInit) => {
+    assert.equal(new Headers(options.headers).get("Authorization"), "Bearer " + key);
+    if (target === url) return Response.json({ run_id: "run_guidance" }, { status: 202 });
+    if (target === url + "/run_guidance/steer") {
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(String(options.body)), { input: "Focus on the draft" });
+      return response;
+    }
+    assert.equal(target, url + "/run_guidance");
+    return Response.json({ status: "completed", output: "Done", pending_steer: "Late note " + key });
+  });
+
+  const { handle } = await startAgentRun(account, message, "default");
+  await assert.rejects(steerAgentRun("another-user", handle, { message: "Focus on the draft" }),
+    (error: unknown) => error instanceof AgentChatError && error.status === 404);
+  await assert.rejects(steerAgentRun(account, handle, { message: " " }),
+    (error: unknown) => error instanceof AgentChatError && error.status === 422);
+  assert.equal(requests.mock.callCount(), 1);
+  await steerAgentRun(account, handle, { message: " Focus on the draft " });
+
+  response = Response.json({ error: { code: "run_not_accepting_steer" } }, { status: 409 });
+  await assert.rejects(steerAgentRun(account, handle, { message: "Focus on the draft" }),
+    (error: unknown) => error instanceof AgentChatError && error.status === 409 && error.message.includes("composer"));
+  response = Response.json({ run_id: "run_other", accepted: true });
+  await assert.rejects(steerAgentRun(account, handle, { message: "Focus on the draft" }),
+    (error: unknown) => error instanceof AgentChatError && error.status === 502);
+  assert.deepEqual(await getAgentRun(account, handle, "default"),
+    { status: "completed", answer: "Done", pendingSteer: "Late note [redacted]" });
+  assert.equal(requests.mock.calls.filter(({ arguments: [target] }) => target === url).length, 1);
+});
+
 test("appends the saved campaign ID to every turn sent to the default profile", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "oma-campaign-chat-"));
   const socket = join(directory, "workspace.sock");
@@ -104,16 +139,24 @@ test("appends the saved campaign ID to every turn sent to the default profile", 
   await new Promise<void>((resolve, reject) => server.once("error", reject).listen(socket, resolve));
 
   const requests = t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
-    assert.equal(url, "http://vm:8642/p/default/v1/runs");
     assert.equal(new Headers(options.headers).get("authorization"), "Bearer " + key);
+    if (url.endsWith("/steer")) {
+      assert.equal(url, "http://vm:8642/p/default/v1/runs/run_campaign/steer");
+      assert.deepEqual(JSON.parse(String(options.body)),
+        { input: "Focus on replies\n\nCampaign ID: " + campaignId });
+      return Response.json({ run_id: "run_campaign", accepted: true });
+    }
+    assert.equal(url, "http://vm:8642/p/default/v1/runs");
     return Response.json({ run_id: "run_campaign" }, { status: 202 });
   });
   const followUp = {
     ...message, turnId: "c7198822-7690-4c2e-9b20-22027d530bfa", message: "What’s next?",
   };
+  let campaignHandle = "";
   for (const turn of [message, followUp]) {
     const { handle } = await startAgentRun(account, { ...turn, campaignId });
     assert.match(handle, /^run_campaign\./);
+    campaignHandle = handle;
   }
   assert.equal(requests.mock.callCount(), 2);
   requests.mock.calls.forEach(({ arguments: [, options] }, index) => {
@@ -129,6 +172,8 @@ test("appends the saved campaign ID to every turn sent to the default profile", 
   await assert.rejects(startAgentRun(account, { ...message, campaignId: "../invalid" }),
     (error: unknown) => error instanceof AgentChatError && error.status === 422);
   assert.equal(requests.mock.callCount(), 2);
+  await steerAgentRun(account, campaignHandle, { message: "Focus on replies", campaignId });
+  assert.equal(requests.mock.callCount(), 3);
 });
 
 test("uses the private key file for the bundled gateway and reports unreachable gateways", async (t) => {

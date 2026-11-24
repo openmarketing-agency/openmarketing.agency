@@ -91,6 +91,10 @@ test("Hermes supplies history and owns new conversations while retired SQLite li
     if (!entry) return Response.json({}, { status: 404 });
     const data = [
       { id: 1, role: "user", content: entry.text },
+      ...(entry.text.startsWith("Current launch") ? [{
+        id: 5, role: "user", display_kind: "steer", content: "[Native steering wrapper]",
+        display_content: "Focus on replies\n\nCampaign ID: launch",
+      }] : []),
       { id: 2, role: "assistant", content: "Agent answer fixture-gateway-key", reasoning: "Private reasoning" },
       { id: 3, role: "assistant", content: "Private prompt", display_kind: "hidden" },
       { id: 4, role: "tool", content: "Private tool output" },
@@ -108,7 +112,7 @@ test("Hermes supplies history and owns new conversations while retired SQLite li
   assert.notEqual(requests[0].session, requests[2].session);
   const launch = await loadChatHistory(owner, "launch", threadId);
   assert.deepEqual(launch.chats.map(({ id }) => id), [oldThread, threadId]);
-  assert.deepEqual(launch.active?.messages.map(({ text }) => text), ["Current launch", "Agent answer [redacted]"]);
+  assert.deepEqual(launch.active?.messages.map(({ text }) => text), ["Current launch", "Focus on replies", "Agent answer [redacted]"]);
   assert.ok(requests.some(({ endpoint }) => endpoint === "sessions 200"));
   assert.deepEqual((await loadChatHistory(owner)).chats.map(({ id }) => id), [threadId]);
   assert.deepEqual((await loadChatHistory(owner, "reviews", threadId)).active?.messages, []);

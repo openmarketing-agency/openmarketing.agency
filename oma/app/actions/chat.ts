@@ -7,7 +7,7 @@ import { requireUser } from "@/lib/dal";
 import { requireAgentSetup } from "@/lib/server/agent-setup";
 import { readCampaignChanges, syncCampaignChatChanges, WorkspaceRequestError, workspaceId } from "@/lib/server/agent-workspace";
 import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
-import { AgentChatError, answerAgentPrompt, getAgentRun } from "@/lib/server/agent-chat";
+import { AgentChatError, answerAgentPrompt, getAgentRun, steerAgentRun } from "@/lib/server/agent-chat";
 import { loadOlderChatMessages, sendNativeChatTurn } from "@/lib/server/chat-history";
 
 async function withUser<T>(operation: (userId: string) => Promise<T>) {
@@ -29,6 +29,10 @@ export async function sendChatMessage(threadId: string, turnId: string, message:
     const run = await sendNativeChatTurn(userId, { threadId, turnId, message, campaignId });
     return { ...run, changes };
   });
+}
+
+export async function steerChatMessage(handle: string, message: string, campaignId?: string) {
+  return withUser((userId) => steerAgentRun(userId, handle, { message, campaignId }));
 }
 
 export async function readOlderChatMessages(threadId: string, offset: number, campaignId?: string) {

@@ -22,8 +22,8 @@ export type ActiveAgentRun = {
 
 export type AgentRun =
   | ActiveAgentRun
-  | { status: "completed"; answer: string }
-  | { status: "failed" };
+  | { status: "completed"; answer: string; pendingSteer?: string }
+  | { status: "failed"; pendingSteer?: string };
 
 export type ChatMessage = {
   id: string;
