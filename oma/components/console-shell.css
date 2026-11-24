@@ -111,7 +111,7 @@
     overflow: visible;
   }
   .workbench-brand, .workbench-account { display: none; }
-  .workbench-links { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; max-width: 40rem; margin-inline: auto; }
+  .workbench-links { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; max-width: 40rem; margin-inline: auto; }
   .workbench-links a { flex-direction: column; justify-content: center; gap: 3px; min-height: 52px; padding: 5px 1px; font-size: 12px; }
   .workbench-links a:focus-visible { outline-offset: -2px; }
   .workbench-main { min-height: calc(100dvh - var(--mobile-workbench-header)); padding-bottom: calc(72px + env(safe-area-inset-bottom)); }

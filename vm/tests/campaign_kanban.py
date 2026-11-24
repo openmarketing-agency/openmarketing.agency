@@ -21,14 +21,21 @@ class WorkspaceConnection(HTTPConnection):
         self.sock.connect(self.host)
 
 
-def fetch(address, campaign_id, view="kanban"):
+def request(address, path, payload=None):
     client = WorkspaceConnection(address, timeout=10)
     try:
-        client.request("GET", f"/workspace/campaigns/{campaign_id}/{view}")
+        if payload is None:
+            client.request("GET", path)
+        else:
+            client.request("POST", path, json.dumps(payload), {"Content-Type": "application/json"})
         response = client.getresponse()
         return response.status, json.load(response)
     finally:
         client.close()
+
+
+def fetch(address, campaign_id, view="kanban"):
+    return request(address, f"/workspace/campaigns/{campaign_id}/{view}")
 
 
 def save_campaign(root, campaign_id, **settings):
@@ -46,7 +53,7 @@ try:
         boards[slug] = kanban_db.create_board(slug, name=name)
     with connect_closing(board=primary) as connection:
         task_id = kanban_db.create_task(connection, title="Investigate", body="Review the campaign brief", triage=True, board=primary)
-        kanban_db.create_task(connection, title="Needs attention", initial_status="blocked", board=primary)
+        blocked_task = kanban_db.create_task(connection, title="Needs attention", initial_status="blocked", board=primary)
         archived = kanban_db.create_task(connection, title="Archived work", board=primary)
         assert kanban_db.archive_task(connection, archived)
     with connect_closing(board=other) as connection:
@@ -86,6 +93,34 @@ try:
                 assert fetch(address, "campaign-with-id", "tasks/" + other_task)[0] == 404
                 assert fetch(address, "campaign-draft", "progress")[1]["board"]["state"] == "unconfigured"
                 assert fetch(address, "campaign-ambiguous", "progress")[1]["board"]["state"] == "ambiguous"
+                status, result = request(address, "/workspace/tasks")
+                assert status == 200, result
+                tasks_by_board = {board["slug"]: board["tasks"] for board in result["boards"]}
+                assert {item["title"] for item in tasks_by_board[primary]} == {"Investigate", "Needs attention"}
+                assert [item["id"] for item in tasks_by_board[other]] == [other_task]
+                assert tasks_by_board[empty] == []
+                path = f"/workspace/tasks/{primary}/{blocked_task}"
+                comment = {"action": "comment", "body": "  The brief is now approved.  ", "author": "operator@example.test"}
+                assert request(address, f"/workspace/tasks/{other}/{blocked_task}", comment)[0] == 404
+                assert request(address, path, {**comment, "body": " "})[0] == 422
+                assert request(address, path, comment) == (200, {"ok": True})
+                status, detail = request(address, path)
+                assert status == 200 and detail["task"]["status"] == "blocked", detail
+                assert [(item["author"], item["body"]) for item in detail["comments"]] == [
+                    ("operator@example.test", "The brief is now approved."),
+                ]
+                assert request(address, path, {"action": "unblock"}) == (200, {"status": "ready"})
+                assert request(address, path, {"action": "unblock"})[0] == 409
+                assert request(address, path)[1]["task"]["status"] == "ready"
+                with connect_closing(board=primary) as connection:
+                    assert kanban_db.block_task(connection, blocked_task, reason="Waiting for the brief")
+                    kanban_db.link_tasks(connection, task_id, blocked_task)
+                assert request(address, path)[1]["blockReason"] == "Waiting for the brief"
+                assert request(address, path, {"action": "unblock"}) == (200, {"status": "todo"})
+                with connect_closing(board=primary) as connection:
+                    saved = kanban_db.get_task(connection, blocked_task)
+                    assert saved is not None and saved.status == "todo"
+                    assert len(kanban_db.list_comments(connection, blocked_task)) == 1
             finally:
                 server.shutdown()
                 worker.join()
@@ -93,4 +128,4 @@ finally:
     for slug in boards:
         kanban_db.remove_board(slug, archive=False)
 
-print("Campaigns read only their board’s counts, tasks, and task history from the Kanban API")
+print("Campaign and workspace task reads, comments, and dependency-aware unblocking passed")
