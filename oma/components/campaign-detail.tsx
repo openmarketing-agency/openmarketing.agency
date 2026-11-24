@@ -165,7 +165,6 @@ export function CampaignDetail({
       {view === "tools" && (
         <div className="campaign-tools">
           <ToolkitBrowser scope={campaignConnectionScope(campaign.id)}
-            startInCatalog={query.get("tool_list") === "catalog"}
             snapshot={snapshot} metadata={metadata}
             requiredIntegrations={requiredIntegrations}
             feedback={feedback} onChange={updateConnections} />

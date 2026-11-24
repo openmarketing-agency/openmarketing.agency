@@ -9,7 +9,6 @@ import {
   toolCatalog,
 } from "@/lib/composio";
 import {
-  CAMPAIGN_CATALOG_SCOPE,
   connectionScope,
   isWorkspaceScope,
   WORKSPACE_SCOPE,
@@ -70,9 +69,7 @@ export async function connectToolAction(
       if (error) return { error };
       const campaign = records?.campaigns.find((item) => item.id === campaignId);
       if (!campaign) return { error: "Campaign not found." };
-      // The catalog authorizes a shared account while keeping the campaign routing unchanged.
-      if (scope.agentId !== CAMPAIGN_CATALOG_SCOPE
-          && !campaign.requiredIntegrations?.some((required) => required.slug === slug)) {
+      if (!campaign.requiredIntegrations?.some((required) => required.slug === slug)) {
         return { error: "This toolkit is not configured for the campaign." };
       }
     }

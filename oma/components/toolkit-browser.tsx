@@ -20,7 +20,6 @@ import {
   toolCategoriesAction,
 } from "@/app/actions/composio";
 import {
-  campaignConnectionScope,
   isWorkspaceScope,
   WORKSPACE_SCOPE,
   type ToolConnectionScope,
@@ -31,7 +30,7 @@ import type { CatalogPage, Toolkit } from "@/lib/tool-catalog";
 
 const EMPTY_TOOLKITS: Toolkit[] = [];
 const NO_REQUIRED_INTEGRATIONS: RequiredIntegration[] = [];
-type ToolList = "connected" | "required" | "all";
+type ToolList = "connected" | "all";
 
 function ToolkitLogo({ url }: { url?: string }) {
   const [failed, setFailed] = useState<string>();
@@ -53,7 +52,6 @@ export function ToolkitBrowser({
   metadata: initialMetadata = [],
   onChange,
   feedback,
-  startInCatalog = false,
   demo = false,
   demoCatalog = EMPTY_TOOLKITS,
 }: {
@@ -63,7 +61,6 @@ export function ToolkitBrowser({
   selected?: string[];
   metadata?: Toolkit[];
   feedback?: string;
-  startInCatalog?: boolean;
   demo?: boolean;
   demoCatalog?: Toolkit[];
   onChange?: (
@@ -74,11 +71,9 @@ export function ToolkitBrowser({
   const isCampaign = !isWorkspaceScope(scope);
   const hasRequiredTools = isCampaign && requiredIntegrations.length > 0;
   const [selectedTab, setSelectedTab] = useState<ToolList>(
-    isCampaign ? (startInCatalog ? "all" : "required")
-      : initialSnapshot.configured && !initialSnapshot.connected.length ? "all" : "connected",
+    initialSnapshot.configured && !initialSnapshot.connected.length ? "all" : "connected",
   );
-  const tab = isCampaign && !hasRequiredTools ? "all" : selectedTab;
-  const campaignCatalog = isCampaign && tab === "all";
+  const tab = isCampaign ? "required" : selectedTab;
   const [search, setSearch] = useState("");
   const searchInput = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState("");
@@ -104,7 +99,7 @@ export function ToolkitBrowser({
   const [pending, startTransition] = useTransition();
   const revision = useRef(0);
   const [retry, setRetry] = useState(0);
-  const showCategories = !isCampaign || campaignCatalog;
+  const showCategories = !isCampaign;
   useEffect(() => {
     if (demo || !showCategories || !snapshot.configured) return;
     let live = true;
@@ -210,20 +205,13 @@ export function ToolkitBrowser({
     ? requiredIntegrations.length > 1
     : canBrowseCatalog || (!isCampaign && connectedIds.length > 0);
   const visible = tab === "all" ? page.items : localItems;
-  const tabs: { id: ToolList; label: string }[] = isCampaign ? [
-    { id: "required", label: "Required tools" },
-    { id: "all", label: "Composio catalog" },
-  ] : [
+  const tabs: { id: ToolList; label: string }[] = [
     { id: "connected", label: `Connected (${connectedIds.length})` },
     { id: "all", label: "All tools" },
   ];
 
   function selectToolList(next: ToolList) {
     if (next === tab) return;
-    if (isCampaign) {
-      setSearch("");
-      setCategory("");
-    }
     if (next === "all" && canBrowseCatalog) setLoading(true);
     setSelectedTab(next);
   }
@@ -285,8 +273,7 @@ export function ToolkitBrowser({
               : `${tool.name} disconnected. Campaigns using this account will need to reconnect it.`,
           );
         } else {
-          const connection = campaignCatalog ? campaignConnectionScope(scope.playbookId, true) : scope;
-          const result = await connectToolAction(tool.slug, connection);
+          const result = await connectToolAction(tool.slug, scope);
           if (result.url) {
             window.location.assign(result.url);
             return;
@@ -359,9 +346,8 @@ export function ToolkitBrowser({
     <div className={`tool-browser ${isCampaign ? "for-campaign" : "for-workspace"}`}>
       <div className="tool-browser-heading">
         <div>
-          <h2>{hasRequiredTools ? "Campaign tools" : isCampaign ? "Composio catalog" : "Tool catalog"}</h2>
-          {tab === "required" && <p>Connect the tools required by this campaign’s configuration.</p>}
-          {campaignCatalog && <p>Connect shared accounts. Campaigns use the integrations listed in their configuration.</p>}
+          <h2>{isCampaign ? "Campaign tools" : "Tool catalog"}</h2>
+          {hasRequiredTools && <p>Connect the tools required by this campaign’s configuration.</p>}
         </div>
         <button
           type="button"
@@ -373,14 +359,14 @@ export function ToolkitBrowser({
           <RefreshCw size={16} className={busy === "refresh" ? "spin" : ""} />
         </button>
       </div>
-      {(hasRequiredTools || (!isCampaign && showFilters)) && (
+      {!isCampaign && showFilters && (
         <div className="tool-browser-tabs" role="group" aria-label="Tool lists">
           {tabs.map((item) => (
             <button
               type="button"
               key={item.id}
               aria-pressed={tab === item.id}
-              disabled={!isCampaign && item.id === "all" && !canBrowseCatalog}
+              disabled={item.id === "all" && !canBrowseCatalog}
               className={tab === item.id ? "selected" : ""}
               onClick={() => selectToolList(item.id)}
             >
@@ -397,7 +383,7 @@ export function ToolkitBrowser({
               ref={searchInput}
               aria-label="Search tools"
               placeholder={
-                campaignCatalog ? "Search Composio tools…" : tab === "required" ? "Search campaign tools…"
+                tab === "required" ? "Search campaign tools…"
                   : tab === "all" ? "Search tools…" : "Search connected tools…"
               }
               value={search}
@@ -449,11 +435,11 @@ export function ToolkitBrowser({
           </label>}
         </div>
       )}
-      {!canBrowseCatalog && (
+      {!canBrowseCatalog && (!isCampaign || hasRequiredTools) && (
         <div className="notice">
           <div>
             <strong>Tool provider setup required</strong>
-            <p>Set <code>COMPOSIO_API_KEY</code> in the console environment, then restart the console and {campaignCatalog ? "reload this page" : "refresh connections"}.</p>
+            <p>Set <code>COMPOSIO_API_KEY</code> in the console environment, then restart the console and refresh connections.</p>
           </div>
         </div>
       )}
@@ -475,7 +461,7 @@ export function ToolkitBrowser({
               ? "Searching tools…"
               : `${page.total.toLocaleString()} ${page.total === 1 ? "tool" : "tools"} available`}
           </span>
-          {!campaignCatalog && <span>Browse integrations and search providers</span>}
+          <span>Browse integrations and search providers</span>
         </div>
       )}
       <div
@@ -525,7 +511,7 @@ export function ToolkitBrowser({
                     <>
                       <span className="connection-status">
                         <Check size={13} />
-                        {isCampaign && (!campaignCatalog || tool.noAuth) ? "Ready" : tool.noAuth ? "Enabled" : "Connected"}
+                        {isCampaign ? "Ready" : tool.noAuth ? "Enabled" : "Connected"}
                       </span>
                       {!isCampaign && <button
                         className="btn ghost"
@@ -572,7 +558,7 @@ export function ToolkitBrowser({
         )}
         {tab === "required" && !visible.length && !unsupported.length && (
           <div className="tool-catalog-empty">
-            <h3>No integrations match your search</h3>
+            <h3>{hasRequiredTools ? "No integrations match your search" : "No integrations configured"}</h3>
           </div>
         )}
         {tab !== "required" && canBrowseCatalog && !catalogLoading && !visible.length && !catalogError && (
@@ -588,7 +574,7 @@ export function ToolkitBrowser({
                 ? "Explore the catalog to connect an account or add a tool that needs no sign-in."
                 : "Try a different search or category."}
             </p>
-            {!campaignCatalog && <button
+            <button
               className="btn secondary"
               onClick={() => {
                 setSearch("");
@@ -600,7 +586,7 @@ export function ToolkitBrowser({
             >
               Browse all tools
               <ArrowUpRight size={14} />
-            </button>}
+            </button>
           </div>
         )}
       </div>

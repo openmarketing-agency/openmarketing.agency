@@ -230,7 +230,7 @@ sequenceDiagram
     end
 ```
 
-Campaign requirements come from the `integrations` list in `campaigns/{id}/config.yaml`. The workspace service maps canonical IDs to verified toolkit slugs. Campaign **Tools** always offers the searchable catalog, including campaigns with suggested or required tools and campaigns with an empty list. Authorizing a catalog toolkit creates a shared Composio account connection. The campaign’s saved integration list determines which toolkits the campaign MCP session receives.
+Campaign requirements come from the `integrations` list in `campaigns/{id}/config.yaml`. The workspace service maps canonical IDs to verified toolkit slugs. Campaign **Tools** displays the saved integration list and connects required accounts. The workspace-wide **Tools** page provides catalog search and shared account management. The campaign’s saved integration list determines which toolkits the campaign MCP session receives.
 
 **Code to read** · [Toolkit browser](../oma/components/toolkit-browser.tsx) · [Composio actions](../oma/app/actions/composio.ts) · [OAuth callback](../oma/app/api/connections/callback/route.ts) · [Account and MCP sessions](../oma/lib/tool-connection-service.ts) · [Campaign toolkit resolution](../oma/lib/tool-workspace.ts)
 
