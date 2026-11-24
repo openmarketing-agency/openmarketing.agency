@@ -13,6 +13,7 @@ import { CampaignKanban } from "@/components/campaign-kanban";
 import { CampaignProgress } from "@/components/campaign-progress";
 import { CampaignModeSettings } from "@/components/campaign-mode-settings";
 import { CampaignSettings } from "@/components/campaign-settings";
+import { WorkspaceAnalytics } from "@/components/workspace-analytics";
 import { ToolkitBrowser } from "@/components/toolkit-browser";
 import { campaignLifecycleLabel } from "@/components/workspace-records";
 import { campaignConnectionScope } from "@/lib/agent-connections";
@@ -23,6 +24,7 @@ import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 const views = [
   { id: "progress", label: "Progress" },
   { id: "overview", label: "Plan" },
+  { id: "analytics", label: "Analytics" },
   { id: "agents", label: "Agents" },
   { id: "tools", label: "Tools" },
   { id: "settings", label: "Run settings" },
@@ -179,6 +181,7 @@ export function CampaignDetail({
         {configuration && <CampaignPlanEditor campaign={campaign} revision={configuration.revision} />}
         {overview}
       </>}
+      {view === "analytics" && <WorkspaceAnalytics key={campaign.id} id={campaign.id} />}
       {view === "agents" && <>
         {configuration && <CampaignAgentSync campaignId={campaign.id} revision={configuration.revision} />}
         {agents}

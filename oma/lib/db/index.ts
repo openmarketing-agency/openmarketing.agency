@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync };
 
-export const sqliteSchemaVersion = 7;
+export const sqliteSchemaVersion = 8;
 export const legacyToolSelectionsSchemaVersion = 3;
 
 export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
@@ -22,12 +22,28 @@ export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
   }
 }
 
+function createAnalyticsTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workspace_analytics (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      scope TEXT NOT NULL CHECK (scope IN ('campaigns', 'playbooks')),
+      target_id TEXT NOT NULL,
+      layout TEXT CHECK (layout IS NULL OR json_valid(layout)),
+      generated_at INTEGER,
+      attempt TEXT,
+      lease_until INTEGER,
+      PRIMARY KEY (user_id, scope, target_id)
+    ) STRICT;
+  `);
+}
+
 function initializeSchema(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
     if (version === sqliteSchemaVersion) return;
-    if (version === 5 || version === 6) {
+    if (version === 5 || version === 6 || version === 7) {
       // Existing transcript copies are left intact. Only legacy session IDs are used to reopen chats.
+      createAnalyticsTable(db);
       db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
       return;
     }
@@ -35,6 +51,7 @@ function initializeSchema(db: DatabaseSync): void {
       if (!db.prepare("SELECT 1 FROM pragma_table_info('users') WHERE name = 'agent_setup_complete'").get()) {
         db.exec("ALTER TABLE users ADD COLUMN agent_setup_complete INTEGER NOT NULL DEFAULT 0 CHECK (agent_setup_complete IN (0, 1))");
       }
+      createAnalyticsTable(db);
       // Keep version 3 until the workspace acknowledges the legacy tool selection import.
       if (version === 4) db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
       return;
@@ -75,6 +92,7 @@ function initializeSchema(db: DatabaseSync): void {
         UNIQUE (user_id, url)
       ) STRICT;
     `);
+    createAnalyticsTable(db);
     db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
   });
 }

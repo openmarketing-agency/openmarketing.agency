@@ -1,0 +1,65 @@
+/* Aligns the OpenUI dashboard canvas and its refresh controls with the workspace console. */
+
+.workspace-analytics {
+  min-width: 0;
+  margin-top: 24px;
+}
+
+.analytics-heading,
+.analytics-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.analytics-heading h2,
+.analytics-empty h3 {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.analytics-heading h2 { font-size: 1.5rem; }
+.analytics-empty h3 { font-size: 1rem; }
+
+.analytics-heading p,
+.analytics-empty p,
+.analytics-notice {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.analytics-toolbar {
+  margin-block: 16px 12px;
+}
+
+.analytics-toolbar .analytics-notice { margin: 0; }
+.analytics-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.analytics-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 18px 0 22px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.analytics-empty svg { flex: none; color: var(--accent); }
+.analytics-feedback, .workspace-analytics > .analytics-notice { margin-block: 14px; }
+
+.analytics-canvas {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--ground);
+}
+
+.analytics-canvas .openui-dashboard-root { background: transparent; }
+.analytics-canvas .openui-dashboard-kpi-value,
+.analytics-canvas .openui-dashboard-card-headline { font-variant-numeric: tabular-nums; }
