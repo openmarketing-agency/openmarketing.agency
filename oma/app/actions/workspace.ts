@@ -10,7 +10,7 @@ import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
 import { approveCampaignPublication } from "@/lib/server/agent-publications";
 import { completeAgentSetup, needsAgentSetup, requireAgentSetup } from "@/lib/server/agent-setup";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
-import { changeCampaignRunState, saveCampaignPlan, saveCampaignTools, syncCampaignAgents, workspaceId, approveWorkspacePublication, listWorkspacePublications, publicationRevision, brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveCampaignMode, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { changeCampaignRunState, saveCampaignPlan, syncCampaignTools, syncCampaignAgents, workspaceId, approveWorkspacePublication, listWorkspacePublications, publicationRevision, brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveCampaignMode, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -77,10 +77,9 @@ export async function saveCampaignPlanAction(id: string, _previous: CampaignConf
   }));
 }
 
-export async function saveCampaignToolsAction(id: string, _previous: CampaignConfigurationResult, form: FormData) {
-  return runCampaignAction(id, (userId) => saveCampaignTools(id, {
-    revision: form.get("revision"), integrations: form.getAll("integrations"),
-  }, (required) => generateCampaignMcpUrl(userId, required)));
+export async function syncCampaignToolsAction(id: string, _previous: CampaignConfigurationResult, form: FormData) {
+  return runCampaignAction(id, (userId) => syncCampaignTools(id, form.get("revision"),
+    (required) => generateCampaignMcpUrl(userId, required)));
 }
 
 export async function syncCampaignAgentsAction(id: string, _previous: CampaignConfigurationResult, form: FormData) {

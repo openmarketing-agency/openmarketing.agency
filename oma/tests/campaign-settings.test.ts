@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-  changeCampaignRunState, saveCampaignConfiguration, saveCampaignMode, saveCampaignPlan, saveCampaignTools,
+  changeCampaignRunState, saveCampaignConfiguration, saveCampaignMode, saveCampaignPlan, syncCampaignTools,
   syncCampaignChatChanges, type RequiredIntegration,
 } from "../lib/server/agent-workspace";
 
@@ -43,10 +43,6 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   const changes = { revision: "e".repeat(64), integrations: "f".repeat(64) };
   const requests: Array<{ method?: string; path?: string; body: unknown }> = [];
   const server = createServer(async (request, response) => {
-    if (request.method === "GET" && request.url === "/workspace/campaign-integrations") {
-      response.end(JSON.stringify(required));
-      return;
-    }
     if (request.method === "GET" && request.url === "/workspace/campaigns/seo/changes") {
       response.end(JSON.stringify(changes));
       return;
@@ -267,19 +263,30 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   assert.deepEqual(requests.slice(), [pause(inputRevision)]);
 
   requests.length = 0;
-  const savedTools = await saveCampaignTools("seo", { revision: inputRevision, integrations: ["discord"] }, generateMcp);
-  assert.equal(savedTools.state, "resumed");
-  assert.deepEqual(requests.map(({ path }) => path), [base + "/lifecycle", base + "/config", base + "/sync", base + "/lifecycle"]);
-  assert.deepEqual((requests[1].body as { integrations: string[] }).integrations, ["discord"]);
-  assert.deepEqual((requests[2].body as { env: unknown }).env, { COMPOSIO_API_KEY: "fixture-composio" });
+  await assert.rejects(syncCampaignTools("seo", configuration.revision, generateMcp), /campaign changed/);
+  assert.deepEqual(await syncCampaignTools("seo", inputRevision, async () => ({ error: providerError })), { error: providerError });
+  assert.equal(requests.length, 0);
+
+  const syncedTools = await syncCampaignTools("seo", inputRevision, generateMcp);
+  assert.equal(syncedTools.state, "resumed");
+  assert.deepEqual(generateMcp.mock.calls.at(-1)?.arguments, [required]);
+  assert.deepEqual(requests.slice(), [
+    pause(inputRevision),
+    { method: "PUT", path: base + "/config", body: { ...fields, revision: "2".repeat(64), composioUrl: url, setModelKey: false } },
+    { method: "POST", path: base + "/sync", body: {
+      revision: configuration.revision, env: { COMPOSIO_API_KEY: "fixture-composio" },
+    } },
+    resume,
+  ]);
 
   requests.length = 0;
-  installationState = "";
   currentState = "paused";
-  const draft = await saveCampaignTools("seo", { revision: inputRevision, integrations: ["discord"] }, async () => {
-    throw new Error("Draft tools should save without contacting Composio");
-  });
-  assert.equal(draft.staged, true);
+  assert.equal((await syncCampaignTools("seo", inputRevision, generateMcp)).synced, true);
+  assert.deepEqual(requests.map(({ path }) => path), [base + "/config", base + "/sync"]);
+
+  requests.length = 0;
+  installationState = "draft";
+  assert.equal((await syncCampaignTools("seo", inputRevision, generateMcp)).staged, true);
   assert.deepEqual(requests.map(({ path }) => path), [base + "/config", base + "/sync"]);
   assert.equal((requests[1].body as { prepareDeployment?: unknown }).prepareDeployment, true);
 });

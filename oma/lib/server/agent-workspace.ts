@@ -524,12 +524,12 @@ export async function saveCampaignConfiguration(
   id: string, input: unknown, generateMcpUrl: GenerateCampaignMcp, start = false,
 ): Promise<CampaignConfigurationResult> {
   if (!workspaceId.safeParse(id).success) return { error: "Campaign not found." };
-  return withCampaignEdit(id, () => applyCampaignConfiguration(id, input, generateMcpUrl, start));
+  return withCampaignEdit(id, () => applyCampaignConfiguration(id, input, generateMcpUrl, { start }));
 }
 
 async function applyCampaignConfiguration(
-  id: string, input: unknown, generateMcpUrl: GenerateCampaignMcp, start: boolean,
-  tools?: RequiredIntegration[],
+  id: string, input: unknown, generateMcpUrl: GenerateCampaignMcp,
+  { start = false, prepareDraft = false }: { start?: boolean; prepareDraft?: boolean } = {},
 ): Promise<CampaignConfigurationResult> {
   const parsed = campaignUpdate.safeParse(input);
   if (!workspaceId.safeParse(id).success || !parsed.success) {
@@ -547,13 +547,12 @@ async function applyCampaignConfiguration(
   if (start && campaign.lifecycleState === "resumed") {
     return { configuration: current, state: "resumed" };
   }
-  const saveDraftTools = tools !== undefined && !start &&
+  const stageForFirstStart = prepareDraft &&
     (campaign.installationState === "" || campaign.installationState === "draft");
-  if (campaign.integrationConfigInvalid && tools === undefined) {
+  if (campaign.integrationConfigInvalid) {
     return { error: "Use a list of unique campaign integration IDs such as discord or facebook in config.yaml." };
   }
-  const required = tools ?? campaign.requiredIntegrations ?? [];
-  const mcp = saveDraftTools ? { url: "" } : await generateMcpUrl(required);
+  const mcp = await generateMcpUrl(campaign.requiredIntegrations ?? []);
   if ("error" in mcp) return { error: mcp.error };
   const url = hostedComposioUrl.safeParse(mcp.url);
   if (!url.success) return { error: "Composio returned a URL that can’t be synced to this campaign." };
@@ -573,7 +572,6 @@ async function applyCampaignConfiguration(
   try {
     saved = campaignConfiguration.parse(await workspaceRequest(path + "/config", {
       ...settings, revision: stopped.revision, composioUrl, setModelKey: Boolean(modelKey),
-      ...(tools ? { integrations: tools.map(({ id }) => id) } : {}),
     }));
   } catch (error) {
     const message = error instanceof WorkspaceRequestError && [404, 409, 422].includes(error.status)
@@ -588,7 +586,7 @@ async function applyCampaignConfiguration(
   };
   try {
     saved = campaignConfiguration.parse(await workspaceRequest(path + "/sync", {
-      revision: saved.revision, env, ...(install || saveDraftTools ? { prepareDeployment: true } : {}),
+      revision: saved.revision, env, ...(install || stageForFirstStart ? { prepareDeployment: true } : {}),
     }, "POST"));
   } catch (error) {
     const recovery = error instanceof WorkspaceRequestError && error.status === 412
@@ -601,7 +599,7 @@ async function applyCampaignConfiguration(
     };
   }
   if (!start) {
-    if (saveDraftTools) return { configuration: saved, staged: true };
+    if (stageForFirstStart) return { configuration: saved, staged: true };
     if (!stopped.resume) return { configuration: saved, synced: true };
     try {
       const latest = await resumeCampaignAfterSync(id, saved.revision);
@@ -639,33 +637,20 @@ async function applyCampaignConfiguration(
   }
 }
 
-export async function loadCampaignIntegrationCatalog(): Promise<RequiredIntegration[] | undefined> {
-  try {
-    return z.array(campaignIntegration).parse(await workspaceRequest("/workspace/campaign-integrations"));
-  } catch {
-    return undefined;
-  }
-}
-
 function savedModelInput(configuration: CampaignConfiguration) {
   return { revision: configuration.revision, provider: configuration.provider, modelId: configuration.modelId,
     baseUrl: configuration.baseUrl, modelKey: "" };
 }
 
-export async function saveCampaignTools(id: string, input: unknown, generateMcp: GenerateCampaignMcp) {
-  const parsed = z.object({ revision, integrations: z.array(workspaceId).max(128) }).safeParse(input);
-  if (!workspaceId.safeParse(id).success || !parsed.success ||
-      new Set(parsed.data.integrations).size !== parsed.data.integrations.length) {
-    throw new WorkspaceRequestError(422, "Choose unique tools from the campaign catalog.");
+/** Regenerate campaign MCP from the saved integration IDs, keeping the campaign lifecycle and model selection. */
+export async function syncCampaignTools(id: string, expectedRevision: unknown, generateMcp: GenerateCampaignMcp) {
+  const parsed = revision.safeParse(expectedRevision);
+  if (!workspaceId.safeParse(id).success || !parsed.success) {
+    throw new WorkspaceRequestError(422, "Reload the campaign to sync its latest tools.");
   }
   return withCampaignEdit(id, async () => {
-    const { configuration } = await editableCampaign(id, parsed.data.revision);
-    const catalog = await loadCampaignIntegrationCatalog();
-    if (!catalog) throw new WorkspaceRequestError(503, "The campaign tool list could not be loaded. Try again.");
-    const desired = new Set(parsed.data.integrations);
-    const tools = catalog.filter(({ id }) => desired.has(id));
-    if (tools.length !== desired.size) throw new WorkspaceRequestError(422, "Choose tools from the campaign catalog.");
-    return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, false, tools);
+    const { configuration } = await editableCampaign(id, parsed.data);
+    return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, { prepareDraft: true });
   });
 }
 
@@ -678,7 +663,7 @@ export async function changeCampaignRunState(id: string, input: unknown, generat
     const { campaign, configuration } = await editableCampaign(id, parsed.data.revision);
     if (parsed.data.state === "resumed") {
       if (campaign.lifecycleState === "pausing") throw new WorkspaceRequestError(409, "Wait for the campaign to finish stopping.");
-      return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, true);
+      return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, { start: true });
     }
     if (campaign.installationState !== "installed" && campaign.lifecycleState !== "resumed") {
       throw new WorkspaceRequestError(409, "Start the campaign before pausing it.");
@@ -700,7 +685,7 @@ export async function refreshCampaignToolConnection(id: string, slug: string, ge
     const { campaign, configuration } = await editableCampaign(id);
     if (!campaign.requiredIntegrations?.some((tool) => tool.slug === slug) ||
         campaign.installationState !== "installed") return undefined;
-    return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, false);
+    return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp);
   });
 }
 
@@ -728,7 +713,7 @@ export async function syncCampaignChatChanges(
     if (before.data.revision === after.revision) return undefined;
     const { campaign, configuration } = await editableCampaign(id);
     if (before.data.integrations !== after.integrations && campaign.installationState === "installed") {
-      const result = await applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, false);
+      const result = await applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp);
       if (result.error && !result.configuration && campaign.lifecycleState === "resumed") {
         // Chat already changed the tool list, so stop the previously synced runtime if it cannot apply the edit.
         try {

@@ -1,10 +1,10 @@
-/** Lets operators edit a campaign plan and required tools, and sync agent changes saved by chat. */
+/** Lets operators edit a campaign plan and sync saved tool or agent changes. */
 
 "use client";
 
 import { useActionState, useRef, useState, type ToggleEvent } from "react";
-import { saveCampaignPlanAction, saveCampaignToolsAction, syncCampaignAgentsAction } from "@/app/actions/workspace";
-import type { CampaignConfigurationResult, RequiredIntegration, SavedCampaign } from "@/lib/server/agent-workspace";
+import { saveCampaignPlanAction, syncCampaignToolsAction, syncCampaignAgentsAction } from "@/app/actions/workspace";
+import type { CampaignConfigurationResult, SavedCampaign } from "@/lib/server/agent-workspace";
 
 function SaveMessage({ result }: { result: CampaignConfigurationResult }) {
   if (result.error) return <p className="form-error" role="alert">{result.error}</p>;
@@ -65,46 +65,16 @@ export function CampaignPlanEditor({ campaign, revision }: { campaign: SavedCamp
   );
 }
 
-export function CampaignToolEditor({ campaignId, revision, required, catalog }: {
-  campaignId: string; revision: string; required: RequiredIntegration[]; catalog: RequiredIntegration[];
+export function CampaignToolSync({ campaignId, revision, disabled }: {
+  campaignId: string; revision: string; disabled: boolean;
 }) {
-  const [result, action, pending] = useActionState(saveCampaignToolsAction.bind(null, campaignId), {});
-  const [selected, setSelected] = useState(required.map(({ id }) => id));
-  const [search, setSearch] = useState("");
-  const [draftRevision, setDraftRevision] = useState(revision);
-  function openTools(event: ToggleEvent<HTMLDetailsElement>) {
-    if (!event.currentTarget.open || pending) return;
-    setDraftRevision(revision);
-    setSelected(required.map(({ id }) => id));
-  }
-  const query = search.trim().toLowerCase();
-  const visible = catalog.filter(({ id, name }) => selected.includes(id) || (name + " " + id).toLowerCase().includes(query));
+  const [result, action, pending] = useActionState(syncCampaignToolsAction.bind(null, campaignId), {});
   return (
-    <details className="campaign-edit-disclosure" onToggle={openTools}>
-      <summary>Edit required tools</summary>
-      <form action={action} className="workspace-editor">
-        <input type="hidden" name="revision" value={result.configuration?.revision === revision ? revision : draftRevision} />
-        {selected.map((id) => <input type="hidden" name="integrations" key={id} value={id} />)}
-        <fieldset disabled={pending}>
-          <label>Find a tool<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
-          <p>Choose the tools this campaign uses. Connect their accounts from workspace Tools.</p>
-          <div className="campaign-tool-choices">
-            {visible.map(({ id, name }) => (
-              <label key={id}>
-                <input type="checkbox" checked={selected.includes(id)} onChange={(event) => {
-                  const checked = event.target.checked;
-                  setSelected((current) => checked ? [...current, id] : current.filter((value) => value !== id));
-                }} />
-                {name}
-              </label>
-            ))}
-          </div>
-          {!visible.length && <p>No tools match your search.</p>}
-        </fieldset>
-        <SaveMessage result={result} />
-        <button className="btn primary" disabled={pending}>{pending ? "Saving tools…" : "Save tools"}</button>
-      </form>
-    </details>
+    <form className="campaign-tool-sync" action={action}>
+      <input type="hidden" name="revision" value={revision} />
+      <button className="btn secondary" disabled={disabled || pending}>{pending ? "Syncing tools…" : "Sync tools"}</button>
+      <SaveMessage result={result} />
+    </form>
   );
 }
 

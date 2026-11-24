@@ -418,19 +418,10 @@
 .campaign-plan-item { display: flex; flex-wrap: wrap; align-items: start; gap: 6px; }
 .campaign-plan-item textarea { flex: 1 1 12rem; }
 .campaign-plan-item .btn { margin: 0; }
-.campaign-tool-choices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
-  gap: 8px;
-  max-height: 18rem;
-  overflow: auto;
-  border-block: 1px solid var(--border);
-  padding: 10px 0;
-}
-.campaign-tool-choices label { display: flex; align-items: start; gap: 8px; font-size: 0.875rem; }
-.campaign-tool-choices input { margin-top: 3px; }
+.campaign-tools .tool-browser-heading { flex-wrap: wrap; margin-bottom: 16px; }
+.campaign-tool-sync { max-width: min(100%, 28ch); }
 .campaign-agent-sync { display: grid; justify-items: start; gap: 8px; margin-top: 20px; color: var(--muted); }
-.campaign-detail :is(.campaign-header-actions, .campaign-edit-disclosure, .campaign-agent-sync) .btn {
+.campaign-detail :is(.campaign-header-actions, .campaign-edit-disclosure, .campaign-agent-sync, .campaign-tool-sync) .btn {
   max-width: 100%;
   white-space: normal;
 }
@@ -445,7 +436,6 @@
 @media (max-width: 560px) {
   .campaign-detail-header .campaign-identity { grid-template-columns: minmax(0, 1fr); }
   .campaign-detail-header .playbook-mark { display: none; }
-  .campaign-tools .tool-browser-tabs { flex-wrap: wrap; gap: 0 12px; }
 }
 
 .campaign-mode-settings .workspace-editor { margin-top: 16px; }

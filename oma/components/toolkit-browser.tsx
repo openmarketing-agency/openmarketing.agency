@@ -1,6 +1,6 @@
 "use client";
 import Image from "next/image";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import {
   AppWindow,
   ArrowUpRight,
@@ -52,6 +52,7 @@ export function ToolkitBrowser({
   metadata: initialMetadata = [],
   onChange,
   feedback,
+  headingAction,
   demo = false,
   demoCatalog = EMPTY_TOOLKITS,
 }: {
@@ -61,6 +62,7 @@ export function ToolkitBrowser({
   selected?: string[];
   metadata?: Toolkit[];
   feedback?: string;
+  headingAction?: ReactNode;
   demo?: boolean;
   demoCatalog?: Toolkit[];
   onChange?: (
@@ -188,8 +190,7 @@ export function ToolkitBrowser({
     ]),
   ];
   const requiredBySlug = new Map(requiredIntegrations.flatMap((tool) => tool.slug ? [[tool.slug, tool]] as const : []));
-  const unsupported = tab === "required" ? requiredIntegrations.filter(({ slug, name }) =>
-    !slug && name.toLowerCase().includes(search.trim().toLowerCase())) : [];
+  const unsupported = isCampaign ? requiredIntegrations.filter(({ slug }) => !slug) : [];
   const localItems = (isCampaign
     ? [...requiredBySlug].map(([slug, required]) => merged.get(slug) ?? { ...known(slug), name: required.name })
     : connectedIds.map(known)
@@ -201,9 +202,7 @@ export function ToolkitBrowser({
       (!category || tool.categories.some((item) => item.id === category)),
   );
   const catalogLoading = tab === "all" && canBrowseCatalog && loading;
-  const showFilters = tab === "required"
-    ? requiredIntegrations.length > 1
-    : canBrowseCatalog || (!isCampaign && connectedIds.length > 0);
+  const showFilters = !isCampaign && (canBrowseCatalog || connectedIds.length > 0);
   const visible = tab === "all" ? page.items : localItems;
   const tabs: { id: ToolList; label: string }[] = [
     { id: "connected", label: `Connected (${connectedIds.length})` },
@@ -349,17 +348,19 @@ export function ToolkitBrowser({
           <h2>{isCampaign ? "Campaign tools" : "Tool catalog"}</h2>
           {hasRequiredTools && <p>Connect the tools required by this campaign’s configuration.</p>}
         </div>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Refresh connections"
-          disabled={pending || demo || !snapshot.configured}
-          onClick={refresh}
-        >
-          <RefreshCw size={16} className={busy === "refresh" ? "spin" : ""} />
-        </button>
+        {isCampaign ? headingAction : (
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Refresh connections"
+            disabled={pending || demo || !snapshot.configured}
+            onClick={refresh}
+          >
+            <RefreshCw size={16} className={busy === "refresh" ? "spin" : ""} />
+          </button>
+        )}
       </div>
-      {!isCampaign && showFilters && (
+      {showFilters && (
         <div className="tool-browser-tabs" role="group" aria-label="Tool lists">
           {tabs.map((item) => (
             <button
@@ -382,10 +383,7 @@ export function ToolkitBrowser({
             <input
               ref={searchInput}
               aria-label="Search tools"
-              placeholder={
-                tab === "required" ? "Search campaign tools…"
-                  : tab === "all" ? "Search tools…" : "Search connected tools…"
-              }
+              placeholder={tab === "all" ? "Search tools…" : "Search connected tools…"}
               value={search}
               onChange={(event) => {
                 setSearch(event.target.value);
@@ -439,7 +437,7 @@ export function ToolkitBrowser({
         <div className="notice">
           <div>
             <strong>Tool provider setup required</strong>
-            <p>Set <code>COMPOSIO_API_KEY</code> in the console environment, then restart the console and refresh connections.</p>
+            <p>Set <code>COMPOSIO_API_KEY</code> in the console environment, then restart the console.</p>
           </div>
         </div>
       )}
@@ -558,7 +556,7 @@ export function ToolkitBrowser({
         )}
         {tab === "required" && !visible.length && !unsupported.length && (
           <div className="tool-catalog-empty">
-            <h3>{hasRequiredTools ? "No integrations match your search" : "No integrations configured"}</h3>
+            <h3>No integrations suggested</h3>
           </div>
         )}
         {tab !== "required" && canBrowseCatalog && !catalogLoading && !visible.length && !catalogError && (

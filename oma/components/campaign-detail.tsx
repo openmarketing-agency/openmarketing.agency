@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Megaphone, Pause, Play } from "lucide-react";
 
 import { changeCampaignRunAction } from "@/app/actions/workspace";
-import { CampaignAgentSync, CampaignPlanEditor, CampaignToolEditor } from "@/components/campaign-editors";
+import { CampaignAgentSync, CampaignPlanEditor, CampaignToolSync } from "@/components/campaign-editors";
 import { CampaignKanban } from "@/components/campaign-kanban";
 import { CampaignProgress } from "@/components/campaign-progress";
 import { CampaignModeSettings } from "@/components/campaign-mode-settings";
@@ -17,7 +17,7 @@ import { WorkspaceAnalytics } from "@/components/workspace-analytics";
 import { ToolkitBrowser } from "@/components/toolkit-browser";
 import { campaignLifecycleLabel } from "@/components/workspace-records";
 import { campaignConnectionScope } from "@/lib/agent-connections";
-import type { CampaignKanbanStatus, RequiredIntegration, SavedCampaign } from "@/lib/server/agent-workspace";
+import type { CampaignKanbanStatus, SavedCampaign } from "@/lib/server/agent-workspace";
 import type { Toolkit } from "@/lib/tool-catalog";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 
@@ -41,7 +41,6 @@ export function CampaignDetail({
   overview,
   agents,
   agentNames,
-  integrationCatalog,
 }: {
   campaign: SavedCampaign;
   kanban: CampaignKanbanStatus;
@@ -51,7 +50,6 @@ export function CampaignDetail({
   overview: ReactNode;
   agents: ReactNode;
   agentNames: Record<string, string>;
-  integrationCatalog?: RequiredIntegration[];
 }) {
   const query = useSearchParams();
   const router = useRouter();
@@ -107,7 +105,7 @@ export function CampaignDetail({
   const { configuration, name, description } = campaign;
   const requiredIntegrations = campaign.requiredIntegrations ?? [];
   const error = campaign.integrationConfigInvalid
-    ? "Review and save the required tools before starting."
+    ? "Ask campaign chat to fix the required tool IDs before syncing or starting."
     : undefined;
   const pendingIntegrations = requiredIntegrations.filter(({ slug }) =>
     !slug || (!snapshot.connected.includes(slug) && !metadata.some((tool) => tool.slug === slug && tool.noAuth)));
@@ -160,7 +158,7 @@ export function CampaignDetail({
       {runResult.error && !runPending && <p className="form-error" role="alert">{runResult.error}</p>}
       {!running && !pausing && configuration && (
         <p className="campaign-run-guide">
-          {error ? "Review and save the required tool list."
+          {error ? "Fix the required tool IDs before starting."
             : blocked ? (installed ? "Connect the required tools before resuming." : "Connect the required tools before starting.")
             : installed ? "Resume when you’re ready for the agents to continue."
             : "Starting sets up the agents and their Kanban board."}
@@ -188,13 +186,11 @@ export function CampaignDetail({
       </>}
       {view === "tools" && (
         <div className="campaign-tools">
-          {configuration && integrationCatalog && <CampaignToolEditor
-            campaignId={campaign.id} revision={configuration.revision}
-            required={requiredIntegrations} catalog={integrationCatalog} />}
-          {configuration && !integrationCatalog && <p className="campaign-run-guide">Rebuild the agent workspace to edit the required tools here.</p>}
           <ToolkitBrowser key={requiredIntegrations.map(({ id }) => id).join(",")} scope={campaignConnectionScope(campaign.id)}
             snapshot={snapshot} metadata={metadata}
             requiredIntegrations={requiredIntegrations}
+            headingAction={configuration && <CampaignToolSync campaignId={campaign.id} revision={configuration.revision}
+              disabled={pausing || runPending || Boolean(error)} />}
             feedback={feedback} onChange={updateConnections} />
         </div>
       )}
