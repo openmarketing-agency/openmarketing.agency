@@ -52,7 +52,7 @@ async function Detail({ params, searchParams }: Props) {
       kanban={kanban}
       overview={<CampaignOverview workspace={records} campaign={saved} />}
       agents={<CampaignAgents workspace={records} campaign={saved} ids={agents} />}
-      agentCount={agents.length}
+      agentNames={Object.fromEntries(agents.map((id) => [id, records.agents.find((agent) => agent.id === id)?.name ?? id]))}
       integrationCatalog={integrationCatalog}
       {...workspace}
       feedback={connectionFeedback(query.connection_result)}

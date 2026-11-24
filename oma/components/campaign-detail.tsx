@@ -10,6 +10,7 @@ import { ArrowLeft, Megaphone, Pause, Play } from "lucide-react";
 import { changeCampaignRunAction } from "@/app/actions/workspace";
 import { CampaignAgentSync, CampaignPlanEditor, CampaignToolEditor } from "@/components/campaign-editors";
 import { CampaignKanban } from "@/components/campaign-kanban";
+import { CampaignProgress } from "@/components/campaign-progress";
 import { CampaignModeSettings } from "@/components/campaign-mode-settings";
 import { CampaignSettings } from "@/components/campaign-settings";
 import { ToolkitBrowser } from "@/components/toolkit-browser";
@@ -20,6 +21,7 @@ import type { Toolkit } from "@/lib/tool-catalog";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 
 const views = [
+  { id: "progress", label: "Progress" },
   { id: "overview", label: "Plan" },
   { id: "agents", label: "Agents" },
   { id: "tools", label: "Tools" },
@@ -36,7 +38,7 @@ export function CampaignDetail({
   feedback,
   overview,
   agents,
-  agentCount,
+  agentNames,
   integrationCatalog,
 }: {
   campaign: SavedCampaign;
@@ -46,7 +48,7 @@ export function CampaignDetail({
   feedback?: string;
   overview: ReactNode;
   agents: ReactNode;
-  agentCount: number;
+  agentNames: Record<string, string>;
   integrationCatalog?: RequiredIntegration[];
 }) {
   const query = useSearchParams();
@@ -86,8 +88,9 @@ export function CampaignDetail({
   const requestedView = query.get("view");
   const view: View = requestedView === "deploy" || requestedView === "mcp" ? "settings"
     : views.find(({ id }) => id === requestedView)?.id
-      ?? (requestedView === "team" || query.has("agent") ? "tools" : "overview");
+      ?? (requestedView === "team" || query.has("agent") ? "tools" : "progress");
   const path = "/campaigns/" + campaign.id;
+  const agentCount = Object.keys(agentNames).length;
   const [connections, setConnections] = useState<{
     initial: ConnectionSnapshot; snapshot: ConnectionSnapshot; metadata: Toolkit[];
   }>();
@@ -134,7 +137,7 @@ export function CampaignDetail({
             {campaign.version && <span className="version-label">v{campaign.version}</span>}
           </div>
           {description && <p>{description}</p>}
-          <CampaignKanban status={kanban} />
+          {view !== "progress" && <CampaignKanban status={kanban} />}
         </header>
         <div className="campaign-header-actions">
           {configuration && (!running && blocked && !pausing && view !== "tools" ? (
@@ -171,6 +174,7 @@ export function CampaignDetail({
       </nav>
       {error && view === "tools" && <p role="alert" className="form-error">{error}</p>}
 
+      {view === "progress" && <CampaignProgress campaign={campaign.id} agents={agentNames} kanban={kanban} />}
       {view === "overview" && <>
         {configuration && <CampaignPlanEditor campaign={campaign} revision={configuration.revision} />}
         {overview}

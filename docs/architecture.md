@@ -170,7 +170,7 @@ flowchart TD
     Records["GET /workspace"]
     Board["GET /workspace/campaigns/{id}/kanban"]
     Stats["VM reads board ID from config.yaml and calls Kanban stats"]
-    Tabs["Plan, Agents, Tools, Run settings"]
+    Tabs["Progress, Plan, Agents, Tools, Run settings"]
     Chat["Shared chat panel"]
     Action["Authenticated chat server action"]
     Context["Validate saved campaign ID and append it to the message"]
@@ -182,7 +182,7 @@ flowchart TD
     Dash --> Chat --> Action --> Context --> Runs --> Next
 ```
 
-The campaign page reads the saved campaign, related agent records, required integrations, and current board summary. Board lookup prefers `kanban_board` and falls back to a unique `kanban_board_name` for older records. The Next.js server receives counts from the private workspace service.
+The campaign page reads the saved campaign, related agent records, required integrations, and current board summary. Board lookup prefers `kanban_board` and falls back to a unique `kanban_board_name` for older records. The Next.js server reads the summary counts over the private workspace socket. The default **Progress** section requests `GET /api/campaigns/{id}/progress` while visible. The same route accepts a validated `task` query for the expanded row. The workspace service resolves the saved board for both calls, reads Hermes `/board` or `/tasks/{id}`, and projects task status, history, and results. It also reads saved runtime schedule status from the campaign profiles. Next.js adds a short list of native publication statuses. The browser receives neither the dashboard token nor any raw worker logs.
 
 The console layout renders the right-side chat panel through the `@conversation` parallel route, with entries for signed-in workspace paths. The panel shows the workspace conversation or the conversation for the campaign on the current detail page. It keeps the selected conversation while the operator switches campaign tabs. oma-agent stores each conversation in a Hermes session scoped by account and campaign. The console loads the native transcript and resumes that session when it is reopened. Both scopes use the default profile. The server appends the campaign ID to each message sent from a campaign. Chat polls `GET /v1/runs/{id}` and posts clarification answers or tool approval decisions to `POST /v1/runs/{id}/clarify` or `POST /v1/runs/{id}/approval`. These tool approvals belong to the current run.
 
