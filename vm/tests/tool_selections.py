@@ -83,6 +83,10 @@ with TemporaryDirectory(prefix="oma-tool-selections-") as temporary:
         assert put("missing", "new-tool")[0] == 404
         assert put("../draft", "new-tool")[0] == 422
         assert put(None, "a" * 129)[0] == 422
+        assert put(None, "_ordinary")[0] == 422
+        assert put(None, "_1password")[0] == 200
+        assert request("GET")[1]["workspace"] == ["_1password"]
+        assert put(None, "_1password", False)[0] == 200
         assert put(None, "valid", 1)[0] == 422
         assert import_rows({**migration, "migrationId": "F" * 64})[0] == 422
         assert import_rows({**migration, "campaigns": {"../bad": ["valid"]}})[0] == 422

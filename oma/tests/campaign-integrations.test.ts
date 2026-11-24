@@ -11,6 +11,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { loadAgentWorkspace } from "../lib/server/agent-workspace";
+import { validToolkitSlug } from "../lib/tool-catalog";
 
 test("keeps configured integration IDs in order and drops legacy suggestion metadata", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "oma-campaign-tools-"));
@@ -28,6 +29,7 @@ test("keeps configured integration IDs in order and drops legacy suggestion meta
         { ...campaign, id: "launch", requiredIntegrations: [
           { id: "discord", name: "Discord", slug: "discord" },
           { id: "facebook", name: "Facebook", slug: "facebook" },
+          { id: "1password", name: "1Password", slug: "_1password" },
         ] },
         { ...campaign, id: "empty", requiredIntegrations: [] },
         { ...campaign, id: "malformed", integrationConfigInvalid: true, requiredIntegrations: [] },
@@ -46,12 +48,16 @@ test("keeps configured integration IDs in order and drops legacy suggestion meta
   await new Promise<void>((resolve, reject) => server.once("error", reject).listen(socketPath, resolve));
   process.env.OMA_WORKSPACE_SOCKET = socketPath;
 
+  for (const invalid of ["_ordinary", "../discord", "_2/path", "_" + "1".repeat(128)]) {
+    assert.equal(validToolkitSlug(invalid), false);
+  }
+
   const { records, error } = await loadAgentWorkspace();
   assert.equal(error, undefined);
   assert.deepEqual(records?.campaigns.map(({ id, requiredIntegrations, integrationConfigInvalid }) => [
     id, requiredIntegrations?.map(({ id: integrationId }) => integrationId), integrationConfigInvalid,
   ]), [
-    ["launch", ["discord", "facebook"], undefined],
+    ["launch", ["discord", "facebook", "1password"], undefined],
     ["empty", [], undefined],
     ["malformed", [], true],
     ["legacy", undefined, undefined],

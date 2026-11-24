@@ -42,7 +42,7 @@ COLLECTIONS = ("brands", "playbooks", "campaigns", "agents")
 SINGLETONS = {"brands": "brand", "playbooks": "playbook"}
 EDITABLE = {"brands": ("name", "description", "knowledge_base"), "playbooks": ("strategy",)}
 SLUG = re.compile(r"[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*")
-TOOLKIT_SLUG = re.compile(r"[a-z0-9][a-z0-9_-]{0,127}")
+TOOLKIT_SLUG = re.compile(r"(?=[a-z0-9]|_[0-9])[a-z0-9_-]{1,128}")
 MIGRATION_ID = re.compile(r"[a-f0-9]{64}")
 KANBAN_SLUG = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 KANBAN_API = "/api/plugins/kanban"

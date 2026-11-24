@@ -22,8 +22,9 @@ export type CatalogPage = {
   nextCursor: string | null;
   total: number;
 };
+// Composio prefixes some digit-led toolkit slugs, such as _1password, with an underscore.
 export const validToolkitSlug = (slug: unknown): slug is string =>
-  typeof slug === "string" && /^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug);
+  typeof slug === "string" && /^(?=[a-z0-9]|_[0-9])[a-z0-9_-]{1,128}$/.test(slug);
 export function toolkitSlug(id: string) {
   return Object.hasOwn(tools, id) ? tools[id as keyof typeof tools].slug : id;
 }
