@@ -194,6 +194,49 @@ with TemporaryDirectory() as temporary:
     reject_call(422, brand_logo, root, "example", "unsafe")
     assert "<h4>Research role</h4>" in agent_profile(root, "seo__researcher")["html"]
 
+    current_brand.write_text(current_brand.read_text() +
+        "screenshots: [{file: screenshots/home.png, source_url: 'https://example.test/'}]\n"
+        "images: [images/photo.png, images/unavailable.png, images/linked.png, images/hardlink.png, ../outside.md]\n"
+        "fonts: [fonts/brand.woff2, fonts/license.txt]\n"
+        "documentation: {internal_reference: {index: docs/repo/architecture.md, mode: summarized}}\n"
+        "repositories: [{id: repo, url: 'https://example.test/repo', internal_docs: docs/repo/architecture.md}]\n"
+        "integrations: {ga4: {status: observed, evidence: 'research/market.md#analytics'}}\n"
+    )
+    for folder in ("screenshots", "images", "fonts"):
+        (current_brand.parent / folder).mkdir()
+    large_capture = bytes.fromhex("89504e470d0a1a0a") + bytes(300_000)
+    (current_brand.parent / "screenshots" / "home.png").write_bytes(large_capture)
+    (current_brand.parent / "images" / "photo.png").write_bytes(b"<html>not an image</html>")
+    os.symlink(outside, current_brand.parent / "images" / "linked.png")
+    os.link(outside, current_brand.parent / "images" / "hardlink.png")
+    (current_brand.parent / "fonts" / "brand.woff2").write_bytes(b"wOF2font data")
+    (current_brand.parent / "fonts" / "license.txt").write_text("Font license")
+    active = records(root)["brands"][0]
+    files = {asset["file"]: asset for asset in active["assetFiles"]}
+    assert "../outside.md" not in files
+    assert files["screenshots/home.png"]["sourceUrl"] == "https://example.test/"
+    assert files["screenshots/home.png"]["mediaType"] == "image/png"
+    assert files["fonts/brand.woff2"]["mediaType"] == "font/woff2"
+    assert files["fonts/license.txt"]["mediaType"] == "application/octet-stream"
+    assert active["signals"][0]["evidence"] == "research/market.md#analytics"
+    assert active["repositories"][0]["notes"] == "docs/repo/architecture.md"
+    assert active["internalDocumentation"] == {"index": "docs/repo/architecture.md", "mode": "summarized"}
+
+    from base64 import b64decode
+    from workspace import brand_asset
+    def fetch_asset(file):
+        return brand_asset(root, "example", files[file]["id"])
+
+    assert b64decode(fetch_asset("screenshots/home.png")["content"]) == large_capture
+    assert fetch_asset("logos/unsafe.svg")["mediaType"] == "image/svg+xml"
+    assert fetch_asset("fonts/brand.woff2")["mediaType"] == "font/woff2"
+    assert fetch_asset("images/photo.png")["mediaType"] == "application/octet-stream"
+    assert b64decode(fetch_asset("fonts/license.txt")["content"]) == b"Font license"
+    for file in ("images/unavailable.png", "images/linked.png", "images/hardlink.png"):
+        reject_call(404, fetch_asset, file)
+    reject_call(404, brand_asset, root, "other", files["screenshots/home.png"]["id"])
+    reject_call(404, brand_asset, root, "example", sha256(b"outside.md").hexdigest()[:32])
+
     update_record(root, "brands", "example", {
         "revision": active["revision"], "name": "New brand", "description": "Updated details",
     })

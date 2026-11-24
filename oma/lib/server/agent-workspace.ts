@@ -40,18 +40,30 @@ const discovery = z.object({
 });
 const documentId = z.string().regex(/^[a-f0-9]{16}$/);
 const logoId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+const assetId = z.string().regex(/^[a-f0-9]{32}$/);
+const assetMediaType = z.enum([
+  "image/png", "image/jpeg", "image/webp", "image/gif", "image/avif", "image/svg+xml",
+  "font/woff", "font/woff2", "font/ttf", "font/otf", "application/octet-stream",
+]);
+const brandAsset = z.object({
+  id: assetId, category: z.enum(["screenshots", "logos", "fonts", "illustrations", "icons", "backgrounds", "images"]),
+  label: z.string(), file: z.string(), sourceUrl: z.string(), mediaType: assetMediaType,
+});
+export type BrandAsset = z.infer<typeof brandAsset>;
 const document = z.object({ id: documentId, title: z.string(), path: z.string() });
 const brand = record.extend({
   revision, knowledge: z.string(), knowledgeHtml: z.string().optional(), knowledgeFile: z.string().optional(), knowledgeRevision: revision.optional(),
   palette: stringMap, logos: stringMap, assets: z.record(z.string(), strings),
+  assetFiles: z.array(brandAsset).optional(),
   channels: z.array(discovery).optional(),
   launches: z.array(discovery).optional(),
   signals: z.array(z.object({
-    label: z.string(), status: z.enum(["observed", "not_checked", "not_detected"]), signal: z.string(),
+    label: z.string(), status: z.enum(["observed", "not_checked", "not_detected"]), signal: z.string(), evidence: z.string().optional(),
   })).optional(),
-  repositories: z.array(z.object({ label: z.string(), url: z.string(), commit: z.string() })).optional(),
-  competitors: z.array(z.object({ label: z.string(), url: z.string(), sources: strings })).optional(),
+  repositories: z.array(z.object({ label: z.string(), url: z.string(), commit: z.string(), notes: z.string().optional() })).optional(),
+  competitors: z.array(z.object({ id: workspaceId.optional(), label: z.string(), url: z.string(), sources: strings, report: z.string().optional() })).optional(),
   designSource: z.string().optional(),
+  internalDocumentation: z.object({ index: z.string(), mode: z.enum(["summarized", "mirrored"]) }).optional(),
   documents: z.array(document).max(64).optional(),
 });
 const playbook = record.extend({ revision, brandId: z.string(), strategy: z.string(), strategyHtml: z.string().optional() });
@@ -97,6 +109,10 @@ const brandDocument = document.extend(documentBody.shape);
 const logoResponse = z.object({
   mediaType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
   content: z.base64().max(360_000),
+});
+const assetResponse = z.object({
+  filename: z.string().min(1).max(512), mediaType: assetMediaType,
+  content: z.base64().max(4 * Math.ceil(10 * 1024 * 1024 / 3)),
 });
 export type SavedBrandDocument = z.infer<typeof brandDocument>;
 export type WorkspaceEdit = "brands" | "playbooks" | "brand-knowledge";
@@ -260,6 +276,18 @@ export async function loadBrandLogo(id: string, logo: string) {
     return parsed.success ? parsed.data : undefined;
   } catch (error) {
     if (error instanceof WorkspaceRequestError && [404, 422].includes(error.status)) return;
+    throw error;
+  }
+}
+
+export async function loadBrandAsset(id: string, asset: string) {
+  if (!workspaceId.safeParse(id).success || !assetId.safeParse(asset).success) return;
+  try {
+    const parsed = assetResponse.safeParse(await workspaceRequest("/workspace/brands/" + id + "/assets/" + asset));
+    if (!parsed.success) throw new WorkspaceRequestError(502, "The agent workspace returned an invalid asset.");
+    return parsed.data;
+  } catch (error) {
+    if (error instanceof WorkspaceRequestError && error.status === 404) return;
     throw error;
   }
 }

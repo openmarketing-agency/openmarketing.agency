@@ -7,6 +7,7 @@ fixed by the service, and runtime configuration and credentials stay private.
 from base64 import b64encode
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing, contextmanager
+from errno import ELOOP
 from hashlib import sha256
 from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler
@@ -48,6 +49,14 @@ KANBAN_API = "/api/plugins/kanban"
 TOOL_SELECTIONS_FILE = "tool-selections.json"
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 MAX_FILE_SIZE = 256 * 1024
+MAX_BRAND_ASSET_SIZE = 10 * 1024 * 1024  # Base64 stays below the socket client's 16 MiB limit.
+BRAND_ASSET_FOLDERS = ("fonts", "illustrations", "icons", "backgrounds", "images")
+DOWNLOAD_TYPE = "application/octet-stream"
+BRAND_ASSET_TYPES = {
+    ".png": "image/png", ".jpeg": "image/jpeg", ".jpg": "image/jpeg", ".gif": "image/gif",
+    ".webp": "image/webp", ".avif": "image/avif", ".svg": "image/svg+xml",
+    ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf",
+}
 MODEL_KEY = "HERMES_MODEL_API_KEY"
 COMPOSIO_KEY = "COMPOSIO_API_KEY"
 CAMPAIGN_MODES = ("approve", "control", "yolo")
@@ -70,14 +79,14 @@ def open_directory(path, parent=None):
         os.close(fd)
 
 
-def read_file(directory, name="config.yaml"):
+def read_file(directory, name="config.yaml", *, max_size=MAX_FILE_SIZE):
     flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     with os.fdopen(os.open(name, flags, dir_fd=directory), "rb") as file:
         info = os.fstat(file.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_FILE_SIZE or (name != "config.yaml" and info.st_nlink != 1):
+        if not stat.S_ISREG(info.st_mode) or info.st_size > max_size or (name != "config.yaml" and info.st_nlink != 1):
             raise WorkspaceError(422, "This workspace file is unsupported.")
-        source = file.read(MAX_FILE_SIZE + 1)
-        if len(source) > MAX_FILE_SIZE:
+        source = file.read(max_size + 1)
+        if len(source) > max_size:
             raise WorkspaceError(422, "This workspace file is too large.")
         return source, stat.S_IMODE(info.st_mode)
 
@@ -289,6 +298,7 @@ def brand_metadata(data, directory):
     channels = mapping(data.get("channels"))
     design = mapping(data.get("design_system"))
     research = mapping(data.get("research"))
+    internal = mapping(mapping(data.get("documentation")).get("internal_reference"))
     presence = [
         discovery("Website", data.get("website")),
         discovery("Blog", channels.get("blog")),
@@ -301,7 +311,12 @@ def brand_metadata(data, directory):
     for provider, value in mapping(data.get("integrations")).items():
         signal = mapping(value)
         if isinstance(provider, str) and signal.get("status") in ("observed", "not_checked", "not_detected"):
-            signals.append({"label": provider, "status": signal["status"], "signal": string(signal.get("signal"))})
+            item = {"label": provider, "status": signal["status"], "signal": string(signal.get("signal"))}
+            evidence = string(signal.get("evidence"))
+            path, _, section = evidence.partition("#")
+            if markdown_path(path) and (not section or re.fullmatch(r"[A-Za-z0-9_-]+", section)):
+                item["evidence"] = evidence
+            signals.append(item)
     repositories = []
     for item in objects(data.get("repositories")):
         url, label = http_url(item.get("url")), string(item.get("id"))
@@ -310,10 +325,13 @@ def brand_metadata(data, directory):
             repositories.append({
                 "label": label, "url": url,
                 "commit": commit if re.fullmatch(r"[a-f0-9]{40}|[a-f0-9]{64}", commit) else "",
+                **({"notes": item["internal_docs"]} if markdown_path(item.get("internal_docs")) else {}),
             })
     competitors = [
         {"label": item["name"], "url": http_url(item.get("website")),
-         "sources": list(filter(None, map(http_url, strings(item.get("sources")))))}
+         "sources": list(filter(None, map(http_url, strings(item.get("sources"))))),
+         **({"id": item["id"]} if valid_id(item.get("id")) else {}),
+         **({"report": item["report"]} if markdown_path(item.get("report")) else {})}
         for item in objects(research.get("competitors")) if string(item.get("name"))
     ]
     return {
@@ -321,8 +339,31 @@ def brand_metadata(data, directory):
         "launches": [item for item in launches if item],
         "signals": signals, "repositories": repositories, "competitors": competitors,
         "designSource": http_url(design.get("source_url")),
+        **({"internalDocumentation": {"index": internal["index"], "mode": internal["mode"]}}
+           if markdown_path(internal.get("index")) and internal.get("mode") in ("summarized", "mirrored") else {}),
         "documents": brand_documents(data, directory),
+        "assetFiles": list(brand_asset_entries(data)),
     }
+
+
+def brand_asset_entries(data):
+    declared = chain(
+        (("screenshots", item.get("file"), "", http_url(item.get("source_url"))) for item in objects(data.get("screenshots"))),
+        (("logos", path, label, "") for label, path in string_map(data.get("logos")).items()),
+        ((category, path, "", "") for category in BRAND_ASSET_FOLDERS for path in strings(data.get(category))),
+    )
+    seen = set()
+    for category, path, label, source_url in declared:
+        parts = relative_path(path)
+        if not parts or len(parts) < 2 or parts[0] != category or parts[-1] == "config.yaml":
+            continue
+        key = (path, label, source_url)
+        if key in seen:
+            continue
+        seen.add(key)
+        yield {"id": sha256(path.encode()).hexdigest()[:32], "category": category, "file": path,
+               "label": label, "sourceUrl": source_url,
+               "mediaType": BRAND_ASSET_TYPES.get(Path(parts[-1]).suffix.lower(), DOWNLOAD_TYPE)}
 
 
 def brand_knowledge(data, source, directory):
@@ -414,7 +455,7 @@ def project(collection, source, directory, record_id=None):
             **record, "revision": sha256(source).hexdigest(), **brand_knowledge(data, source, directory),
             **brand_metadata(data, directory),
             "palette": string_map(data.get("palette")), "logos": string_map(data.get("logos")),
-            "assets": {key: strings(data.get(key)) for key in ("fonts", "illustrations", "icons", "backgrounds", "images")},
+            "assets": {key: strings(data.get(key)) for key in BRAND_ASSET_FOLDERS},
         }
     if collection == "playbooks":
         strategy = string(data.get("strategy"))
@@ -1704,6 +1745,37 @@ def brand_document(root, record_id, document_id):
         return {**document, "content": content, "html": render_markdown(content)}
 
 
+def brand_asset(root, record_id, asset_id):
+    missing = WorkspaceError(404, "This brand asset is not available.")
+    with editable_record(root, "brands", record_id) as (record, source, _):
+        asset = next((item for item in brand_asset_entries(parse_record(source)) if item["id"] == asset_id), None)
+        if asset is None:
+            raise missing
+        try:
+            with open_relative_file(record, relative_path(asset["file"])) as (parent, name):
+                content, _ = read_file(parent, name, max_size=MAX_BRAND_ASSET_SIZE)
+        except (FileNotFoundError, NotADirectoryError, WorkspaceError):
+            raise missing from None
+        except OSError as error:
+            if error.errno != ELOOP:
+                raise
+            raise missing from None
+        media = asset["mediaType"]
+        verified = {
+            "image/png": content.startswith(b"\x89PNG\r\n\x1a\n"),
+            "image/jpeg": content.startswith(b"\xff\xd8\xff"),
+            "image/gif": content.startswith((b"GIF87a", b"GIF89a")),
+            "image/webp": content.startswith(b"RIFF") and content[8:12] == b"WEBP",
+            "image/avif": content[4:12] in (b"ftypavif", b"ftypavis"),
+            # SVG is served as an isolated image without script or network access.
+            "image/svg+xml": bool(re.search(rb"<svg(?:\s|/?>)", content[:8192])),
+            "font/woff": content.startswith(b"wOFF"), "font/woff2": content.startswith(b"wOF2"),
+            "font/ttf": content.startswith(b"\x00\x01\x00\x00"), "font/otf": content.startswith(b"OTTO"),
+        }
+        return {"filename": name, "mediaType": media if verified.get(media) else DOWNLOAD_TYPE,
+                "content": b64encode(content).decode("ascii")}
+
+
 def brand_logo(root, record_id, logo_id):
     with editable_record(root, "brands", record_id) as (record, source, _):
         reference = string_map(parse_record(source).get("logos")).get(logo_id)
@@ -1763,6 +1835,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         publication_list = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications(?:\?(.*))?", self.path)
         document = re.fullmatch(r"/workspace/brands/([^/]+)/documents/([a-f0-9]{16})", self.path)
         logo = re.fullmatch(r"/workspace/brands/([^/]+)/logos/([A-Za-z0-9_-]{1,64})", self.path)
+        asset = re.fullmatch(r"/workspace/brands/([^/]+)/assets/([a-f0-9]{32})", self.path)
         profile = re.fullmatch(r"/workspace/agents/([^/]+)/profile", self.path)
         kanban = re.fullmatch(r"/workspace/campaigns/([^/]+)/kanban", self.path)
         lifecycle = re.fullmatch(r"/workspace/campaigns/([^/]+)/lifecycle", self.path)
@@ -1801,6 +1874,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = brand_document(self.server.root, *document.groups())
             elif logo:
                 result = brand_logo(self.server.root, *logo.groups())
+            elif asset:
+                result = brand_asset(self.server.root, *asset.groups())
             elif profile:
                 result = agent_profile(self.server.root, profile[1])
             else:

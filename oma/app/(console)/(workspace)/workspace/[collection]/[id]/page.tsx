@@ -4,8 +4,9 @@ import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, BookOpen, FileImage, Megaphone, Pencil, Tag } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Megaphone, Pencil, Tag } from "lucide-react";
 
+import { BrandAssets } from "@/components/brand-assets";
 import { BrandChannels, BrandResearch } from "@/components/brand-sources";
 import { Loading } from "@/components/ui";
 import { WorkspaceText } from "@/components/workspace-text";
@@ -59,6 +60,9 @@ async function RecordDetail({ params, searchParams }: Props) {
   const relatedPlaybooks = brand ? records?.playbooks.filter(({ brandId }) => brandId === brand.id) ?? [] : [];
   const relatedCampaigns = playbook ? records?.campaigns.filter(({ playbookId }) => playbookId === playbook.id) ?? [] : [];
   const brandMark = brand?.logos.mark;
+  const markAsset = brand?.assetFiles?.find(({ category, label, mediaType }) => category === "logos" && label === "mark" && mediaType.startsWith("image/"));
+  const markUrl = markAsset ? "/api" + path + "/assets/" + markAsset.id
+    : brandMark && isPreviewableLogo("mark", brandMark) ? "/api" + path + "/logos/mark" : undefined;
 
   return (
     <div className="agent-playbook-page record-detail">
@@ -68,8 +72,8 @@ async function RecordDetail({ params, searchParams }: Props) {
           <header className="record-heading">
             <div className="record-identity">
               <span className="record-mark" aria-hidden="true">
-                {brand && brandMark && isPreviewableLogo("mark", brandMark)
-                  ? <Image src={"/api" + path + "/logos/mark"} alt="" width={36} height={36} unoptimized />
+                {markUrl
+                  ? <Image src={markUrl} alt="" width={36} height={36} unoptimized />
                   : brand ? <Tag size={23} /> : <BookOpen size={23} />}
               </span>
               <div>
@@ -186,68 +190,7 @@ function BrandKnowledge({ brand, path }: { brand: SavedBrand; path: string }) {
       {brand.knowledgeFile !== undefined && !brand.knowledgeRevision
         ? <p className="form-error">The saved brand knowledge file could not be read.</p>
         : <WorkspaceText text={brand.knowledge} html={brand.knowledgeHtml} empty="No brand knowledge saved yet." />}
+      {brand.knowledgeFile && <small className="record-knowledge-source">Source: {brand.knowledgeFile}</small>}
     </section>
-  );
-}
-
-function assetLabel(name: string) {
-  const words = name.replaceAll(/[_-]/g, " ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-function BrandAssets({ brand }: { brand: SavedBrand }) {
-  const colors = Object.entries(brand.palette);
-  const logos = Object.entries(brand.logos);
-  const assets = Object.entries(brand.assets).filter(([, files]) => files.length > 0);
-
-  return (
-    <div className="record-groups" id="brand-assets">
-      {!!logos.length && (
-        <section className="record-group">
-          <h2>Logos</h2>
-          <ul className="record-logos">
-            {logos.map(([name, file]) => (
-              <li key={name}>
-                <div className="record-logo-preview">
-                  {isPreviewableLogo(name, file)
-                    ? <Image src={"/api/workspace/brands/" + brand.id + "/logos/" + name} alt="" width={300} height={128} unoptimized />
-                    : <FileImage size={28} aria-hidden="true" />}
-                </div>
-                <strong>{assetLabel(name)}</strong>
-                <small>{file}</small>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {!!colors.length && (
-        <section className="record-group">
-          <h2>Palette</h2>
-          <dl className="record-palette">
-            {colors.map(([name, value]) => (
-              <div key={name}>
-                <div className="record-swatch" aria-hidden="true" style={/^#[a-f0-9]{6}$/i.test(value) ? { backgroundColor: value } : undefined} />
-                <dt>{assetLabel(name)}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )}
-      {!!assets.length && (
-        <section className="record-group">
-          <h2>Asset files</h2>
-          <dl className="workspace-source-list">
-            {assets.map(([name, files]) => (
-              <div key={name}>
-                <dt>{assetLabel(name)}</dt>
-                <dd><ul className="workspace-file-list">{files.map((file, index) => <li key={index}>{file}</li>)}</ul></dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )}
-      {!colors.length && !logos.length && !assets.length && <p className="record-empty">No brand assets saved yet.</p>}
-    </div>
   );
 }
