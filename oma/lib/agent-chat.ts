@@ -12,8 +12,16 @@ export type AgentPrompt = {
   | { kind: "approval"; description: string; command: string }
 );
 
+export type ActiveAgentRun = {
+  status: "running";
+  phase: "queued" | "running" | "waiting_for_answer" | "waiting_for_approval" | "stopping";
+  prompt?: AgentPrompt;
+  tool?: string;
+  updatedAt?: string;
+};
+
 export type AgentRun =
-  | { status: "running"; prompt?: AgentPrompt }
+  | ActiveAgentRun
   | { status: "completed"; answer: string }
   | { status: "failed" };
 

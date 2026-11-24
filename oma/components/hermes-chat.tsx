@@ -4,11 +4,12 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
-import { Bot, LoaderCircle, Plus, RefreshCw, Send } from "lucide-react";
+import { Bot, Plus, RefreshCw, Send } from "lucide-react";
 
 import { answerChatPrompt, readChatTurn, readOlderChatMessages, sendChatMessage } from "@/app/actions/chat";
-import { maxChatMessageLength, type AgentPrompt, type AgentStatus, type ChatHistory, type ChatMessage } from "@/lib/agent-chat";
+import { maxChatMessageLength, type ActiveAgentRun, type AgentStatus, type ChatHistory, type ChatMessage } from "@/lib/agent-chat";
 import { AgentActivity } from "./agent-activity";
+import { ChatProgress } from "./chat-progress";
 import { HermesPrompt } from "./hermes-prompt";
 import "./hermes-chat.css";
 
@@ -55,7 +56,7 @@ export function HermesChat({
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState<{ id: string; text: string }>();
   const [currentHandle, setCurrentHandle] = useState<string | null>();
-  const [prompt, setPrompt] = useState<AgentPrompt>();
+  const [run, setRun] = useState<ActiveAgentRun>();
   const [error, setError] = useState("");
   const transcript = useRef<HTMLDivElement>(null);
   const scrollDistanceFromEnd = useRef<number | undefined>(undefined);
@@ -63,6 +64,7 @@ export function HermesChat({
   const storageKey = history.active ? runKey(history.active.id, campaignId) : undefined;
   const storedHandle = useSyncExternalStore(subscribeToTab, () => runInTab(storageKey), () => null);
   const handle = currentHandle === undefined ? storedHandle : currentHandle;
+  const prompt = run?.prompt;
   const canSend = status.ready && !handle && !pending && !sending && !navigating;
   const offset = nextOffset === undefined ? history.active?.nextOffset : nextOffset;
   const recent = history.active?.messages;
@@ -92,15 +94,20 @@ export function HermesChat({
         }
         if (result.ok && result.data.status === "running") {
           setError("");
-          const next = result.data.prompt;
-          setPrompt((current) => current?.id === next?.id && current?.generation === next?.generation ? current : next);
+          const next = result.data;
+          setRun((current) => {
+            const previous = current?.prompt;
+            const samePrompt = previous?.id === next.prompt?.id && previous?.generation === next.prompt?.generation;
+            if (current?.phase === next.phase && current.tool === next.tool && current.updatedAt === next.updatedAt && samePrompt) return current;
+            return samePrompt && previous ? { ...next, prompt: previous } : next;
+          });
           retry = setTimeout(() => void poll(run), 1500);
           return;
         }
         if (thread.current) rememberRun(runKey(thread.current, campaignId), null);
         setCurrentHandle(null);
         setPending(undefined);
-        setPrompt(undefined);
+        setRun(undefined);
         setError(result.ok ? (result.data.status === "failed" ? "oma-agent couldn’t finish this turn." : "") : result.message);
         router.refresh();
       } catch {
@@ -202,7 +209,7 @@ export function HermesChat({
         <AgentActivity />
         {offset != null && <button type="button" className="btn secondary runtime-load-older" disabled={loadingOlder}
           onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : "Load older messages"}</button>}
-        {!messages.length && !pending && !history.error && (
+        {!messages.length && !pending && !handle && !history.error && (
           <div className="runtime-conversation-empty">
             <h3>{campaignId ? "What would you like to do with this campaign?" : "What would you like to work on?"}</h3>
           </div>
@@ -213,10 +220,8 @@ export function HermesChat({
           </div>
         ))}
         {pending && <div className="runtime-message from-user"><strong>You</strong><p>{pending.text}</p></div>}
-        {status.ready && (sending || (handle && !prompt && !error)) && <p className="runtime-working" role="status">
-          <LoaderCircle size={16} aria-hidden="true" /> oma-agent is working…
-        </p>}
       </div>
+      {status.ready && (sending || handle) && <ChatProgress run={run} sending={sending} reconnecting={!!handle && !!error} />}
       {(error || history.error) && <p className="form-error chat-error" role="alert">{error || history.error}</p>}
       {!status.ready ? (
         <div className="runtime-composer runtime-chat-offline">

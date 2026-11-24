@@ -31,8 +31,13 @@ const controlSchema = z.discriminatedUnion("kind", [
     choices: z.array(z.string().min(1)), multi_select: z.boolean() }),
   z.object({ ...wireCoordinates, kind: z.literal("approval"), command: z.string(), description: z.string() }),
 ]);
+const activityFields = {
+  tool: z.string().regex(/^[a-zA-Z0-9_.-]{1,96}$/).optional().catch(undefined),
+  progress_at: z.number().positive().max(8.64e12).optional().catch(undefined),
+};
 const statusSchema = z.object({
   status: z.string(), output: z.string().nullish(), pending_controls: z.array(z.unknown()).optional(),
+  ...activityFields,
 });
 const activitySchema = z.object({
   api_server: z.object({ active_runs: z.number().int().nonnegative() }),
@@ -41,8 +46,7 @@ const activitySchema = z.object({
 const tokenCount = z.number().int().nonnegative().optional().catch(undefined);
 const progressSchema = z.object({
   status: z.string(),
-  tool: z.string().regex(/^[a-zA-Z0-9_.-]{1,96}$/).optional().catch(undefined),
-  progress_at: z.number().positive().max(8.64e12).optional().catch(undefined),
+  ...activityFields,
   pending_controls: z.array(z.unknown()).optional(),
   output: z.string().optional().catch(undefined),
   error: z.union([z.string(), z.object({
@@ -177,6 +181,13 @@ function pendingRunPrompt(controls: unknown[] | undefined, key: string, kind?: A
   }
 }
 
+function runActivity({ tool, progress_at: at }: { tool?: string; progress_at?: number }, key: string, showTool: boolean) {
+  return {
+    ...(showTool && tool && !tool.includes(key) ? { tool } : {}),
+    ...(at === undefined ? {} : { updatedAt: new Date(at * 1000).toISOString() }),
+  };
+}
+
 function projectRun(payload: unknown, key: string): AgentRun {
   const parsed = statusSchema.safeParse(payload);
   if (!parsed.success) throw new AgentChatError(502, "oma-agent returned an invalid run status.");
@@ -184,7 +195,10 @@ function projectRun(payload: unknown, key: string): AgentRun {
   if (run.status === "completed") return { status: "completed", answer: (run.output ?? "").replaceAll(key, "[redacted]") };
   if (!runningStatuses.has(run.status)) return { status: "failed" };
   const prompt = pendingRunPrompt(run.pending_controls, key);
-  return prompt ? { status: "running", prompt } : { status: "running" };
+  const phase = prompt?.kind === "approval" ? "waiting_for_approval"
+    : prompt?.kind === "clarify" ? "waiting_for_answer"
+    : run.status === "queued" || run.status === "stopping" || run.status === "waiting_for_approval" ? run.status : "running";
+  return { status: "running", phase, ...(prompt ? { prompt } : {}), ...runActivity(run, key, phase === "running") };
 }
 
 /** Read the default profile's native Sessions API through the same private gateway as Runs. */
@@ -281,7 +295,7 @@ export async function getAgentRunProgress(userId: string, handle: unknown): Prom
   const id = readHandle(userId, config, handle);
   const parsed = progressSchema.safeParse(await readJson(await sendRequest(config, "/runs/" + id)));
   if (!parsed.success) throw new AgentChatError(502, "oma-agent didn’t return run progress.");
-  const { tool, progress_at: progressAt, pending_controls: controls, output, usage, status: rawStatus } = parsed.data;
+  const { pending_controls: controls, output, usage, status: rawStatus } = parsed.data;
   const reported = progressStatus.safeParse(rawStatus);
   let status: AgentRunProgress["status"] = rawStatus === "started" ? "running" : reported.data ?? "unknown";
   if (status === "running") {
@@ -301,8 +315,7 @@ export async function getAgentRunProgress(userId: string, handle: unknown): Prom
     ...(status === "failed" ? { failureReason: describeRunFailure(parsed.data) } : {}),
     ...(outputTokens === undefined ? {} : { outputTokens }),
     ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
-    ...(status === "running" && tool && !tool.includes(config.key) ? { tool } : {}),
-    ...(progressAt === undefined ? {} : { updatedAt: new Date(progressAt * 1000).toISOString() }),
+    ...runActivity(parsed.data, config.key, status === "running"),
   };
 }
 

@@ -53,7 +53,7 @@
 }
 .runtime-chat-history .btn { flex: 0 0 auto; }
 .runtime-load-older { align-self: center; }
-.runtime-working svg { animation: spin 1.3s linear infinite; }
+
 
 .runtime-messages {
   display: flex;
@@ -71,11 +71,26 @@
 }
 .runtime-conversation-empty h3 { font-size: 1.125rem; font-weight: 650; }
 .runtime-conversation-empty p { margin-top: 5px; }
-.runtime-working {
+.runtime-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  padding: 8px 24px;
+  background: var(--raised);
+  border-top: 1px solid var(--border);
+  font-size: 0.8125rem;
+}
+.runtime-progress-state {
   display: flex;
   align-items: center;
   gap: 8px;
+  color: var(--text);
+  font-weight: 600;
 }
+.runtime-progress-state svg { flex: none; }
+.runtime-progress-time { color: var(--muted); }
+.runtime-progress-spinner { animation: spin 1.3s linear infinite; }
 .runtime-message {
   align-self: flex-start;
   max-width: min(86%, 70ch);
@@ -143,8 +158,9 @@
   .chat-page-heading,
   .runtime-chat-history,
   .runtime-messages,
+  .runtime-progress,
   .runtime-composer { padding-inline: 15px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .runtime-working svg { animation: none; }
+  .runtime-progress-spinner { animation: none; }
 }

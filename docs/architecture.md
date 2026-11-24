@@ -188,6 +188,8 @@ The console layout renders the right-side chat panel through the `@conversation`
 
 **Code to read** · [Campaign route](<../oma/app/(console)/(workspace)/campaigns/[id]/page.tsx>) · [Campaign tabs](../oma/components/campaign-detail.tsx) · [Conversation route](<../oma/app/(console)/@conversation/conversation.tsx>) · [Chat UI](../oma/components/hermes-chat.tsx) · [Chat actions](../oma/app/actions/chat.ts) · [Hermes gateway client](../oma/lib/server/agent-chat.ts)
 
+The status strip above the chat composer uses the same run poll to show queueing, the current tool when reported, and waits for clarification or approval. The last-activity time comes from the gateway, not the poll time. This measures activity, not percentage complete, and is separate from the workspace-wide Agent activity panel.
+
 ## 5. Tool catalog and authorization
 
 ```mermaid
