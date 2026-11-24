@@ -60,13 +60,12 @@ const campaignConfiguration = z.object({
   revision, provider: z.string(), modelId: z.string(), baseUrl: z.string(),
   hasModelKey: z.boolean(), mode: campaignMode.optional(),
 });
+const campaignIntegration = z.object({ id: workspaceId, name: z.string(), slug: z.string().refine(validToolkitSlug).nullable() });
 const campaign = record.extend({
   playbookId: z.string(), version: z.string(), orchestrator: z.string(), agentIds: strings,
   goals: strings, plans: strings, board: z.string(),
   integrationConfigInvalid: z.boolean().optional(),
-  requiredIntegrations: z.array(z.object({
-    id: workspaceId, name: z.string(), slug: z.string().refine(validToolkitSlug).nullable(),
-  })).optional(),
+  requiredIntegrations: z.array(campaignIntegration).optional(),
   installationState: z.string().optional(), model: z.string().optional(),
   lifecycleState: z.string().optional(), mode: campaignMode.optional(),
   configuration: campaignConfiguration.optional(),
@@ -345,7 +344,10 @@ const campaignUpdate = z.object({
   (!(input.provider || input.baseUrl || input.modelKey) || input.modelId) && (!input.modelKey || input.baseUrl),
 );
 
+type GenerateCampaignMcp = (required: RequiredIntegration[]) => Promise<{ url: string } | { error: string }>;
+
 export type CampaignConfigurationResult = {
+  staged?: boolean;
   configuration?: CampaignConfiguration;
   error?: string;
   synced?: boolean;
@@ -353,38 +355,98 @@ export type CampaignConfigurationResult = {
   state?: "paused" | "pausing" | "resumed";
 };
 
+const pendingCampaignEdits = new Map<string, Promise<void>>();
+
+async function withCampaignEdit<T>(id: string, edit: () => Promise<T>) {
+  const before = pendingCampaignEdits.get(id) ?? Promise.resolve();
+  let release!: () => void;
+  const complete = new Promise<void>((resolve) => { release = resolve; });
+  const queued = before.then(() => complete);
+  pendingCampaignEdits.set(id, queued);
+  await before;
+  try {
+    return await edit();
+  } finally {
+    release();
+    if (pendingCampaignEdits.get(id) === queued) pendingCampaignEdits.delete(id);
+  }
+}
+
+async function editableCampaign(id: string, expectedRevision?: string) {
+  if (!workspaceId.safeParse(id).success) throw new WorkspaceRequestError(404, "Campaign not found.");
+  const workspace = await loadAgentWorkspace();
+  if (workspace.error) throw new WorkspaceRequestError(503, workspace.error);
+  const campaign = workspace.records?.campaigns.find((item) => item.id === id);
+  if (!campaign?.configuration) throw new WorkspaceRequestError(404, "Campaign settings were not found.");
+  if (expectedRevision && campaign.configuration.revision !== expectedRevision) {
+    throw new WorkspaceRequestError(409, "This campaign changed. Reload it and try again.");
+  }
+  return { campaign, configuration: campaign.configuration };
+}
+
+async function syncCampaignRecord(
+  id: string, expectedRevision: string, write?: (revision: string) => Promise<string>, expectedMode?: CampaignMode,
+): Promise<CampaignConfigurationResult & { configuration: CampaignConfiguration }> {
+  const { campaign, configuration } = await editableCampaign(id, expectedRevision);
+  const stopped = await pauseCampaignForSync(id, campaign.lifecycleState, configuration.revision);
+  let synced: CampaignConfiguration;
+  try {
+    const latest = write ? await write(stopped.revision) : stopped.revision;
+    synced = campaignConfiguration.parse(await workspaceRequest(
+      "/workspace/campaigns/" + id + "/sync", { revision: latest }, "POST",
+    ));
+    if (expectedMode && synced.mode !== expectedMode) throw new Error("Unexpected synced mode");
+  } catch {
+    throw new WorkspaceRequestError(502, stopped.resume
+      ? "Campaign stopped. The changes could not be confirmed. Review them and retry syncing before resuming."
+      : "Couldn’t confirm the campaign changes. Review the saved record and retry syncing.");
+  }
+  if (stopped.resume) {
+    return { configuration: { ...synced, revision: await resumeCampaignAfterSync(id, synced.revision) },
+      synced: true, state: "resumed" as const };
+  }
+  return campaign.installationState === "" || campaign.installationState === "draft"
+    ? { configuration: synced, staged: true }
+    : { configuration: synced, synced: true, state: "paused" as const };
+}
+
 /** Save publishing mode and sync its revision without passing credentials. */
 export async function saveCampaignMode(id: string, input: unknown) {
   const parsed = z.object({ revision, mode: campaignMode }).safeParse(input);
   if (!workspaceId.safeParse(id).success || !parsed.success) {
     throw new WorkspaceRequestError(422, "Choose an available campaign mode.");
   }
-  const workspace = await loadAgentWorkspace();
-  if (workspace.error) throw new WorkspaceRequestError(503, workspace.error);
-  const campaign = workspace.records?.campaigns.find((item) => item.id === id);
-  if (!campaign?.configuration) throw new WorkspaceRequestError(404, "Campaign settings were not found.");
-  if (campaign.configuration.revision !== parsed.data.revision) {
-    throw new WorkspaceRequestError(409, "This campaign changed. Reload its settings and try again.");
-  }
+  return withCampaignEdit(id, async () => {
+    await syncCampaignRecord(id, parsed.data.revision, async (currentRevision) => {
+      const saved = campaignConfiguration.parse(await workspaceRequest("/workspace/campaigns/" + id + "/mode", {
+        mode: parsed.data.mode, revision: currentRevision,
+      }));
+      if (saved.mode !== parsed.data.mode) throw new Error("Unexpected saved mode");
+      return saved.revision;
+    }, parsed.data.mode);
+    return parsed.data.mode;
+  });
+}
 
-  const stopped = await pauseCampaignForSync(id, campaign.lifecycleState, parsed.data.revision);
-  let synced: CampaignConfiguration;
-  try {
-    const result = campaignConfiguration.parse(await workspaceRequest("/workspace/campaigns/" + id + "/mode", {
-      mode: parsed.data.mode, revision: stopped.revision,
-    }));
-    if (result.mode !== parsed.data.mode) throw new Error("Unexpected mode");
-    synced = campaignConfiguration.parse(await workspaceRequest(
-      "/workspace/campaigns/" + id + "/sync", { revision: result.revision }, "POST",
-    ));
-    if (synced.mode !== parsed.data.mode) throw new Error("Unexpected synced mode");
-  } catch {
-    throw new WorkspaceRequestError(502, stopped.resume
-      ? "Campaign stopped, but the mode change and sync could not be confirmed. Reload settings before retrying."
-      : "Couldn’t confirm the mode change and sync. Reload settings before retrying.");
+const campaignPlan = z.object({
+  revision,
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(4000),
+  goals: z.array(z.string().trim().min(1).max(2000)).max(32),
+  plans: z.array(z.string().trim().min(1).max(2000)).max(32),
+});
+
+export async function saveCampaignPlan(id: string, input: unknown): Promise<CampaignConfigurationResult> {
+  const parsed = campaignPlan.safeParse(input);
+  if (!workspaceId.safeParse(id).success || !parsed.success) {
+    throw new WorkspaceRequestError(422, "Check the plan fields. Use up to 32 goals and 32 steps.");
   }
-  if (stopped.resume) await resumeCampaignAfterSync(id, synced.revision);
-  return parsed.data.mode;
+  return withCampaignEdit(id, () => syncCampaignRecord(id, parsed.data.revision, async (currentRevision) => {
+    const saved = z.object({ revision }).parse(await workspaceRequest("/workspace/campaigns/" + id + "/plan", {
+      ...parsed.data, revision: currentRevision,
+    }));
+    return saved.revision;
+  }));
 }
 
 const campaignLifecycle = z.object({
@@ -431,10 +493,15 @@ async function resumeCampaignAfterSync(id: string, currentRevision: string) {
 
 /** Generate the MCP URL after validating the edit, then save the YAML and sync the campaign’s keys. */
 export async function saveCampaignConfiguration(
-  id: string,
-  input: unknown,
-  generateMcpUrl: (required: RequiredIntegration[]) => Promise<{ url: string } | { error: string }>,
-  deploy = false,
+  id: string, input: unknown, generateMcpUrl: GenerateCampaignMcp, start = false,
+): Promise<CampaignConfigurationResult> {
+  if (!workspaceId.safeParse(id).success) return { error: "Campaign not found." };
+  return withCampaignEdit(id, () => applyCampaignConfiguration(id, input, generateMcpUrl, start));
+}
+
+async function applyCampaignConfiguration(
+  id: string, input: unknown, generateMcpUrl: GenerateCampaignMcp, start: boolean,
+  tools?: RequiredIntegration[],
 ): Promise<CampaignConfigurationResult> {
   const parsed = campaignUpdate.safeParse(input);
   if (!workspaceId.safeParse(id).success || !parsed.success) {
@@ -445,14 +512,20 @@ export async function saveCampaignConfiguration(
   if (workspace.error) return { error: workspace.error };
   const campaign = workspace.records?.campaigns.find((item) => item.id === id);
   const current = campaign?.configuration;
-  if (!current) return { error: "Couldn’t load this campaign’s settings. Check that oma-agent is running." };
+  if (!campaign || !current) return { error: "Couldn’t load this campaign’s settings. Check that oma-agent is running." };
   if (current.revision !== settings.revision) return { error: "This campaign changed. Reload its settings and try again." };
 
-  if (campaign?.integrationConfigInvalid) {
+  const install = start && campaign.installationState !== "installed";
+  if (start && campaign.lifecycleState === "resumed") {
+    return { configuration: current, state: "resumed" };
+  }
+  const saveDraftTools = tools !== undefined && !start &&
+    (campaign.installationState === "" || campaign.installationState === "draft");
+  if (campaign.integrationConfigInvalid && tools === undefined) {
     return { error: "Use a list of unique campaign integration IDs such as discord or facebook in config.yaml." };
   }
-  const required = campaign?.requiredIntegrations ?? [];
-  const mcp = await generateMcpUrl(required);
+  const required = tools ?? campaign.requiredIntegrations ?? [];
+  const mcp = saveDraftTools ? { url: "" } : await generateMcpUrl(required);
   if ("error" in mcp) return { error: mcp.error };
   const url = hostedComposioUrl.safeParse(mcp.url);
   if (!url.success) return { error: "Composio returned a URL that can’t be synced to this campaign." };
@@ -472,6 +545,7 @@ export async function saveCampaignConfiguration(
   try {
     saved = campaignConfiguration.parse(await workspaceRequest(path + "/config", {
       ...settings, revision: stopped.revision, composioUrl, setModelKey: Boolean(modelKey),
+      ...(tools ? { integrations: tools.map(({ id }) => id) } : {}),
     }));
   } catch (error) {
     const message = error instanceof WorkspaceRequestError && [404, 409, 422].includes(error.status)
@@ -486,7 +560,7 @@ export async function saveCampaignConfiguration(
   };
   try {
     saved = campaignConfiguration.parse(await workspaceRequest(path + "/sync", {
-      revision: saved.revision, env, ...(deploy ? { prepareDeployment: true } : {}),
+      revision: saved.revision, env, ...(install || saveDraftTools ? { prepareDeployment: true } : {}),
     }, "POST"));
   } catch (error) {
     const recovery = error instanceof WorkspaceRequestError && error.status === 412
@@ -498,7 +572,8 @@ export async function saveCampaignConfiguration(
       error: (stopped.resume ? "Campaign stopped. " : "") + "Settings were saved, but oma-agent could not sync the campaign. " + recovery,
     };
   }
-  if (!deploy) {
+  if (!start) {
+    if (saveDraftTools) return { configuration: saved, staged: true };
     if (!stopped.resume) return { configuration: saved, synced: true };
     try {
       const latest = await resumeCampaignAfterSync(id, saved.revision);
@@ -508,27 +583,137 @@ export async function saveCampaignConfiguration(
         ? error.message : "Campaign synced, but restarting could not be confirmed." };
     }
   }
-  try {
-    saved = campaignConfiguration.parse(await workspaceRequest(path + "/deploy", { revision: saved.revision, env }, "POST"));
-  } catch (error) {
-    const detail = error instanceof WorkspaceRequestError && error.status === 412
-      ? " Check the saved agent records and board before retrying." : " Reload its settings and try again.";
-    return { configuration: saved, error: "Campaign settings passed sync, but deployment could not be confirmed." + detail };
+  if (install) {
+    try {
+      saved = campaignConfiguration.parse(await workspaceRequest(path + "/deploy", { revision: saved.revision, env }, "POST"));
+    } catch (error) {
+      const detail = error instanceof WorkspaceRequestError && error.status === 412
+        ? " Check the saved agent records and board before retrying." : " Reload its settings and try again.";
+      return { configuration: saved, error: "Campaign settings passed sync, but deployment could not be confirmed." + detail };
+    }
   }
   try {
     const lifecycle = await setCampaignLifecycle(id, "resumed", saved.revision);
     const configuration = { ...saved, revision: lifecycle.revision };
+    const deployed = install ? { deployed: true } : {};
     if (lifecycle.state !== "resumed") {
       return {
-        configuration, deployed: true, state: lifecycle.state,
-        error: lifecycle.state === "pausing" ? "Campaign deployed. Wait for it to finish stopping, then retry."
-          : "Campaign deployed, but it is still stopped. Check its settings before retrying.",
+        configuration, ...deployed, state: lifecycle.state,
+        error: lifecycle.state === "pausing" ? "Wait for the campaign to finish stopping, then retry."
+          : "The campaign is still paused. Check its run settings before retrying.",
       };
     }
-    return { configuration, synced: true, deployed: true, state: lifecycle.state };
-  } catch {
-    return { configuration: saved, deployed: true, error: "Campaign deployed, but starting it could not be confirmed. Reload its status and retry." };
+    return { configuration, ...deployed, synced: true, state: lifecycle.state };
+  } catch (error) {
+    const detail = error instanceof WorkspaceRequestError && [409, 412].includes(error.status) ? " " + error.message : "";
+    return { configuration: saved, ...(install ? { deployed: true } : {}),
+      error: "Couldn’t start the campaign." + (detail || " Reload its status and retry.") };
   }
+}
+
+export async function loadCampaignIntegrationCatalog(): Promise<RequiredIntegration[] | undefined> {
+  try {
+    return z.array(campaignIntegration).parse(await workspaceRequest("/workspace/campaign-integrations"));
+  } catch {
+    return undefined;
+  }
+}
+
+function savedModelInput(configuration: CampaignConfiguration) {
+  return { revision: configuration.revision, provider: configuration.provider, modelId: configuration.modelId,
+    baseUrl: configuration.baseUrl, modelKey: "" };
+}
+
+export async function saveCampaignTools(id: string, input: unknown, generateMcp: GenerateCampaignMcp) {
+  const parsed = z.object({ revision, integrations: z.array(workspaceId).max(128) }).safeParse(input);
+  if (!workspaceId.safeParse(id).success || !parsed.success ||
+      new Set(parsed.data.integrations).size !== parsed.data.integrations.length) {
+    throw new WorkspaceRequestError(422, "Choose unique tools from the campaign catalog.");
+  }
+  return withCampaignEdit(id, async () => {
+    const { configuration } = await editableCampaign(id, parsed.data.revision);
+    const catalog = await loadCampaignIntegrationCatalog();
+    if (!catalog) throw new WorkspaceRequestError(503, "The campaign tool list could not be loaded. Try again.");
+    const desired = new Set(parsed.data.integrations);
+    const tools = catalog.filter(({ id }) => desired.has(id));
+    if (tools.length !== desired.size) throw new WorkspaceRequestError(422, "Choose tools from the campaign catalog.");
+    return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, false, tools);
+  });
+}
+
+export async function changeCampaignRunState(id: string, input: unknown, generateMcp: GenerateCampaignMcp) {
+  const parsed = z.object({ revision, state: z.enum(["paused", "resumed"]) }).safeParse(input);
+  if (!workspaceId.safeParse(id).success || !parsed.success) {
+    throw new WorkspaceRequestError(422, "Choose whether to pause or start the campaign.");
+  }
+  return withCampaignEdit(id, async (): Promise<CampaignConfigurationResult> => {
+    const { campaign, configuration } = await editableCampaign(id, parsed.data.revision);
+    if (parsed.data.state === "resumed") {
+      if (campaign.lifecycleState === "pausing") throw new WorkspaceRequestError(409, "Wait for the campaign to finish stopping.");
+      return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, true);
+    }
+    if (campaign.installationState !== "installed" && campaign.lifecycleState !== "resumed") {
+      throw new WorkspaceRequestError(409, "Start the campaign before pausing it.");
+    }
+    const stopped = await pauseCampaignForSync(id, campaign.lifecycleState, configuration.revision);
+    return { state: "paused", configuration: { ...configuration, revision: stopped.revision } };
+  });
+}
+
+export async function syncCampaignAgents(id: string, expectedRevision: unknown) {
+  const parsed = revision.safeParse(expectedRevision);
+  if (!workspaceId.safeParse(id).success || !parsed.success) throw new WorkspaceRequestError(422, "Reload the campaign to sync its latest revision.");
+  return withCampaignEdit(id, () => syncCampaignRecord(id, parsed.data));
+}
+
+export async function refreshCampaignToolConnection(id: string, slug: string, generateMcp: GenerateCampaignMcp) {
+  if (!workspaceId.safeParse(id).success || !validToolkitSlug(slug)) return undefined;
+  return withCampaignEdit(id, async () => {
+    const { campaign, configuration } = await editableCampaign(id);
+    if (!campaign.requiredIntegrations?.some((tool) => tool.slug === slug) ||
+        campaign.installationState !== "installed") return undefined;
+    return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, false);
+  });
+}
+
+const campaignChanges = z.object({ revision, integrations: revision });
+export type CampaignChanges = z.infer<typeof campaignChanges>;
+
+export async function readCampaignChanges(id: string): Promise<CampaignChanges | undefined> {
+  if (!workspaceId.safeParse(id).success) return undefined;
+  try {
+    return campaignChanges.parse(await workspaceRequest("/workspace/campaigns/" + id + "/changes"));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Sync authored records when a chat turn changed them, and regenerate MCP only when tool IDs changed. */
+export async function syncCampaignChatChanges(
+  id: string, previous: unknown, generateMcp: GenerateCampaignMcp,
+): Promise<CampaignConfigurationResult | undefined> {
+  const before = campaignChanges.safeParse(previous);
+  if (!workspaceId.safeParse(id).success || !before.success) return undefined;
+  return withCampaignEdit(id, async () => {
+    const after = await readCampaignChanges(id);
+    if (!after) return { error: "Couldn’t check campaign changes. Open Agents to sync the saved records." };
+    if (before.data.revision === after.revision) return undefined;
+    const { campaign, configuration } = await editableCampaign(id);
+    if (before.data.integrations !== after.integrations && campaign.installationState === "installed") {
+      const result = await applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, false);
+      if (result.error && !result.configuration && campaign.lifecycleState === "resumed") {
+        // Chat already changed the tool list, so stop the previously synced runtime if it cannot apply the edit.
+        try {
+          await pauseCampaignForSync(id, campaign.lifecycleState, configuration.revision);
+          return { error: "Campaign stopped. " + result.error };
+        } catch {
+          return { error: result.error + " Stopping the campaign could not be confirmed. Check its status." };
+        }
+      }
+      return result;
+    }
+    return syncCampaignRecord(id, configuration.revision);
+  });
 }
 
 function publicationsPath(id: string) {

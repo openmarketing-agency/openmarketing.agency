@@ -359,6 +359,48 @@ def campaign_integrations(data):
     }
 
 
+def campaign_integration_catalog():
+    from hermes_cli.oma_campaigns.integrations import integration_catalog
+
+    return [{"id": key, "name": item["name"], "slug": item["composio"]}
+            for key, item in integration_catalog().items() if item["composio"]]
+
+
+def campaign_change_snapshot(root, campaign_id):
+    """Fingerprint the saved campaign and authored agent files without returning their contents."""
+    if not valid_id(campaign_id):
+        raise WorkspaceError(404, "Campaign not found.")
+    try:
+        with open_directory(root) as workspace, open_directory("campaigns", workspace) as campaigns, \
+                open_directory(campaign_id, campaigns) as campaign:
+            source = read_file(campaign)[0]
+            data = parse_record(source, campaign_id)
+            digest = sha256(source)
+            try:
+                with open_directory("agents", workspace) as agents:
+                    declared = set(strings(data.get("agents")))
+                    for agent_id in sorted(filter(valid_id, os.listdir(agents))):
+                        try:
+                            with open_directory(agent_id, agents) as agent:
+                                agent_source, _ = read_file(agent)
+                                if agent_id not in declared and parse_record(agent_source, agent_id).get("campaign_id") != campaign_id:
+                                    continue
+                                digest.update(agent_id.encode() + b"\0")
+                                digest.update(sha256(agent_source).digest())
+                                try:
+                                    digest.update(sha256(read_file(agent, "SOUL.md")[0]).digest())
+                                except FileNotFoundError:
+                                    pass
+                        except (OSError, WorkspaceError):
+                            continue
+            except FileNotFoundError:
+                pass
+            return {"revision": digest.hexdigest(),
+                    "integrations": sha256(json.dumps(data.get("integrations", [])).encode()).hexdigest()}
+    except FileNotFoundError:
+        raise WorkspaceError(404, "Campaign or agent records were not found.") from None
+
+
 def project(collection, source, directory, record_id=None):
     data = parse_record(source, record_id)
     record_id = data["id"]
@@ -827,7 +869,7 @@ def update_campaign_mode(root, campaign_id, update):
 def validate_campaign_settings(update):
     fields = {"revision", "provider", "modelId", "baseUrl", "composioUrl", "setModelKey"}
     if (
-        not isinstance(update, dict) or set(update) != fields or type(update["setModelKey"]) is not bool
+        not isinstance(update, dict) or set(update) - {"integrations"} != fields or type(update["setModelKey"]) is not bool
         or any(not isinstance(update[key], str) for key in fields - {"setModelKey"})
         or len(update["modelId"]) > 200 or re.search(r"[\s$]", update["modelId"])
         or len(update["provider"]) > 80 or not re.fullmatch(r"(?:[A-Za-z0-9_.-]+(?:[:@][A-Za-z0-9_.-]+)?)?", update["provider"])
@@ -837,6 +879,8 @@ def validate_campaign_settings(update):
         or (update["setModelKey"] and not update["baseUrl"])
     ):
         raise WorkspaceError(422, "Check the campaign model and Composio URL fields.")
+    if "integrations" in update and campaign_integrations(update)["integrationConfigInvalid"]:
+        raise WorkspaceError(422, "Choose unique integrations from the campaign catalog.")
 
 
 def update_campaign_configuration(root, campaign_id, update):
@@ -850,6 +894,8 @@ def update_campaign_configuration(root, campaign_id, update):
             raise WorkspaceError(409, "This campaign changed. Reload its settings and try again.")
         yaml = roundtrip_yaml()
         document = yaml.load(source)
+        if "integrations" in update:
+            document["integrations"] = update["integrations"]
         fields = {"provider": "provider", "modelId": "default", "baseUrl": "base_url"}
         if not update["modelId"]:
             document.pop("model", None)
@@ -1476,6 +1522,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         profile = re.fullmatch(r"/workspace/agents/([^/]+)/profile", self.path)
         kanban = re.fullmatch(r"/workspace/campaigns/([^/]+)/kanban", self.path)
         lifecycle = re.fullmatch(r"/workspace/campaigns/([^/]+)/lifecycle", self.path)
+        changes = re.fullmatch(r"/workspace/campaigns/([^/]+)/changes", self.path)
         try:
             if self.path == "/workspace":
                 result = records(self.server.root)
@@ -1483,6 +1530,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                     models = load_standalone_models(self.server.root)
                 if models is not None:
                     result["standaloneModels"] = models
+            elif self.path == "/workspace/campaign-integrations":
+                result = campaign_integration_catalog()
+            elif changes:
+                result = campaign_change_snapshot(self.server.root, changes[1])
             elif self.path == "/workspace/tool-selections":
                 result = tool_selections(self.server.root)
             elif publication_list:

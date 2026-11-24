@@ -6,7 +6,10 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { saveCampaignConfiguration, saveCampaignMode, type RequiredIntegration } from "../lib/server/agent-workspace";
+import {
+  changeCampaignRunState, saveCampaignConfiguration, saveCampaignMode, saveCampaignPlan, saveCampaignTools,
+  syncCampaignChatChanges, type RequiredIntegration,
+} from "../lib/server/agent-workspace";
 
 test("saves a campaign's YAML settings, then POSTs only the requested credentials", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "oma-"));
@@ -36,14 +39,24 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   let lifecycleState = "resumed";
   let currentState: "paused" | "resumed" | undefined;
   let stopping = false;
+  let installationState: string | undefined;
+  const changes = { revision: "e".repeat(64), integrations: "f".repeat(64) };
   const requests: Array<{ method?: string; path?: string; body: unknown }> = [];
   const server = createServer(async (request, response) => {
+    if (request.method === "GET" && request.url === "/workspace/campaign-integrations") {
+      response.end(JSON.stringify(required));
+      return;
+    }
+    if (request.method === "GET" && request.url === "/workspace/campaigns/seo/changes") {
+      response.end(JSON.stringify(changes));
+      return;
+    }
     if (request.method === "GET" && request.url === "/workspace") {
       response.end(JSON.stringify({
         brands: [], playbooks: [], agents: [], skipped: 0,
         campaigns: [{
           id: "seo", name: "Organic Search", description: "", playbookId: "", version: "", orchestrator: "",
-          lifecycleState: currentState, agentIds: [], goals: [], plans: [], board: "", requiredIntegrations: required, integrationConfigInvalid,
+          lifecycleState: currentState, installationState, agentIds: [], goals: [], plans: [], board: "", requiredIntegrations: required, integrationConfigInvalid,
           configuration: { ...configuration, composioUrl: url, revision: inputRevision },
         }],
       }));
@@ -104,7 +117,7 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   assert.equal(generateMcp.mock.callCount(), 1);
   assert.deepEqual(generateMcp.mock.calls[0].arguments, [required]);
   assert.ok(!JSON.stringify(saved).includes(url));
-  assert.deepEqual(requests, [
+  assert.deepEqual(requests.slice(), [
     { method: "PUT", path: "/workspace/campaigns/seo/config", body: { ...fields, revision: input.revision, composioUrl: url, setModelKey: true } },
     { method: "POST", path: "/workspace/campaigns/seo/sync", body: {
       revision: configuration.revision, env: { HERMES_MODEL_API_KEY: "fixture-model", COMPOSIO_API_KEY: "fixture-composio" },
@@ -113,7 +126,7 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   requests.length = 0;
   const inherited = { revision: inputRevision, provider: "", modelId: "", baseUrl: "", modelKey: "" };
   assert.equal((await saveCampaignConfiguration("seo", { ...inherited, useEnvironmentKey: "true" }, generateMcp)).synced, true);
-  assert.deepEqual(requests, [
+  assert.deepEqual(requests.slice(), [
     { method: "PUT", path: "/workspace/campaigns/seo/config", body: {
       revision: inputRevision, provider: "", modelId: "", baseUrl: "", composioUrl: url, setModelKey: false,
     } },
@@ -125,7 +138,7 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   requests.length = 0;
   delete process.env.COMPOSIO_API_KEY;
   assert.equal((await saveCampaignConfiguration("seo", input, async () => ({ url: "" }))).synced, true);
-  assert.deepEqual(requests, [
+  assert.deepEqual(requests.slice(), [
     { method: "PUT", path: "/workspace/campaigns/seo/config", body: { ...fields, revision: input.revision,
       composioUrl: "", setModelKey: true } },
     { method: "POST", path: "/workspace/campaigns/seo/sync", body: {
@@ -188,19 +201,19 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   syncFailureStatus = 0;
   stopping = true;
   assert.equal(await saveCampaignMode("seo", modeInput), "control");
-  assert.deepEqual(requests, [pause(inputRevision), pause("1".repeat(64)), modeUpdate("2".repeat(64)), modeSync, resume]);
+  assert.deepEqual(requests.slice(), [pause(inputRevision), pause("1".repeat(64)), modeUpdate("2".repeat(64)), modeSync, resume]);
 
   requests.length = 0;
   currentState = "paused";
   assert.equal(await saveCampaignMode("seo", modeInput), "control");
-  assert.deepEqual(requests, [modeUpdate(inputRevision), modeSync]);
+  assert.deepEqual(requests.slice(), [modeUpdate(inputRevision), modeSync]);
 
   requests.length = 0;
   currentState = "resumed";
   const runningResult = await saveCampaignConfiguration("seo", input, generateMcp);
   assert.equal(runningResult.state, "resumed");
   assert.equal(runningResult.synced, true);
-  assert.deepEqual(requests, [
+  assert.deepEqual(requests.slice(), [
     pause(inputRevision),
     { method: "PUT", path: base + "/config", body: { ...fields, revision: "2".repeat(64), composioUrl: url, setModelKey: true } },
     { method: "POST", path: base + "/sync", body: { revision: configuration.revision, env } },
@@ -210,9 +223,63 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   requests.length = 0;
   syncFailureStatus = 502;
   await assert.rejects(saveCampaignMode("seo", modeInput), /Campaign stopped/);
-  assert.deepEqual(requests, [pause(inputRevision), modeUpdate("2".repeat(64)), modeSync]);
+  assert.deepEqual(requests.slice(), [pause(inputRevision), modeUpdate("2".repeat(64)), modeSync]);
   requests.length = 0;
   const failed = await saveCampaignConfiguration("seo", input, generateMcp);
   assert.match(failed.error ?? "", /Campaign stopped/);
   assert.deepEqual(requests.map(({ path }) => path), [base + "/lifecycle", base + "/config", base + "/sync"]);
+
+  syncFailureStatus = 0;
+  installationState = "installed";
+  requests.length = 0;
+  const runInput = { revision: inputRevision, state: "resumed" };
+  assert.equal((await changeCampaignRunState("seo", runInput, generateMcp)).state, "resumed");
+  assert.equal(requests.length, 0);
+  currentState = "paused";
+  assert.equal((await changeCampaignRunState("seo", runInput, generateMcp)).state, "resumed");
+  assert.deepEqual(requests.map(({ path }) => path), [base + "/config", base + "/sync", base + "/lifecycle"]);
+  assert.equal((requests[1].body as { prepareDeployment?: unknown }).prepareDeployment, undefined);
+
+  const plan = { revision: inputRevision, name: "New plan", description: "", goals: ["Reach readers"], plans: ["Write an article"] };
+  currentState = "resumed";
+  requests.length = 0;
+  assert.equal((await saveCampaignPlan("seo", plan)).state, "resumed");
+  assert.deepEqual(requests.slice(), [
+    pause(inputRevision),
+    { method: "PUT", path: base + "/plan", body: { ...plan, revision: "2".repeat(64) } },
+    { method: "POST", path: base + "/sync", body: { revision: configuration.revision } },
+    resume,
+  ]);
+
+  requests.length = 0;
+  assert.equal(await syncCampaignChatChanges("seo", changes, generateMcp), undefined);
+  assert.equal(requests.length, 0);
+  assert.equal((await syncCampaignChatChanges("seo", { ...changes, revision: "0".repeat(64) }, generateMcp))?.state, "resumed");
+  assert.deepEqual(requests.slice(), [
+    pause(inputRevision), { method: "POST", path: base + "/sync", body: { revision: "2".repeat(64) } }, resume,
+  ]);
+
+  requests.length = 0;
+  const unavailableTools = await syncCampaignChatChanges("seo",
+    { revision: "0".repeat(64), integrations: "1".repeat(64) },
+    async () => ({ error: "Connect Discord before syncing." }));
+  assert.match(unavailableTools?.error ?? "", /Campaign stopped.*Connect Discord/);
+  assert.deepEqual(requests.slice(), [pause(inputRevision)]);
+
+  requests.length = 0;
+  const savedTools = await saveCampaignTools("seo", { revision: inputRevision, integrations: ["discord"] }, generateMcp);
+  assert.equal(savedTools.state, "resumed");
+  assert.deepEqual(requests.map(({ path }) => path), [base + "/lifecycle", base + "/config", base + "/sync", base + "/lifecycle"]);
+  assert.deepEqual((requests[1].body as { integrations: string[] }).integrations, ["discord"]);
+  assert.deepEqual((requests[2].body as { env: unknown }).env, { COMPOSIO_API_KEY: "fixture-composio" });
+
+  requests.length = 0;
+  installationState = "";
+  currentState = "paused";
+  const draft = await saveCampaignTools("seo", { revision: inputRevision, integrations: ["discord"] }, async () => {
+    throw new Error("Draft tools should save without contacting Composio");
+  });
+  assert.equal(draft.staged, true);
+  assert.deepEqual(requests.map(({ path }) => path), [base + "/config", base + "/sync"]);
+  assert.equal((requests[1].body as { prepareDeployment?: unknown }).prepareDeployment, true);
 });
