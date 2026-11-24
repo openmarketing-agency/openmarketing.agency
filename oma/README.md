@@ -34,6 +34,16 @@ Choose a publishing mode in the campaign’s **Settings**. **Approve** is the de
 
 Mode changes save to the campaign’s `config.yaml` and sync with the saved revision. Model and MCP changes include their API keys in the private sync request when applicable. The console waits for running campaigns to stop before sync and restarts them after success. Campaigns already stopped stay stopped when syncing settings.
 
+## Generate analytics
+
+Open **Analytics** on a campaign and select **Generate dashboard**. oma-agent’s default profile writes an OpenUI Lang program using aggregated task, scheduled job, and publication data. Its prompt includes the campaign ID.
+
+The console validates the program and stores it in SQLite. OpenUI renders the charts and tables. The program’s read-only query loads current workspace metrics every minute and on **Refresh data**. The date filter changes the completed-task window between 7 and 28 days in UTC. Regenerating replaces the saved OpenUI program after validation. Dashboards created before the OpenUI change can be regenerated from the Analytics tab.
+
+The live query reads each campaign’s configured Kanban board and latest result per scheduled job through `/workspace/campaigns/<id>/progress`. Publication counts cover the latest six records from `/workspace/campaigns/<id>/publications?limit=6`.
+
+After editing the analytics component library, run `node --import tsx scripts/generate-analytics-spec.mjs` from `oma/` to update the server’s OpenUI schema.
+
 ## Use the API and connections
 
 The first registration creates the installation's sole account. The nullable `users.onboarding_state` field stores the project setup and any saved agent onboarding transcript. Browser login stores access and refresh tokens in HTTP-only cookies. API clients send `username` and `password` as form fields to `/api/v1/auth/jwt/login`, then send the returned access token as `Authorization: Bearer <token>`. The bearer API and machine-readable OpenAPI document are available at `/docs` and `/openapi.json`.

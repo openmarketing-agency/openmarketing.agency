@@ -858,6 +858,55 @@ def ask_campaign_plan(root, campaign_id, request):
     return answer
 
 
+def generate_analytics(root, request):
+    sections = {"tasks", "timeline", "schedules", "publications"}
+    if (not isinstance(request, dict) or set(request) != {"scope", "targetId", "campaignIds", "snapshot", "prompt"}
+            or request["scope"] != "campaigns"
+            or not valid_id(request["targetId"])
+            or not isinstance(request["prompt"], str) or not 0 < len(request["prompt"]) <= 32_768
+            or not isinstance(request["snapshot"], dict)
+            or set(request["snapshot"]) != sections | {"updatedAt", "campaignCount"}):
+        raise WorkspaceError(422, "Check the analytics snapshot.")
+
+    target_id, snapshot = request["targetId"], request["snapshot"]
+    # Keep the workspace request envelope compatible with existing campaign dashboards.
+    if request["campaignIds"] != [target_id] or type(snapshot["campaignCount"]) is not int or snapshot["campaignCount"] != 1:
+        raise WorkspaceError(422, "Check the analytics campaign ID.")
+
+    from agent.auxiliary_client import call_llm
+    from agent.runtime_scope import bind_profile_scope
+    from hermes_cli.oma_campaigns.install import default_home
+
+    messages = [
+        {"role": "system", "content": request["prompt"]},
+        {"role": "user", "content": json.dumps(snapshot, allow_nan=False) + "\n\nCampaign ID: " + target_id},
+    ]
+    try:
+        home = default_home()
+        if home != root.parent.resolve():
+            raise WorkspaceError(503, "Analytics needs oma-agent’s default profile.")
+        with bind_profile_scope(home):
+            # A short layout may otherwise exhaust its entire output budget on hidden reasoning.
+            result = call_llm(messages=messages, tools=[], max_tokens=5000, timeout=45.0,
+                              reasoning_config={"enabled": False})
+    except WorkspaceError:
+        raise
+    except Exception:
+        raise WorkspaceError(502, "The default agent’s model request failed. Check its provider settings and try again.") from None
+
+    choice = result.choices[0] if result.choices else None
+    if getattr(choice, "finish_reason", None) == "length":
+        raise WorkspaceError(502, "The default agent reached its response limit before finishing the report. Try regenerating.")
+    raw = getattr(getattr(choice, "message", None), "content", None)
+    if not isinstance(raw, str) or not raw.strip():
+        raise WorkspaceError(502, "The default agent returned an empty report. Try regenerating.")
+
+    source = raw.strip()
+    if len(source) > 16_000:
+        raise WorkspaceError(502, "The default agent returned a dashboard that exceeds the report limit.")
+    return source
+
+
 def configuration_url(value):
     valid = http_url(value)
     if not valid:
@@ -1895,7 +1944,30 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             raise WorkspaceError(413, "The workspace update is too large.")
         return json.loads(self.rfile.read(length))
 
+    def post_analytics(self):
+        try:
+            if self.headers.get_content_type() != "application/json":
+                raise WorkspaceError(415, "Analytics generation requires a JSON request.")
+            request = self.read_update(65_536)
+            if not self.server.analytics_lock.acquire(blocking=False):
+                raise WorkspaceError(429, "oma-agent is generating another dashboard. Try again in a moment.")
+            try:
+                result = generate_analytics(self.server.root, request)
+            finally:
+                self.server.analytics_lock.release()
+        except (ValueError, RecursionError):
+            self.reply(400, {"message": "Invalid workspace request."})
+        except WorkspaceError as error:
+            self.reply(error.status, {"message": str(error)})
+        except OSError:
+            self.reply(503, {"message": "Could not read the agent workspace."})
+        else:
+            self.reply(200, result)
+
     def do_POST(self):
+        if self.path == "/workspace/analytics":
+            self.post_analytics()
+            return
         approval = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications/([^/]+)/approve", self.path)
         path = re.fullmatch(r"/workspace/(campaigns|agents)/([^/]+)/(sync|deploy|plan-chat)", self.path)
         shared_model = self.path == "/workspace/agents/model"
@@ -2040,6 +2112,7 @@ if __name__ == "__main__":
     with ThreadingUnixStreamServer(str(socket_path), WorkspaceHandler) as server:
         server.edit_lock = Lock()
         server.plan_chat_lock = Lock()
+        server.analytics_lock = Lock()
         server.root = Path(os.environ["HERMES_HOME"]) / "oma"
         socket_path.chmod(0o660)
         pending = pending_campaign_pauses(server.root)
