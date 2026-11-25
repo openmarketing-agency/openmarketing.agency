@@ -1,4 +1,4 @@
-/** Exercises live analytics aggregation, scoped SQLite persistence, and regeneration recovery. */
+/** Exercises live analytics aggregation, immutable SQLite layouts, and live observation binding. */
 
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -7,13 +7,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
+import { AnalyticsGenerationDetails } from "../components/analytics-generation-details";
 import { getDb, sqliteSchemaVersion } from "../lib/db";
 import { analyticsLibrary } from "../lib/analytics-library";
 import spec from "../lib/server/analytics-library.spec.json";
-import { analyticsProgramExample, validateAnalyticsProgram } from "../lib/server/analytics-program";
-import { generateAnalytics, queryAnalytics, readAnalytics, requireAnalyticsCampaign } from "../lib/server/analytics";
+import { validateAnalyticsProgram } from "../lib/server/analytics-program";
+import { generateAnalytics, queryLegacyAnalytics, readAnalytics, requireAnalyticsCampaign } from "../lib/server/analytics";
 import { analyticsQueryResult, summarizeAnalytics } from "../lib/server/analytics-data";
+import { queryCampaignObservations } from "../lib/server/campaign-observations";
+import { observationDashboard } from "../lib/observation-dashboard";
 import type { CampaignProgressSnapshot } from "../lib/server/campaign-progress";
 
 const revision = "a".repeat(64);
@@ -56,16 +61,38 @@ test("analytics counts only observed sources and task completions in the UTC win
 
 test("the OpenUI renderer and server share a spec and accept only live read-only programs", () => {
   assert.deepEqual(JSON.parse(JSON.stringify(analyticsLibrary.toSpec())), spec);
-  assert.equal(validateAnalyticsProgram(analyticsProgramExample), analyticsProgramExample);
-  assert.throws(() => validateAnalyticsProgram(analyticsProgramExample.replace("workspace_activity", "unavailable_tool")));
-  assert.throws(() => validateAnalyticsProgram(analyticsProgramExample.replace("{dateRange: $dateRange}", '{dateRange: $dateRange, campaignId: "other"}')));
-  assert.throws(() => validateAnalyticsProgram(analyticsProgramExample.replace("activity.tasks.counts", "[10, 30]")), /bind displayed values/i);
-  assert.throws(() => validateAnalyticsProgram(analyticsProgramExample + '\nchange = Mutation("write", {})'));
-  assert.throws(() => validateAnalyticsProgram(analyticsProgramExample.replace('Column("Status", activity.schedules.labels, "primary")',
-    'Column("Status", activity.schedules.labels, "link")')), /columns/i);
+  assert.equal(validateAnalyticsProgram(observationDashboard), observationDashboard);
+  assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("campaign_observations", "unavailable_tool")));
+  assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("{dateRange: $dateRange}", '{dateRange: $dateRange, campaignId: "other"}')));
+  assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("activity.sources.counts", "[10, 30]")), /bind displayed values/i);
+  assert.throws(() => validateAnalyticsProgram(observationDashboard + '\nchange = Mutation("write", {})'));
+  assert.throws(() => validateAnalyticsProgram(observationDashboard.replace('Column("Source", activity.observations.source, "primary")',
+    'Column("Source", activity.observations.source, "link")')), /columns/i);
+  assert.throws(() => validateAnalyticsProgram(observationDashboard.replace('activity.observations.value, "text"',
+    'activity.observations.value, "number"')), /columns/i);
 });
 
-test("generation reads the selected campaign, saves its report, and keeps it when replacement fails", async (t) => {
+test("generation details show the saved inputs and escape agent-generated source", () => {
+  const markup = renderToStaticMarkup(createElement(AnalyticsGenerationDetails, {
+    report: {
+      source: 'root = Dashboard("<b>Example</b>")',
+      generatedAt: now,
+      generation: { systemPrompt: "Build the dashboard.", userMessage: '{}\n\nCampaign ID: seo' },
+    },
+  }));
+  assert.match(markup, /Generation details/);
+  assert.match(markup, /Campaign observations/);
+  assert.match(markup, /Workspace activity/);
+  assert.match(markup, /System prompt.*Build the dashboard\./s);
+  assert.match(markup, /User message.*Campaign ID: seo/s);
+  assert.match(markup, /Agent-generated OpenUI source.*&lt;b&gt;Example&lt;\/b&gt;/s);
+  assert.doesNotMatch(markup, /<b>Example<\/b>/);
+  assert.match(renderToStaticMarkup(createElement(AnalyticsGenerationDetails, {
+    report: { source: "root = Dashboard", generatedAt: now },
+  })), /Prompts were unavailable.*Agent-generated OpenUI source/s);
+});
+
+test("generation saves the layout once and reads revised observations from the selected campaign", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "oma-analytics-"));
   const socket = join(dir, "ws");
   t.mock.method(Date, "now", () => now);
@@ -89,10 +116,12 @@ test("generation reads the selected campaign, saves its report, and keeps it whe
     name: "Campaign", description: "", version: "", orchestrator: "", agentIds: [],
     goals: [], plans: [], board: "", playbookId: "strategy",
   };
-  const source = analyticsProgramExample;
+  const source = observationDashboard;
   let taskCount = 1;
   let sent: Record<string, unknown> = {};
-  let invalid = 0;
+  let userMessage = "";
+  let recordedValue = 12;
+  let invalid = 1;
   const started = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   const paths: string[] = [];
@@ -111,13 +140,31 @@ test("generation reads the selected campaign, saves its report, and keeps it whe
       }));
     } else if (request.url === "/workspace/campaigns/seo/publications?limit=6") {
       response.end(JSON.stringify({ campaign_id: "seo", publications: [] }));
+    } else if (request.url?.startsWith("/workspace/campaigns/seo/analytics?")) {
+      const filters = new URL(request.url, "http://localhost").searchParams;
+      assert.equal(filters.get("start"), "2026-11-18T00:00:00.000Z");
+      assert.equal(filters.get("end"), "2026-11-25T00:00:00.000Z");
+      assert.equal(filters.get("limit"), "100");
+      response.end(JSON.stringify({
+        campaign_id: "seo",
+        observations: recordedValue ? [{
+          id: 1, source: "google-search-console", metric: "clicks", account: "sc-domain:example.test",
+          value: recordedValue, unit: "count", dimensions: { country: "NP" },
+          period_start: "2026-11-23T00:00:00.000000+00:00", period_end: "2026-11-24T00:00:00.000000+00:00",
+          collected_at: "2026-11-24T10:00:00.000000+00:00",
+        }] : [],
+        last_collected_at: "2026-11-24T10:00:00.000000+00:00", next_cursor: null,
+      }));
     } else if (request.url === "/workspace/analytics") {
       let body = "";
       for await (const chunk of request) body += chunk;
+      assert.equal(request.headers["x-oma-analytics-details"], "1");
       sent = JSON.parse(body);
+      userMessage = "Generate the campaign analytics dashboard using the documented live query.\n\nCampaign ID: " + sent.targetId;
       started.resolve();
       await release.promise;
-      response.end(JSON.stringify(invalid-- > 0 ? "incomplete program" : source));
+      const output = invalid-- > 0 ? "incomplete program" : source;
+      response.end(JSON.stringify({ source: output, userMessage }));
     } else {
       response.writeHead(404).end(JSON.stringify({ message: "Not found" }));
     }
@@ -153,31 +200,50 @@ test("generation reads the selected campaign, saves its report, and keeps it whe
   }
   const saved = await first;
   assert.equal(saved.report?.source, source);
+  assert.equal(saved.report?.dataSource, "observations");
+  assert.deepEqual(saved.report?.generation, { systemPrompt: sent.prompt, userMessage });
   assert.equal(sent.targetId, "seo");
   assert.deepEqual(sent.campaignIds, ["seo"]);
   assert.equal(sent.scope, "campaigns");
   assert.match(String(sent.prompt), /OpenUI Lang/);
-  assert.deepEqual(sent.snapshot, await queryAnalytics(key.id, "28d"));
+  assert.equal(sent.snapshot, undefined);
+  assert.match(String(sent.prompt), /Correct the following validation issue/);
+  assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 2);
+  assert.ok(!paths.some((path) => path.startsWith("/workspace/campaigns/seo/")));
   assert.doesNotMatch(JSON.stringify(sent), /Private brief|Private job/);
   assert.equal(readAnalytics({ ...key, userId: "other-id" }).report, null);
   assert.equal(readAnalytics({ ...key, id: "other" }).report, null);
 
-  taskCount++;
-  assert.deepEqual(readAnalytics(key).report, saved.report);
-  assert.equal((await queryAnalytics(key.id, "7d")).timeline.counts.at(-1), 2);
-  assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 1);
-  assert.ok(!paths.some((path) => path.startsWith("/workspace/campaigns/other/")));
+  const firstData = await queryCampaignObservations(key.id, "7d");
+  assert.deepEqual(firstData.observations.value, ["12 count"]);
+  assert.deepEqual(firstData.observations.dimensions, ['{"country":"NP"}']);
+  assert.deepEqual(firstData.sources.labels, ["Google Search Console"]);
 
+  recordedValue = 26;
+  const updated = await queryCampaignObservations(key.id, "7d");
+  assert.deepEqual(updated.observations.value, ["26 count"]);
+  assert.deepEqual(updated.sources, firstData.sources);
+  assert.deepEqual(readAnalytics(key), saved);
+  assert.deepEqual(await generateAnalytics(key), saved);
+  assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 2);
+
+  recordedValue = 0;
+  const empty = await queryCampaignObservations(key.id, "7d");
+  assert.deepEqual(empty.observations.value, []);
+  assert.equal(empty.observations.note, "No saved observations in this period.");
+
+  const otherKey = { ...key, id: "other" };
   invalid = 2;
-  await assert.rejects(generateAnalytics(key), { status: 502, message: /invalid OpenUI dashboard/ });
-  assert.deepEqual(readAnalytics(key).report, saved.report);
-  assert.equal(readAnalytics(key).generating, false);
+  await assert.rejects(generateAnalytics(otherKey), { status: 502, message: /invalid OpenUI dashboard/ });
+  assert.deepEqual(readAnalytics(otherKey), { report: null, generating: false });
+  assert.deepEqual(readAnalytics(key), saved);
 
-  invalid = 1;
+  taskCount++;
+  assert.equal((await queryLegacyAnalytics(key.id, "7d")).timeline.counts.at(-1), 2);
   db.prepare("UPDATE workspace_analytics SET layout = ? WHERE user_id = ? AND scope = 'campaigns' AND target_id = ?")
-    .run('{"title":"Old dashboard"}', key.userId, key.id);
-  assert.equal(readAnalytics(key).report, null);
-  const replacement = await generateAnalytics(key);
-  assert.equal(replacement.report?.source, source);
-  assert.match(String(sent.prompt), /Correct the following validation issue/);
+    .run(JSON.stringify(source), otherKey.userId, otherKey.id);
+  const legacy = { report: { source, generatedAt: 0 }, generating: false };
+  assert.deepEqual(readAnalytics(otherKey), legacy);
+  assert.deepEqual(await generateAnalytics(otherKey), legacy);
+  assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 4);
 });

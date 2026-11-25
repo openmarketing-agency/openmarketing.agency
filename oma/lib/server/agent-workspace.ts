@@ -140,7 +140,9 @@ export class WorkspaceRequestError extends Error {
 const unavailable = () => new WorkspaceRequestError(503, "Couldn’t reach the agent workspace. Check that oma-agent is running.");
 
 /** Call a trusted workspace endpoint over the private Unix socket. */
-export async function workspaceRequest(path: string, body?: object, method = body ? "PUT" : "GET"): Promise<unknown> {
+export async function workspaceRequest(
+  path: string, body?: object, method = body ? "PUT" : "GET", headers?: Record<string, string>,
+): Promise<unknown> {
   const socketPath = process.env.OMA_WORKSPACE_SOCKET;
   if (!socketPath) throw unavailable();
   const payload = body ? JSON.stringify(body) : undefined;
@@ -148,7 +150,7 @@ export async function workspaceRequest(path: string, body?: object, method = bod
     const req = request({
       socketPath, path, method,
       signal: AbortSignal.timeout(path.endsWith("/deploy") ? 130_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000 : 6_000),
-      headers: payload ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) } : undefined,
+      headers: { ...headers, ...(payload && { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }) },
     }, (response) => {
       const chunks: Buffer[] = [];
       let size = 0;

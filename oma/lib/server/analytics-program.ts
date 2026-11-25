@@ -2,68 +2,56 @@
 
 import { createParser, generateSystemPrompt, parseExpression, split, tokenize, walkAST, type ASTNode, type LibrarySpec } from "@openuidev/lang-core";
 
-import { analyticsDateRange, analyticsMetrics, analyticsQueryTool } from "../analytics";
+import { analyticsDateRange, observationColumns, observationQueryTool } from "../analytics";
+import { observationDashboard, observationQueryStatement } from "../observation-dashboard";
 import spec from "./analytics-library.spec.json";
 
 const library = spec as LibrarySpec;
 const parser = createParser(library.schema!, library.root);
-const components = new Set(Object.keys(library.components));
-const metrics = new Set<string>(analyticsMetrics);
-const maxArgs: Record<string, number> = { Kpi: 3, Stat: 2, Bars: 4, TimeSeries: 4, Series: 2, Column: 4, Table: 2, Card: 4 };
+const components = new Set(Object.keys(library.components).filter((name) => name !== "TimeSeries"));
+const maxArgs: Record<string, number> = { Kpi: 3, Stat: 2, Bars: 3, Series: 2, Column: 3, Table: 1, Card: 4 };
 const queryName = "activity";
-const queryStatement = `${queryName} = Query("${analyticsQueryTool}", {dateRange: $dateRange}, {}, 60)`;
-
-export const analyticsProgramExample = [
-  "root = Dashboard([filters, overview])",
-  '$dateRange = "7d"',
-  queryStatement,
-  'filters = FilterBar([SelectFilter($dateRange, [{value: "7d", label: "Last 7 days"}, {value: "28d", label: "Last 28 days"}], "Task completion period")])',
-  'overview = Section("Campaign activity", [summary, tasks, timeline, delivery], "A concise summary of the snapshot.")',
-  'summary = Kpis([Kpi("Kanban tasks", activity.tasks.total, "number"), Kpi("Tasks completed", activity.timeline.total, "number"), Kpi("Scheduled jobs", activity.schedules.total, "number")])',
-  'tasks = Row([Card("Kanban tasks", [Bars(activity.tasks.labels, [Series("Tasks", activity.tasks.counts)], "number")], "full", activity.tasks.note)], 320)',
-  'timeline = Row([Card("Task completions", [TimeSeries(activity.timeline.labels, [Series("Completed", activity.timeline.counts)], "bar", "number")], "full", activity.timeline.note)], 320)',
-  'delivery = Row([Card("Scheduled jobs", [Table([Column("Status", activity.schedules.labels, "primary"), Column("Jobs", activity.schedules.counts, "number")])], "half", activity.schedules.note), Card("Recent publications", [Bars(activity.publications.labels, [Series("Records", activity.publications.counts)], "number")], "half", activity.publications.note)], 320)',
-].join("\n");
-
-const metricSchema = {
-  type: "object",
-  properties: {
-    labels: { type: "array", items: { type: "string" } },
-    counts: { type: "array", items: { type: "integer" } },
-    total: { type: ["integer", "null"] },
-    note: { type: "string" },
-  },
+const fields = {
+  sources: ["labels", "counts", "total", "note"],
+  observations: [...observationColumns, "note"],
 };
+const strings = { type: "array", items: { type: "string" } };
 
 export const dashboardSystemPrompt = generateSystemPrompt({
   library,
   promptOptions: {
     toolCalls: true, bindings: true, builtinFunctions: false,
     tools: [{
-      name: analyticsQueryTool,
-      description: "Reads live aggregate task, scheduler, and publication data for the dashboard's campaign.",
+      name: observationQueryTool,
+      description: "Reads saved observation records for this campaign. The sources breakdown counts records. Observation table values preserve each metric, unit, account, period, and dimensions.",
       inputSchema: { type: "object", properties: { dateRange: { type: "string", enum: ["7d", "28d"] } }, required: ["dateRange"] },
-      outputSchema: { type: "object", properties: Object.fromEntries(analyticsMetrics.map((name) => [name, metricSchema])) },
+      outputSchema: {
+        type: "object",
+        properties: {
+          sources: { type: "object", properties: {
+            labels: strings, counts: { type: "array", items: { type: "integer" } }, total: { type: "integer" }, note: { type: "string" },
+          } },
+          observations: { type: "object", properties: {
+            ...Object.fromEntries(observationColumns.map((key) => [key, strings])), note: { type: "string" },
+          } },
+        },
+      },
     }],
-    toolExamples: [analyticsProgramExample],
+    toolExamples: [observationDashboard],
     additionalRules: [
-      "Return only OpenUI Lang source. Produce one clear operations dashboard with charts or tables, no Markdown or explanation outside the program.",
-      "Use the supplied snapshot and appended campaign ID to understand which campaign the dashboard covers.",
-      "Use a short description of the snapshot in the first Section. The snapshot spans 28 days for task completions. Reflect partial or missing data. Avoid hardcoded counts, forecasts, and claims about traffic, engagement, or conversions.",
-      `Copy the date range and query from the example. The exact query must be ${queryStatement}. Leave the default result {} so no values are shown while the request is pending.`,
-      "Use tasks, timeline, schedules, and publications. Each query member exposes labels, counts, total, and note. Bind a live chart or table and a Card subtitle from each source.",
-      "Bind chart labels and series counts to the same activity source. Bind Columns to labels or counts and Kpi or Stat values to activity.<source>.total. Use numeric formatting.",
-      "Skip optional previous values, reference lines, forecasts, table totals, and card controls. Use the argument counts in the example.",
-      "Only use components from the dashboard library. Do not add scripts, actions, links, extra queries, or mutations. Use one SelectFilter with both 7d and 28d options.",
-      "Choose a useful arrangement for the campaign. Put at most two Cards in each Row and use full-width time series.",
+      "Return only a complete OpenUI Lang dashboard. Use the campaign ID for context. Keep titles and descriptions valid for any campaign sources and any number of observations, including zero.",
+      `Copy the 7d/28d date filter and exact query from the example: ${observationQueryStatement}`,
+      "Use one chart or table for the record count by source and one table containing every observation column in the example. Bind the subtitles directly to the query notes.",
+      "Bind all displayed data directly to the query. Never hardcode KPI values, series, observation cells, or data-specific descriptions. Do not sum or compare different observation metrics.",
+      "Use text or primary columns for the observation records. Use numeric columns for counts. Use the component argument counts from the example and omit scripts, actions, links, mutations, extra queries, and extra state.",
     ],
   },
 });
 
-function binding(node: ASTNode | undefined, fields: string[]) {
-  if (node?.k !== "Member" || !fields.includes(node.field) || node.obj.k !== "Member" ||
-      !metrics.has(node.obj.field) || node.obj.obj.k !== "Ref" || node.obj.obj.n !== queryName) return;
-  return node.obj.field;
+function binding(node: ASTNode | undefined, dataset: keyof typeof fields, allowed = fields[dataset]) {
+  if (node?.k !== "Member" || !allowed.includes(node.field) || node.obj.k !== "Member" ||
+      node.obj.field !== dataset || node.obj.obj.k !== "Ref" || node.obj.obj.n !== queryName) return;
+  return node.field;
 }
 
 /** Accept only an OpenUI dashboard with a bounded live query and metric bindings to its response. */
@@ -85,16 +73,18 @@ export function validateAnalyticsProgram(value: string): string {
   const [query] = queryStatements;
   const range = query?.argsAST?.k === "Obj" && query.argsAST.entries.length === 1 ? query.argsAST.entries[0] : undefined;
   if (mutationStatements.length || queryStatements.length !== 1 || !query.complete ||
-      query.statementId !== queryName || query.toolAST?.k !== "Str" || query.toolAST.v !== analyticsQueryTool ||
+      query.statementId !== queryName || query.toolAST?.k !== "Str" || query.toolAST.v !== observationQueryTool ||
       range?.[0] !== "dateRange" || range[1].k !== "StateRef" || range[1].n !== "$dateRange" ||
+      Object.keys(stateDeclarations).length !== 1 ||
       !analyticsDateRange.safeParse(stateDeclarations.$dateRange).success ||
       query.defaultsAST?.k !== "Obj" || query.defaultsAST.entries.length !== 0 ||
       query.refreshAST?.k !== "Num" || query.refreshAST.v !== 60) {
-    throw new Error(`Copy the live query exactly: ${queryStatement}`);
+    throw new Error(`Copy the live query exactly: ${observationQueryStatement}`);
   }
 
-  const plotted = new Set<string>();
+  const observationFields = new Set<string>();
   const coverage = new Set<string>();
+  let sourceCounts = false;
   let filters = 0;
   for (const statement of split(tokenize(source))) {
     if (statement.id === queryName) continue;
@@ -104,19 +94,29 @@ export function validateAnalyticsProgram(value: string): string {
       if (Object.hasOwn(maxArgs, node.name) && node.args.length > maxArgs[node.name]) {
         throw new Error("Use the component arguments in the example. Leave out previous values and extra controls.");
       }
-      if (node.name === "Bars" || node.name === "TimeSeries") checkBinding(node.args[0], ["labels"]);
-      if (node.name === "Kpi" || node.name === "Stat") checkBinding(node.args[node.name === "Kpi" ? 1 : 0], ["total"]);
-      if (node.name === "Series" || node.name === "Column") {
-        const metric = checkBinding(node.args[1], node.name === "Series" ? ["counts"] : ["labels", "counts"]);
-        if (node.name === "Column" && node.args[2] &&
-            (node.args[2].k !== "Str" || !["primary", "text", "number", "bar"].includes(node.args[2].v))) {
-          throw new Error("Use only primary, text, number, or bar columns.");
+      if (node.name === "Bars") checkBinding(node.args[0], "sources", ["labels"]);
+      if (node.name === "Kpi" || node.name === "Stat") {
+        checkBinding(node.args[node.name === "Kpi" ? 1 : 0], "sources", ["total"]);
+      }
+      if (node.name === "Series") {
+        checkBinding(node.args[1], "sources", ["counts"]);
+        sourceCounts = true;
+      }
+      if (node.name === "Column") {
+        const field = binding(node.args[1], "observations", [...observationColumns]);
+        const count = !field && checkBinding(node.args[1], "sources", ["labels", "counts"]) === "counts";
+        if (field) observationFields.add(field);
+        if (count) sourceCounts = true;
+        const allowed = count ? ["number", "bar"] : ["primary", "text"];
+        const format = node.args[2];
+        if (format && (format.k !== "Str" || !allowed.includes(format.v))) {
+          throw new Error("Use text or primary columns for labels and observations. Use number or bar columns for counts.");
         }
-        if (binding(node.args[1], ["counts"])) plotted.add(metric);
       }
       if (node.name === "Card") {
-        const metric = binding(node.args[3], ["note"]);
-        if (metric) coverage.add(metric);
+        for (const dataset of ["sources", "observations"] as const) {
+          if (binding(node.args[3], dataset, ["note"])) coverage.add(dataset);
+        }
       }
       if (node.name === "SelectFilter") {
         filters++;
@@ -131,14 +131,14 @@ export function validateAnalyticsProgram(value: string): string {
       }
     });
   }
-  if (filters !== 1 || analyticsMetrics.some((metric) => !plotted.has(metric) || !coverage.has(metric))) {
-    throw new Error("Show one date range filter and live charts or tables with source notes for all four metrics.");
+  if (filters !== 1 || !sourceCounts || coverage.size !== 2 || observationFields.size !== observationColumns.length) {
+    throw new Error("Show the date filter, source record counts, and every observation column. Bind both card subtitles to the query.");
   }
   return source;
 }
 
-function checkBinding(node: ASTNode | undefined, fields: string[]) {
-  const metric = binding(node, fields);
-  if (!metric) throw new Error("Bind displayed values directly to activity query fields.");
-  return metric;
+function checkBinding(node: ASTNode | undefined, dataset: keyof typeof fields, allowed: string[]) {
+  const field = binding(node, dataset, allowed);
+  if (!field) throw new Error("Bind displayed values directly to activity query fields.");
+  return field;
 }
