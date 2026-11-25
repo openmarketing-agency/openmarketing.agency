@@ -81,6 +81,13 @@ def verify_sync(home):
     assert _status(home, campaign_id, updated)["state"] == "installed"
     assert updated["all-keys"] == updated["available-keys"] == sorted({*request["env"], "EXISTING_FIXTURE_KEY"})
     assert result["revision"] != request["revision"]
+    analyst = f"{campaign_id}__analyst"
+    if analyst in updated["agents"]:
+        analyst_env = load_env_file(profiles / analyst / ".env")
+        assert all(analyst_env.get(key) == value for key, value in request["env"].items()), (
+            "The newly provisioned analyst did not receive the explicitly supplied campaign keys"
+        )
+        assert "EXISTING_FIXTURE_KEY" not in analyst_env
     for name in agents:
         profile = profiles / name
         native = safe_load((profile / "config.yaml").read_bytes())

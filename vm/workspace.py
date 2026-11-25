@@ -1407,11 +1407,21 @@ def sync_campaign_configuration(root, campaign_id, request, *, deploy=False):
             except (OSError, subprocess.SubprocessError):
                 raise WorkspaceError(412, "oma-agent couldn’t provision this campaign. Check its saved agent records and board, then reopen deployment.") from None
         command = [sys.executable, "-m", "hermes_cli.oma_campaigns.sync", campaign_id, "--env-stdin"]
+        payload = json.dumps(env).encode()
+        command_env = {"HERMES_HOME": str(root.parent)}
         try:
-            run_campaign_command(root, command, {"HERMES_HOME": str(root.parent)}, payload=json.dumps(env).encode())
+            run_campaign_command(root, command, command_env, payload=payload)
+            updated, _ = read_file(record)
+            analyst = f"{campaign_id}__analyst"
+            if (routed and analyst not in strings(data.get("agents"))
+                    and analyst in strings(parse_record(updated, campaign_id).get("agents"))):
+                # v0.1.24 provisions the analyst after applying settings to the old roster.
+                # Reconcile the new roster with the same explicitly supplied keys and refresh key availability.
+                run_campaign_command(root, command, command_env, payload=payload)
+                updated, _ = read_file(record)
         except (OSError, subprocess.SubprocessError):
             raise WorkspaceError(502, "oma-agent could not sync the campaign. Verify that the campaign is installed and try again.") from None
-        return campaign_configuration(read_file(record)[0])
+        return campaign_configuration(updated)
 
 
 def campaign_lifecycle_status(root, campaign_id):
