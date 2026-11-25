@@ -12,79 +12,119 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  installer:
+  preflight:
     if: github.repository == 'openmarketing-agency/openmarketing.agency' && !github.event.deleted
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    outputs:
+      release_version: ${{ steps.check.outputs.release_version }}
+
+      console_version: ${{ steps.check.outputs.console_version }}
+      omactl_tag: ${{ steps.check.outputs.omactl_tag }}
+      agent_tag: ${{ steps.check.outputs.agent_tag }}
+      camofox_image: ${{ steps.check.outputs.camofox_image }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate release tag and pinned dependencies
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/check-release.sh
+
+  installer:
+    needs: [preflight, oma-console]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-
-      - name: Publish the native Debian installer
+      - name: Package the stack installer
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.release_version }}
+        run: bash .github/scripts/package-release.sh "$RELEASE_VERSION" "$RUNNER_TEMP/release-assets"
+      - name: Publish the stack release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.preflight.outputs.release_version }}
+
+          CONSOLE_VERSION: ${{ needs.preflight.outputs.console_version }}
+          OMACTL_TAG: ${{ needs.preflight.outputs.omactl_tag }}
+          AGENT_TAG: ${{ needs.preflight.outputs.agent_tag }}
+          CAMOFOX_IMAGE: ${{ needs.preflight.outputs.camofox_image }}
         run: |
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
-          package="oma-setup-$GITHUB_REF_NAME-debian-amd64"
-          read_version() {
-            awk -v key="$1" '
-              $0 ~ "^" key ":" {
-                sub(/^[^:]*:[[:space:]]*/, "")
-                sub(/[[:space:]]*#.*$/, "")
-                sub(/[[:space:]]+$/, "")
-                print
-                exit
-              }
-            ' setup/versions.yaml
-          }
-          bash -n setup/install.sh
-          [[ "$(read_version oma-server)" == "$GITHUB_REF_NAME" ]] \
-            || { printf 'setup/versions.yaml oma-server (%s) must match release tag %s\n' "$(read_version oma-server)" "$GITHUB_REF_NAME" >&2; exit 1; }
-          stage="$RUNNER_TEMP/stage"
-          mkdir -p "$stage/$package"
-          cp -a setup "$stage/$package/"
-          cp LICENSE "$stage/$package/"
-          tar -C "$stage" -czf "$package.tar.gz" "$package"
-          sha256sum "$package.tar.gz" > SHA256SUMS
+          assets="$RUNNER_TEMP/release-assets"
+          setup_package="oma-setup-$GITHUB_REF_NAME-linux-amd64.tar.gz"
           {
-            printf 'Native Debian installer: `%s.tar.gz` (installs oma-agent and omactl natively, then runs the console and Camofox containers with Docker; contains the `setup/` directory)\n\n' "$package"
-            printf 'Pinned versions from `setup/versions.yaml`:\n'
-            printf -- '- console (oma-server): `%s`\n' "$(read_version oma-server)"
-            printf -- '- omactl: `%s`\n' "$(read_version omactl)"
-            printf -- '- oma-agent: `%s`\n' "$(read_version oma-agent)"
-            printf -- '- camofox image: `%s`\n' "$(read_version camofox_image)"
+            printf 'Install `oma` from an `oma-cli-v*` release on the [releases page](https://github.com/openmarketing-agency/openmarketing.agency/releases), then run `sudo oma install %s` on x86-64 Debian or Ubuntu.\n\n' "$RELEASE_VERSION"
+            printf 'OMA release version: `%s`\n\n' "$RELEASE_VERSION"
+            printf 'Pinned versions from `versions/%s.yaml`:\n' "$RELEASE_VERSION"
+
+            printf -- '- oma-console: `%s`\n' "$CONSOLE_VERSION"
+            printf -- '- omactl: `%s`\n' "$OMACTL_TAG"
+            printf -- '- oma-agent: `%s`\n' "$AGENT_TAG"
+            printf -- '- camofox image: `%s`\n' "$CAMOFOX_IMAGE"
           } > "$RUNNER_TEMP/oma-release.md"
           cat "$RUNNER_TEMP/oma-release.md" >> "$GITHUB_STEP_SUMMARY"
-          gh release create "$GITHUB_REF_NAME" "$package.tar.gz" SHA256SUMS \
+          printf '==> Publishing OMA %s and its release assets\n' "$GITHUB_REF_NAME" >&2
+          gh release create "$GITHUB_REF_NAME" "$assets/$setup_package" "$assets/SHA256SUMS" "$assets/versions.yaml" \
             --verify-tag --title "OMA $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/oma-release.md"
 
-  oma-server:
-    if: github.repository == 'openmarketing-agency/openmarketing.agency' && !github.event.deleted
+  catalog:
+    needs: [preflight, installer]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Publish stack manifest and catalog to OMA R2
+        env:
+          RELEASE_VERSION: ${{ needs.preflight.outputs.release_version }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID || vars.R2_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          : "${R2_BUCKET:?Configure R2_BUCKET}" "${R2_ACCOUNT_ID:?Configure R2_ACCOUNT_ID}" \
+            "${AWS_ACCESS_KEY_ID:?Configure R2_ACCESS_KEY_ID}" "${AWS_SECRET_ACCESS_KEY:?Configure R2_SECRET_ACCESS_KEY}"
+          key="versions/$RELEASE_VERSION.yaml"
+          printf '==> Mirroring %s to OMA R2\n' "$key" >&2
+          aws s3 cp "$key" "s3://$R2_BUCKET/$key" --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
+            --content-type application/yaml --only-show-errors
+          python3 .github/scripts/update-r2-version-index.py versions/index.json "$RELEASE_VERSION"
+
+  oma-console:
+    needs: preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     permissions:
       contents: read
       packages: write
     env:
-      IMAGE_REPOSITORY: ghcr.io/openmarketing-agency/oma-server
+      IMAGE_REPOSITORY: ghcr.io/openmarketing-agency/oma-console
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Build and publish oma-server
+      - name: Build and publish oma-console
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
           image="$IMAGE_REPOSITORY:$GITHUB_REF_NAME"
+          printf '==> Building %s\n' "$image" >&2
           docker build --platform linux/amd64 --target oma-runtime \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             -t "$image" .
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          printf '==> Publishing %s\n' "$image" >&2
           docker push "$image"
-          printf 'Next.js server image: `%s`\n' "$image" >> "$GITHUB_STEP_SUMMARY"
+          printf 'OMA Console image: `%s`\n' "$image" >> "$GITHUB_STEP_SUMMARY"

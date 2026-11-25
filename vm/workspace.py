@@ -2044,6 +2044,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self):
+        if self.path == "/health":
+            return self.reply(200, {"status": "ok"})
         publication_list = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications(?:\?(.*))?", self.path)
         document = re.fullmatch(r"/workspace/brands/([^/]+)/documents/([a-f0-9]{16})", self.path)
         logo = re.fullmatch(r"/workspace/brands/([^/]+)/logos/([A-Za-z0-9_-]{1,64})", self.path)
