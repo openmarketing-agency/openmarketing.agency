@@ -1,0 +1,5 @@
+version: 0.1.0
+oma-console: 0.1.0
+omactl: 0.1.0
+oma-agent: 0.1.28
+camofox_image: ghcr.io/jo-inc/camofox-browser@sha256:49f8e02f9fb0e191b406845482745efc72f835db06789e3a34e77a6ff1497046

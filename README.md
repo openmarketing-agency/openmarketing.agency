@@ -84,7 +84,7 @@ fi
 docker compose --env-file .env.camofox -f compose.yaml -f compose.vm.yaml -f compose.camofox.yaml up --build -d --wait
 ```
 
-Before starting Hermes, the VM writes `CAMOFOX_URL=http://camofox:9377` and `CAMOFOX_API_KEY` to the mounted Hermes home: `/opt/data/.env` for `default` and `/opt/data/profiles/maintenance/.env` for `maintenance`. It preserves unrelated entries. The key is required for Camofox API requests other than health checks and is not sent to Next.js. This runs the upstream browser image separately; it does not bundle the browser into the Apache-2.0 OMA image.
+Before starting Hermes, the VM writes `CAMOFOX_URL=http://camofox:9377` and `CAMOFOX_API_KEY` to the mounted Hermes home: `/opt/data/.env` for `default` and `/opt/data/profiles/maintenance/.env` for `maintenance`. It preserves unrelated entries. The key is required for Camofox API requests other than health checks and is not sent to Next.js. This runs the upstream browser image separately; it does not bundle the browser into the Apache-2.0 OMA image. The [Debian installer](#install-natively-on-debian) runs the same pinned image as the `oma-camofox` container on `127.0.0.1:9377`.
 
 ### Console only
 
@@ -97,22 +97,61 @@ Use `make dev-console` for hot reload with just the console. See the [applicatio
 
 To use Chat with an existing Hermes gateway, set `OMA_AGENT_URL` to an address reachable from the console and set `OMA_AGENT_API_KEY` to the gateway’s `API_SERVER_KEY`. On Docker Desktop, for example, use `http://host.docker.internal:8642` for a gateway on your host. For native development on the same machine, use `http://127.0.0.1:8642` in `oma/.env.local`. Keep the gateway private and recreate the console after changing its environment. The gateway needs the [Hermes Runs API](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server#post-v1runs).
 
-## Install natively on Debian
+## Install on Debian or Ubuntu
 
-On x86-64 Debian, run the [installer](setup/install.sh) from this checkout as the user who will run OMA Agent:
+On x86-64 Debian or Ubuntu, download `oma-cli-v<cli-version>-linux-amd64.tar.gz` and `SHA256SUMS` from the same [`oma-cli-v*` release](https://github.com/openmarketing-agency/openmarketing.agency/releases). Run `sha256sum -c SHA256SUMS`, then extract the verified archive and run `sudo install -m 0755 oma /usr/local/bin/oma` from the extracted directory. The CLI requires neither Docker nor Node.js nor Bun. Use:
 
 ```sh
-sudo apt-get update
-sudo apt-get install ca-certificates curl git libatomic1
-bash setup/install.sh
+sudo oma install
+sudo oma setup
+sudo oma start
+sudo oma doctor
 ```
 
-For a packaged release, download `oma-setup-<tag>-debian-amd64.tar.gz` and `SHA256SUMS` from the same [OMA release](https://github.com/openmarketing-agency/openmarketing.agency/releases). Verify with `sha256sum -c SHA256SUMS`, extract the archive, and run `bash install.sh` from the extracted directory. Do not use `sudo` for the installer itself.
+Open **http://localhost:3000** on the install host. Configure your model and provider in the console; no model key is needed to bring the services up. There is no separate Next.js command to run.
 
-The installer puts `oma-agent` and `omactl` in `~/.local/bin`, with OMA Agent data in `~/.local/share/oma-agent` and the versioned `omactl` catalog in `~/.local/share/omactl`. Run `oma-agent setup` to configure your model provider. The installer does not install Docker, start any services, or install the web console. `omactl` can report its version without Docker, but its app-management commands still require Docker and Compose.
+`oma --version` and `oma cli status` report the CLI version. `oma cli versions`, `oma cli updates`, and `sudo oma cli upgrade [version]` manage the separately released binary. Stack installs and upgrades do not replace it.
+
+The installer resolves the OMA Agent release tag to a commit and runs that commit’s installer as root. It verifies the `omactl` archive against its published checksum. The layout is:
+
+| Path | Contents |
+| --- | --- |
+| `/opt/oma/oma-agent` | Native OMA Agent source checkout |
+| `/opt/oma/oma-agent-data` | Agent settings, credentials, profiles, and tools |
+| `/usr/local/bin/oma` | Standalone CLI, installed separately |
+| `/opt/oma/bin` | `oma-agent` and `omactl` commands |
+| `/opt/oma/stack/versions.yaml` | Installed stack release manifest |
+| `/opt/oma/omactl/<tag>` | Versioned `omactl` binary, catalog, and license |
+| `/opt/oma/omactl-data` | Default location for omactl instance data when initialized |
+| `/opt/oma/oma-console-data` | Console SQLite database and signing key; mounted at `/app/data` |
+| `/opt/oma/keys.txt` | Root-only (`0600`) backup of the Hermes API key and console integration encryption key |
+
+Install, setup, and start are safe to rerun. `oma install` is a no-op when the requested release is already installed; to switch releases, use `oma upgrade`. `oma setup` reuses existing keys and containers for the configured release. `oma start` starts only missing services and waits for readiness. OMA services do not start automatically on boot: run `sudo oma start` again after a cold boot. The native agent runs as root; its HTTP API binds to the private Docker bridge address and is not published to the LAN.
+
+| Command | What it does |
+| --- | --- |
+| `oma install [version]` | Verify the release, install Docker if missing, install OMA Agent and `omactl`, and pull the two pinned images. May start Docker to pull images; does not start OMA services. |
+| `oma setup` | Generate or reuse service keys, configure the private gateway and workspace connection, and create stopped containers. Does not configure model providers. |
+| `oma status [--output text\|json]` | Show the lifecycle phase, service state, and readiness. |
+| `oma doctor [--output text\|json]` | Report the next command(s), for example `sudo oma setup` then `sudo oma start` after a fresh install. Exits nonzero until the services are ready; JSON includes `recommendedCommands`. Does not run inference. |
+| `oma start`, `oma stop`, `oma restart` | Control all services, or pass `agent`, `console`, or `camofox`. The `agent` target includes the Hermes gateway, its HTTP API, and the private workspace service. `omactl` is not a service. |
+| `oma logs <agent\|console\|camofox> [--follow]` | Read the latest logs or follow them. |
+| `oma versions [--output text\|json]` | List published, installable stable OMA releases from newest to oldest. No root access required. |
+| `oma updates [--output text\|json]` | Check for a newer OMA release and show its component pins. |
+| `oma upgrade [version]` | Download and verify a newer release, then install its pinned components. Stop services before upgrading, then run `oma setup` and `oma start` again. |
+
+Use bare OMA release versions, for example `sudo oma install 0.1.0` or `sudo oma upgrade 0.1.1`. Text is the default output; choose `--output json` for scripts. Progress goes to stderr.
+
+The console and Camofox bind to `127.0.0.1` on ports 3000 and 9377 by default. The console runs as a non-root user and accesses the workspace socket through a dedicated read-only mount, not the Docker socket or the agent data directory. After an upgrade, setup replaces the stopped containers and keeps the data under `/opt/oma`.
+
+`oma setup` generates or reuses `API_SERVER_KEY` and `OMA_INTEGRATION_ENCRYPTION_KEY`, storing them in `/opt/oma/keys.txt` (`0600`). It also configures the Camofox key for the native default and maintenance profiles. These are service keys, not model-provider credentials. Back up `keys.txt` privately with the console database: without the original encryption key, saved integration credentials cannot be decrypted. Deployment overrides such as `OMA_FRONTEND_PORT` or `OMA_APP_URL` may be set in the root environment before the containers are first created; setup does not read a project `.env`.
 
 ## Release
 
-Pushing a `vX.Y.Z` tag publishes the native Debian installer and checksum on GitHub. A separate job builds the AMD64 Next.js server image and publishes it as `ghcr.io/openmarketing-agency/oma-server:<tag>`. Installer publishing does not use Docker or wait for the image. Tag pushes no longer build or publish the VM image; local full-stack development still builds it from source.
+The standalone CLI lives in [`oma-cli/`](oma-cli/) and has its own version in `oma-cli/package.json`. A matching `oma-cli-vX.Y.Z` tag publishes only the CLI archive and checksums; it does not publish the stack or the console image. A stack tag does not publish the CLI.
+
+Keep one stack manifest per release in [`versions/`](versions/), for example [`versions/0.1.0.yaml`](versions/0.1.0.yaml). Write component versions as bare `X.Y.Z`; keep Camofox as an exact image reference. A `vX.Y.Z` tag selects `versions/X.Y.Z.yaml`. Its `version` must match, and preflight checks that the release does not already exist and the pinned dependencies are available. The workflow pushes the console image, then publishes the stack archive, `SHA256SUMS`, and `versions.yaml`. The archive contains the installer, workspace service, and manifest, not the CLI. If the manifest points to a different console version, that image must already be pullable. Tag pushes do not publish the VM image.
+
+After the GitHub release succeeds, the stack workflow publishes the exact manifest to `s3://<R2_BUCKET>/versions/X.Y.Z.yaml` and adds that version to `versions/index.json`. The CLI workflow uses its own catalog at `oma-cli/versions/index.json`. The CLI reads both catalogs and stack pins from OMA R2 over HTTPS; GitHub Releases serves the download assets. Configure Actions secrets `R2_BUCKET`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` (bucket-scoped read/write credentials), plus secret or variable `R2_ACCOUNT_ID`. Set the Actions variable `R2_PUBLIC_URL` in this repository to the public HTTPS base serving both catalogs. If a catalog update fails after the GitHub Release succeeds, rerun only the failed catalog job.
 
 OMA is distributed under the [Apache License 2.0](LICENSE). Individual skills may include their own license notices.

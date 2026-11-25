@@ -1,0 +1,19 @@
+# OMA release version and component pins shipped with the installer.
+# Values are plain unquoted scalars (optionally with a trailing `#` comment).
+
+# OMA release version, without the Git tag's v prefix.
+version: 0.1.0
+
+
+# Self-hosted console version. Its image tag adds the v prefix.
+oma-console: 0.1.0
+
+# omactl CLI release (upstream tag adds the v prefix).
+omactl: 0.1.0
+
+# OMA Agent release (upstream tag adds the v prefix).
+oma-agent: 0.1.29
+
+# Camofox browser sidecar: the upstream image, pinned by digest so this installer
+# and compose.camofox.yaml run the same build.
+camofox_image: ghcr.io/jo-inc/camofox-browser@sha256:49f8e02f9fb0e191b406845482745efc72f835db06789e3a34e77a6ff1497046
