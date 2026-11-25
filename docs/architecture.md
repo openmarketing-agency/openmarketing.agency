@@ -29,7 +29,7 @@ flowchart TB
         WS["Private workspace service"]
         Runs["Hermes Runs API · 8642"]
         Runtime["Hermes profiles and Kanban"]
-        Data[("Agent volume · /opt/data")]
+        Data[("Agent volume · HERMES_HOME")]
         WS -->|"Config, deploy, lifecycle"| Runtime
         WS -->|"Read and write workspace records"| Data
         Runs -->|"Start and track runs"| Runtime
@@ -358,8 +358,8 @@ This flow requires an agent image that supports native publications. The private
 | Account, refresh sessions, setup flag, project answers and run handle | Console SQLite at `/app/data/oma.sqlite`. Local Compose binds `.oma-data/` to `/app/data`. |
 | Workspace and campaign conversations | oma-agent’s native Hermes sessions, read through `GET /api/sessions` and `GET /api/sessions/{id}/messages`. |
 | Generic MCP integration records created with the versioned API | Console SQLite `mcp_integrations`. Submitted credentials are encrypted at rest and write-only. This API is separate from hosted Composio accounts. |
-| Brand, playbook, campaigns, and authored agent records | Agent volume under `/opt/data/oma/`. Key paths are `brand/config.yaml`, `playbook/config.yaml`, `campaigns/{id}/config.yaml`, and `agents/{id}/config.yaml`. |
-| Effective model and tool settings, model credentials, schedules, Kanban, and agent run state | Native Hermes state in the agent volume at `/opt/data`. Agent YAML stores credential references. Hermes profile credential files store key values. |
+| Brand, playbook, campaigns, and authored agent records | Agent volume under `$HERMES_HOME/oma/`. Key paths are `brand/config.yaml`, `playbook/config.yaml`, `campaigns/{id}/config.yaml`, and `agents/{id}/config.yaml`. |
+| Effective model and tool settings, model credentials, schedules, Kanban, and agent run state | Native Hermes state in the agent volume at `$HERMES_HOME`, which defaults to `/opt/data`. Agent YAML stores credential references. Hermes profile credential files store key values. |
 | Composio account authorization and hosted sessions | Composio. The campaign YAML holds the generated MCP URL and a reference to the Composio key. |
 | Local gateway access | A shared Compose mount at `/run/oma-console` provides the gateway key and workspace socket to the console. |
 

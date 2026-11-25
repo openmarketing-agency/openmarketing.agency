@@ -31,7 +31,7 @@ if ! iptables -t nat -S >/dev/null 2>&1 && [[ -r "/lib/modules/$(uname -r)/modul
     modprobe -a nf_tables nft_compat nft_chain_nat br_netfilter
 fi
 # The container supervises dockerd. A PID file can survive a stop and collide with a reused PID.
-dockerd --pidfile= --host=unix:///run/docker.sock --group=docker --data-root=/opt/data/.docker-engine &
+dockerd --pidfile= --host=unix:///run/docker.sock --group=docker --data-root="$HERMES_HOME/.docker-engine" &
 /command/s6-setuidgid hermes timeout 45 bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
 
 if [[ "${OMA_INIT_CATALOG:-0}" == 1 ]]; then
