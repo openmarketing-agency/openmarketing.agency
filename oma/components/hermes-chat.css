@@ -83,6 +83,12 @@
 .runtime-progress-state svg { flex: none; }
 .runtime-progress-time { color: var(--muted); }
 .runtime-progress-spinner { animation: spin 1.3s linear infinite; }
+.runtime-tool-activity { flex-basis: 100%; min-width: 0; }
+.runtime-tool-activity summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.runtime-tool-activity summary span { color: var(--muted); font-weight: 400; }
+.runtime-tool-activity ul { max-height: 7rem; overflow-y: auto; }
+.runtime-tool-activity li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; overflow-wrap: anywhere; }
+.runtime-tool-activity li span:last-child { flex-shrink: 0; color: var(--muted); }
 .runtime-message {
   align-self: flex-start;
   max-width: min(86%, 70ch);
@@ -103,6 +109,14 @@
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.runtime-message-toggle {
+  margin-top: 6px;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .runtime-form { display: grid; gap: 8px; }

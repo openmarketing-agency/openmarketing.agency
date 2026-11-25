@@ -9,7 +9,7 @@ import { workspaceId } from "@/lib/server/agent-workspace";
 import { loadChatHistory } from "@/lib/server/chat-history";
 import { HermesChat } from "@/components/hermes-chat";
 
-export type ConversationParams = Promise<{ chat?: string | string[] }>;
+export type ConversationParams = Promise<{ chat?: string | string[]; setup?: string | string[] }>;
 
 type Props = {
   searchParams?: ConversationParams;
@@ -27,8 +27,9 @@ export function Conversation(props: Props) {
 async function LoadConversation({ searchParams, campaignParams }: Props) {
   const user = await requireUser();
   requireAgentSetup(user.id);
-  const chat = (await searchParams)?.chat;
+  const query = await searchParams;
   const campaignId = campaignParams ? workspaceId.safeParse((await campaignParams).id).data : undefined;
+  const chat = query?.chat ?? (!campaignParams && query?.setup === "1" ? "setup" : undefined);
   const [status, history] = await Promise.all([
     agentStatus("default"),
     loadChatHistory(user.id, campaignId, chat),

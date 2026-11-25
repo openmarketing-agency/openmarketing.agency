@@ -22,6 +22,7 @@ const envelopeSchema = z.object({
 export type ProjectLinks = z.infer<typeof projectLinks>;
 type CompletedAnswers = Extract<z.infer<typeof setupSchema>, { status: "done" }>;
 export type ProjectSetupEnvelope = z.infer<typeof envelopeSchema>;
+export const projectSetupIntro = "The user submitted these project setup questions and answers.";
 
 export function readProjectSetupEnvelope(value: unknown) {
   const result = envelopeSchema.safeParse(value);
@@ -79,7 +80,7 @@ export async function sendProjectSetup(userId: string, answers: CompletedAnswers
 
   // A queued run reuses its original message with the same gateway idempotency key.
   const missingLink = websiteUrl === null ? "a website link" : "a GitHub link";
-  const message = "The user submitted these project setup questions and answers. Use the links as project context. "
+  const message = projectSetupIntro + " Use the links as project context. "
     + `A null answer means the user did not provide ${missingLink}.\n\n`
     + JSON.stringify(questions, null, 2);
 
@@ -89,7 +90,7 @@ export async function sendProjectSetup(userId: string, answers: CompletedAnswers
       sessionId,
       turnId,
       message,
-    }));
+    }, "default"));
   } catch (error) {
     if (!(error instanceof AgentChatError)) throw error;
     if (isProjectSetupComplete(readProjectSetup(userId))) return { ok: true };
@@ -112,7 +113,7 @@ export async function retrySavedProjectSetup(userId: string): Promise<{ error?: 
   const previous = project.delivery;
   if (previous?.runHandle) {
     try {
-      const { status } = await getAgentRunProgress(userId, previous.runHandle);
+      const { status } = await getAgentRunProgress(userId, previous.runHandle, "default");
       if (status !== "failed" && status !== "cancelled") {
         return { error: "Project setup can be restarted after a failed or cancelled run." };
       }

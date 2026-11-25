@@ -20,7 +20,7 @@ async function readSetupProgress(userId: string): Promise<AgentActivity["setup"]
   if (!handle) return { status: "not_sent" };
 
   try {
-    return await getAgentRunProgress(userId, handle);
+    return await getAgentRunProgress(userId, handle, "default");
   } catch (error) {
     if (!(error instanceof AgentChatError)) throw error;
     return { status: error.status === 404 ? "unavailable" : "connection_lost" };
@@ -38,7 +38,7 @@ export async function streamDashboardAgentActivity(userId: string, signal: Abort
   const handle = project?.setup.status === "done" ? project.delivery?.runHandle : undefined;
   if (!handle) return null;
   try {
-    return await streamAgentRunActivity(userId, handle, signal);
+    return await streamAgentRunActivity(userId, handle, signal, "default");
   } catch (error) {
     if (error instanceof AgentChatError) return null;
     throw error;

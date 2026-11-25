@@ -15,7 +15,7 @@ export type ProjectSetupFormState = { errors?: Partial<Record<ProjectFields, str
 function goToWorkspace(showProgress = false): never {
   revalidatePath("/dashboard");
   revalidatePath("/onboarding");
-  redirect(showProgress ? "/dashboard?setup=1#project-setup-activity" : "/dashboard", "replace");
+  redirect(showProgress ? "/dashboard?setup=1&chat=setup#project-setup-activity" : "/dashboard", "replace");
 }
 
 export async function submitProjectSetup(
@@ -44,13 +44,12 @@ export async function retryProjectSetup() {
   requireAgentSetup(user.id);
   try {
     const result = await retrySavedProjectSetup(user.id);
-    revalidatePath("/dashboard");
-    revalidatePath("/onboarding");
-    return result;
+    if (result.error) return result;
   } catch (error) {
     console.error("Project setup retry failed", error instanceof Error ? error.name : "Unknown error");
     return { error: "Couldn’t retry project setup. Try again." };
   }
+  goToWorkspace(true);
 }
 
 /** Answers a prompt for the account's current saved setup run. */
@@ -60,7 +59,7 @@ export async function answerProjectSetupPrompt(input: unknown) {
   const handle = readProjectSetup(user.id)?.delivery?.runHandle;
   if (!handle) return "This project setup run is no longer available.";
   try {
-    await answerAgentPrompt(user.id, handle, input);
+    await answerAgentPrompt(user.id, handle, input, "default");
   } catch (error) {
     if (error instanceof AgentChatError) return error.message;
     console.error("Project setup response failed", error instanceof Error ? error.name : "Unknown error");

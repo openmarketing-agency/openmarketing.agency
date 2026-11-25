@@ -63,6 +63,16 @@ export function projectActivityEvents(source: ReadableStream<Uint8Array>, key: s
           const message = display(redact(event.output, key));
           if (!message) continue;
           update = { phase: "update", message };
+        } else if (mode === "chat" && (event?.event === "tool.started" || event?.event === "tool.completed")) {
+          const name = event.tool;
+          if (typeof name !== "string" || !/^[\w.-]{1,96}$/.test(name) || name.includes(key)) continue;
+          const call = event.tool_call_id;
+          const id = typeof call === "string" && /^[\w.-]{1,128}$/.test(call) && !call.includes(key) ? call : undefined;
+          const status = event.event === "tool.started" ? "running" : event.error === true ? "failed" : "completed";
+          update = { phase: "tool", tool: { ...(id ? { id } : {}), name, status } };
+        } else if (mode === "chat" && event?.event === "reasoning.available") {
+          // Hermes can send raw provider reasoning here. Signal activity without forwarding its contents.
+          update = { phase: "reasoning" };
         } else if (mode === "chat" && (event?.event === "subagent.start" || event?.event === "subagent.complete")) {
           const id = typeof event.subagent_id === "string" ? event.subagent_id : event.child_session_id ?? event.task_index;
           if ((typeof id !== "string" && typeof id !== "number") || !/^[\w.-]{1,128}$/.test(String(id)) || String(id).includes(key)) continue;
@@ -75,11 +85,12 @@ export function projectActivityEvents(source: ReadableStream<Uint8Array>, key: s
         } else {
           continue;
         }
-        if (mode === "chat" && typeof event?.seq === "number" && Number.isSafeInteger(event.seq)) update.seq = event.seq;
         const data = JSON.stringify(update);
         if (data !== previous) {
           previous = data;
-          controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          const seq = event?.seq;
+          const frame = typeof seq === "number" && Number.isSafeInteger(seq) ? JSON.stringify({ ...update, seq }) : data;
+          controller.enqueue(encoder.encode(`data: ${frame}\n\n`));
         }
       }
     },
