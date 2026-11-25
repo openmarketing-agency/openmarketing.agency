@@ -44,7 +44,7 @@ with TemporaryDirectory() as temporary:
         "id: seo\nname: Search campaign\nplaybook: growth\nagents: [seo__researcher]\n"
         "goals: [Qualified leads]\nplans: [Publish research]\n"
         "tool_suggestions: [google_analytics, github, github, invalid/path, 42]\n"
-        "integrations: [discord, facebook, x, google-analytics, wordpress]\n"
+        "integrations: [discord, facebook, x, google-analytics, wordpress-com]\n"
     )
     agent = root / "agents" / "seo__researcher" / "config.yaml"
     agent.parent.mkdir(parents=True)
@@ -67,7 +67,7 @@ with TemporaryDirectory() as temporary:
         {"id": "facebook", "name": "Facebook", "slug": "facebook"},
         {"id": "x", "name": "X (Twitter)", "slug": "twitter"},
         {"id": "google-analytics", "name": "Google Analytics 4", "slug": "google_analytics"},
-        {"id": "wordpress", "name": "WordPress", "slug": None},
+        {"id": "wordpress-com", "name": "WordPress.com", "slug": "wordpress_com"},
     ]
     assert saved["agents"][0]["jobs"] == [{"name": "brief", "schedule": "weekly"}]
     update = {
@@ -122,6 +122,10 @@ with TemporaryDirectory() as temporary:
         saved_social = records(root)["campaigns"][1]
         assert saved_social["requiredIntegrations"] == []
         assert saved_social["integrationConfigInvalid"] is False
+    new_campaign.write_text(base + "integrations: [wordpress]\n")
+    retired_integration = records(root)["campaigns"][1]
+    assert retired_integration["requiredIntegrations"] == []
+    assert retired_integration["integrationConfigInvalid"] is True
     new_campaign.write_text(base + "integrations: [slack, slack, https://example.test, {id: discord}, 42, made-up]\n")
     saved_social = records(root)["campaigns"][1]
     assert saved_social["requiredIntegrations"] == [{"id": "slack", "name": "Slack", "slug": "slack"}]
