@@ -1,6 +1,6 @@
 # Open Marketing Agency architecture
 
-Use this guide to trace a browser action to the Next.js handler, the agent API it calls, and the data it reads or writes. The console database owns account and session records; OMA Agent owns agent data. The workflows below show the console's integration contracts when their optional dependencies are configured.
+Use this guide to trace a browser action to the Next.js handler, the oma-agent API it calls, and the data it reads or writes. It describes the self-hosted Compose stack and links to the code for each workflow. Keep agent-owned data in oma-agent and read it through its APIs. The console database holds app-owned state such as account and session records.
 
 - [System map](#1-system-map)
 - [Sign-in and agent setup](#2-sign-in-and-agent-setup)
@@ -25,11 +25,11 @@ flowchart TB
         Next --> DB
     end
 
-    subgraph Agent["Separately configured agent runtime"]
+    subgraph VM["Compose vm · oma-agent"]
         WS["Private workspace service"]
         Runs["Hermes Runs API · 8642"]
         Runtime["Hermes profiles and Kanban"]
-        Data[("Agent data · HERMES_HOME")]
+        Data[("Agent volume · HERMES_HOME")]
         WS -->|"Config, deploy, lifecycle"| Runtime
         WS -->|"Read and write workspace records"| Data
         Runs -->|"Start and track runs"| Runtime
@@ -45,7 +45,7 @@ flowchart TB
     Runtime -->|"Inference"| Provider["Model provider"]
 ```
 
-[Compose](../compose.yaml) starts only the console. Next.js handles gateway credentials and the optional workspace socket server-side. The Hermes gateway and private workspace service are configured separately; the Debian installer provisions the agent CLI, not a workspace socket server. See [agent connectivity](../README.md#connect-an-existing-oma-agent).
+The port numbers are defaults for local Compose. The browser talks to the console. Next.js handles the workspace socket and Hermes gateway credentials server-side. The Hermes dashboard and its Kanban API run on port 9119. Optional catalog apps use Traefik on port 18080. Camofox is an optional browser sidecar on the private Compose network. [Compose base](../compose.yaml) · [Agent overlay](../compose.vm.yaml) · [VM startup](../vm/start.sh) · [Camofox overlay](../compose.camofox.yaml)
 
 ## 2. Sign-in and agent setup
 
@@ -169,7 +169,7 @@ flowchart TD
     Dash["Campaigns or campaign detail"]
     Records["GET /workspace"]
     Board["GET /workspace/campaigns/{id}/kanban"]
-    Stats["Workspace service resolves the board ID and reads Kanban stats"]
+    Stats["VM reads board ID from config.yaml and calls Kanban stats"]
     Tabs["Progress, Plan, Agents, Tools, Run settings"]
     Chat["Shared chat panel"]
     Action["Authenticated chat server action"]
@@ -186,7 +186,7 @@ The campaign page reads the saved campaign, related agent records, required inte
 
 The console layout renders the right-side chat panel through the `@conversation` parallel route, with entries for signed-in workspace paths. The panel shows the workspace conversation or the conversation for the campaign on the current detail page. It keeps the selected conversation while the operator switches campaign tabs. oma-agent stores each conversation in a Hermes session scoped by account and campaign. The console loads the native transcript and resumes that session when it is reopened.
 
-`GET /api/chat/activity` reads the selected session's latest transcript and active run. It relays the signed-in account's run event stream and refreshes the transcript. Detached completions and wake replies require a gateway that implements their delivery; the console does not install a gateway extension. Both scopes use the default profile. The server appends the campaign ID to each message sent from a campaign. Chat polls `GET /v1/runs/{id}` and posts clarification answers or tool approval decisions to `POST /v1/runs/{id}/clarify` or `POST /v1/runs/{id}/approval`. These tool approvals belong to the current run. Follow-up messages during an active turn go to `POST /v1/runs/{id}/steer` through the same signed, account-scoped handle. Hermes supplies the display text for steering messages in the native transcript.
+`GET /api/chat/activity` reads the selected session's latest transcript and active run. It relays a signed-in account's Run event stream and reloads the transcript to pick up detached completions and wake replies. The bundled VM stores detached results in Hermes and queues a wake against the same OMA session, using the delegation ID to deduplicate retries. This works with no tab open and respects the same session queue and run controls as a user-started turn. No generic wake endpoint, browser push subscription, or second transcript store is needed. Wake and cross-tab live recovery require the bundled VM's chat extension; stock gateways still serve normal turns and transcript history. Both scopes use the default profile. The server appends the campaign ID to each message sent from a campaign. Chat polls `GET /v1/runs/{id}` and posts clarification answers or tool approval decisions to `POST /v1/runs/{id}/clarify` or `POST /v1/runs/{id}/approval`. These tool approvals belong to the current run. Follow-up messages during an active turn go to `POST /v1/runs/{id}/steer` through the same signed, account-scoped handle. Hermes supplies the display text for steering messages in the native transcript.
 
 **Code to read** · [Campaign route](<../oma/app/(console)/(workspace)/campaigns/[id]/page.tsx>) · [Campaign tabs](../oma/components/campaign-detail.tsx) · [Conversation route](<../oma/app/(console)/@conversation/conversation.tsx>) · [Chat UI](../oma/components/hermes-chat.tsx) · [Chat actions](../oma/app/actions/chat.ts) · [Hermes gateway client](../oma/lib/server/agent-chat.ts)
 
@@ -296,7 +296,7 @@ sequenceDiagram
 - **Approve** is the default mode and requires review before publication. **Yolo** runs automation and auto-approves new drafts. **Control** pauses scheduled work and runs explicitly approved publications.
 - Each mutation uses the latest revision from the previous step. A stale revision gives `409` and requires a reload. A save can succeed before sync fails. If a running campaign was paused for the change, it remains paused until a successful sync and resume.
 
-**Code to read** · [Campaign settings UI](../oma/components/campaign-settings.tsx) · [Mode settings UI](../oma/components/campaign-mode-settings.tsx) · [Workspace actions](../oma/app/actions/workspace.ts) · [Pause, sync, deploy, and resume](../oma/lib/server/agent-workspace.ts)
+**Code to read** · [Campaign settings UI](../oma/components/campaign-settings.tsx) · [Mode settings UI](../oma/components/campaign-mode-settings.tsx) · [Workspace actions](../oma/app/actions/workspace.ts) · [Pause, sync, deploy, and resume](../oma/lib/server/agent-workspace.ts) · [Private endpoint implementations](../vm/workspace.py)
 
 ## 7. Publication approval
 
@@ -339,9 +339,9 @@ sequenceDiagram
     end
 ```
 
-This flow requires a compatible workspace service connected to an agent that supports native publications. The private API lists previews with `GET /workspace/campaigns/{id}/publications` and approves with `POST /workspace/campaigns/{id}/publications/{publication-id}/approve`. The browser submits the displayed revision. The Next.js server derives the operator ID from the session. The agent owns the publication record, queue, and result, so a queued approval can be tracked separately from provider publication success.
+This flow requires an agent image that supports native publications. The private API lists previews with `GET /workspace/campaigns/{id}/publications` and approves with `POST /workspace/campaigns/{id}/publications/{publication-id}/approve`. The browser submits the displayed revision. The Next.js server derives the operator ID from the session. The agent owns the publication record, queue, and result, so a queued approval can be tracked separately from provider publication success.
 
-**Code to read** · [Approvals route](<../oma/app/(console)/(workspace)/approvals/page.tsx>) · [Publication response validation](../oma/lib/server/agent-publications.ts) · [Approval action](../oma/app/actions/workspace.ts)
+**Code to read** · [Approvals route](<../oma/app/(console)/(workspace)/approvals/page.tsx>) · [Publication response validation](../oma/lib/server/agent-publications.ts) · [Approval action](../oma/app/actions/workspace.ts) · [Agent workspace routes](../vm/workspace.py)
 
 ## 8. API and storage reference
 
@@ -350,29 +350,30 @@ This flow requires a compatible workspace service connected to an agent that sup
 | Console routes and server actions | App Router under [oma/app](../oma/app) | Cookie sessions, rendering, browser forms, and server-side orchestration. |
 | Public versioned API | [Control-plane route](<../oma/app/api/v1/[...segments]/route.ts>) | Identity, current user profile, and generic MCP integration records. Sign-in uses `POST /api/v1/auth/jwt/login`. Protected endpoints use bearer tokens. Browse live [API docs](http://localhost:3000/docs) when the app is running. |
 | Console activity API | [Activity route](../oma/app/api/agent/activity/route.ts) | Authenticated, uncached activity snapshots and public message streaming. |
-| Private workspace API | [Workspace client](../oma/lib/server/agent-workspace.ts) | Workspace reads, Kanban summaries, config updates, sync, deployment, lifecycle, and publication approvals. Requires a compatible service reachable at `OMA_WORKSPACE_SOCKET`. |
+| Private workspace API | [Workspace service](../vm/workspace.py) | Workspace reads, Kanban summaries, config updates, sync, deployment, lifecycle, and publication approvals. Next.js connects through `/run/oma-console/workspace.sock`. |
 | Hermes gateway | [Agent chat client](../oma/lib/server/agent-chat.ts) | Run creation, status, events, clarification, and run-level tool approvals. The gateway key is distinct from the model API key. |
 | Composio | [Composio SDK adapter](../oma/lib/composio.ts) | Hosted toolkit catalog, OAuth accounts, and campaign MCP sessions. |
+| Optional local apps | [VM startup](../vm/start.sh) | `omactl` and Traefik manage separate catalog apps. Optional Camofox supplies browser tooling to the agent. |
 
 | Data | Source of truth |
 | --- | --- |
 | Account, refresh sessions, setup flag, project answers and run handle | Console SQLite at `/app/data/oma.sqlite`. Local Compose binds `.oma-data/` to `/app/data`. |
 | Workspace and campaign conversations | oma-agent’s native Hermes sessions, read through `GET /api/sessions` and `GET /api/sessions/{id}/messages`. |
 | Generic MCP integration records created with the versioned API | Console SQLite `mcp_integrations`. Submitted credentials are encrypted at rest and write-only. This API is separate from hosted Composio accounts. |
-| Brand, playbook, campaigns, and authored agent records | Agent data under `$HERMES_HOME/oma/`. Key paths are `brand/config.yaml`, `playbook/config.yaml`, `campaigns/{id}/config.yaml`, and `agents/{id}/config.yaml`. |
-| Effective model and tool settings, model credentials, schedules, Kanban, and agent run state | Native Hermes state in the agent's data directory. Agent YAML stores credential references. Hermes profile credential files store key values. |
+| Brand, playbook, campaigns, and authored agent records | Agent volume under `$HERMES_HOME/oma/`. Key paths are `brand/config.yaml`, `playbook/config.yaml`, `campaigns/{id}/config.yaml`, and `agents/{id}/config.yaml`. |
+| Effective model and tool settings, model credentials, schedules, Kanban, and agent run state | Native Hermes state in the agent volume at `$HERMES_HOME`, which defaults to `/opt/data`. Agent YAML stores credential references. Hermes profile credential files store key values. |
 | Composio account authorization and hosted sessions | Composio. The campaign YAML holds the generated MCP URL and a reference to the Composio key. |
-| Gateway access | Server-side `OMA_AGENT_URL` and `OMA_AGENT_API_KEY` select the private endpoint and bearer key. |
+| Local gateway access | A shared Compose mount at `/run/oma-console` provides the gateway key and workspace socket to the console. |
 
 ## 9. Local development and debugging
 
-Start the console with `make dev` and open [http://localhost:3000](http://localhost:3000). Use the [application development guide](../oma/README.md) for direct Next.js development and the [root README](../README.md) for agent configuration and installation.
+Start the full stack with `make dev` and open [the console](http://localhost:3000). Use the [application development guide](../oma/README.md) for direct Next.js development and the [root README](../README.md) for environment, deployment, and VM smoke-test commands.
 
 | Symptom or task | Start here |
 | --- | --- |
 | Login loops or missing session | [Auth actions](../oma/app/actions/auth.ts), [session validation](../oma/lib/dal.ts), and [identity sessions](../oma/lib/server/identity/sessions.ts). |
-| Agent setup asks for a reload | [Agent settings tests](../oma/tests/agent-setup.test.ts). Reload to obtain the latest saved revision. |
+| Agent setup asks for a reload | [Agent settings tests](../oma/tests/agent-setup.test.ts) and the [workspace service’s revision checks](../vm/workspace.py). Reload to obtain the latest saved revision. |
 | Dashboard shows setup failed or misses new campaigns | [Project setup tests](../oma/tests/project-setup.test.ts), [run status projection](../oma/lib/server/agent-chat.ts), and the [dashboard loader](<../oma/app/(console)/(workspace)/dashboard/page.tsx>). Check the run status and what oma-agent saved. |
 | Toolkit connects but campaign can’t start | [Connection service](../oma/lib/tool-connection-service.ts), [integration tests](../oma/tests/campaign-integrations.test.ts), and the campaign’s saved integration IDs. |
-| Settings saved but sync failed | [Campaign settings tests](../oma/tests/campaign-settings.test.ts). Check the workspace service, native profiles, board routing, and campaign schedules. |
+| Settings saved but sync failed | [Campaign settings tests](../oma/tests/campaign-settings.test.ts) and [VM deployment tests](../vm/tests/campaign_deploy.py). Check the native profiles, board routing, and campaign schedules. |
 | Publication preview or approval fails | [Publication tests](../oma/tests/agent-publications.test.ts), the agent image’s native publication support, and the current publication revision. |

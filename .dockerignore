@@ -1,7 +1,18 @@
-# Limit the build context to application files, excluding local data and credentials.
+# Limit the build context to application and VM runtime files, excluding local data and credentials.
 **
 !oma
 !oma/**
+
+# Docker's legacy builder ignores vm/Dockerfile.dockerignore. Keep these VM inputs allowlisted here too.
+!vm/bootstrap.py
+!vm/campaign_activity.py
+!vm/custom_mcp.py
+!vm/install_chat_delivery.py
+!vm/oma_chat_delivery.py
+!vm/register_campaign_suggestions.py
+!vm/start.sh
+!vm/sync_standalone.py
+!vm/workspace.py
 
 **/.git
 **/.gitignore
