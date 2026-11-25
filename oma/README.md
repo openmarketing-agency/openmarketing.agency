@@ -49,11 +49,15 @@ Mode changes save to the campaign’s `config.yaml` and sync with the saved revi
 
 ## Generate analytics
 
-Open **Analytics** on a campaign and select **Generate dashboard**. oma-agent’s default profile writes an OpenUI Lang program using aggregated task, scheduled job, and publication data. Its prompt includes the campaign ID.
+Open a campaign’s **Analytics** tab and select **Generate dashboard** once. oma-agent’s default profile generates OpenUI Lang using the component schema and the live query contract. The user message supplies the campaign ID. The console validates the program and saves it with its generation details in SQLite. Later requests return the saved layout.
 
-The console validates the program and stores it in SQLite. OpenUI renders the charts and tables. The program’s read-only query loads current workspace metrics every minute and on **Refresh data**. The date filter changes the completed-task window between 7 and 28 days in UTC. Regenerating replaces the saved OpenUI program after validation. Dashboards created before the OpenUI change can be regenerated from the Analytics tab.
+OpenUI queries saved observations on load, when the 7- or 28-day UTC filter changes, and once per minute. **Refresh data** queues the campaign’s analyst and reloads the observations when the run settles. The collector also runs hourly for active campaigns. It upserts measurements in the campaign’s `data.sqlite3`. Filtered reads work while a campaign is paused. A partial collection can add observations while the last successful refresh time stays fixed.
 
-The live query reads each campaign’s configured Kanban board and latest result per scheduled job through `/workspace/campaigns/<id>/progress`. Publication counts cover the latest six records from `/workspace/campaigns/<id>/publications?limit=6`.
+This workflow requires oma-agent v0.1.24. Sync installed campaigns after upgrading to provision their analyst. Publication observations are collected automatically. Google Analytics 4 and Search Console also require source bindings and credentials in the analyst profile.
+
+Open **Generation details** to inspect the saved prompts and OpenUI source. Existing OpenUI activity layouts keep their source and appear alongside the collected observations.
+
+The session-authenticated console routes are `GET /api/campaigns/<id>/analytics`, `POST /api/campaigns/<id>/analytics/refresh`, and `GET /api/campaigns/<id>/analytics/status`. Reads accept source, account, metric, date bounds, and cursor filters. Send refresh requests without a body or query parameters and poll the status route after a `202`.
 
 After editing the analytics component library, run `node --import tsx scripts/generate-analytics-spec.mjs` from `oma/` to update the server’s OpenUI schema.
 

@@ -24,9 +24,10 @@ services:
       - "127.0.0.1:${OMA_DASHBOARD_PORT:-9119}:9119"
       - "127.0.0.1:${OMA_CATALOG_PORT:-18080}:9080"
     volumes:
-      - vm-data:/opt/data
+      - vm-data:${HERMES_HOME:-/opt/data}
       - console-gateway-key:/run/oma-console
     environment:
+      HERMES_HOME: ${HERMES_HOME:-/opt/data}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OMA_HERMES_MODEL: ${OMA_HERMES_MODEL:-deepseek/deepseek-v4.1-flash}
       OMA_HERMES_CLARIFY_TIMEOUT: ${OMA_HERMES_CLARIFY_TIMEOUT:-}

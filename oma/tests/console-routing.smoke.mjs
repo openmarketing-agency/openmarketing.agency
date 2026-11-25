@@ -92,6 +92,7 @@ try {
   }
   await assertPage("/dashboard", 'href="/tasks"', headers);
   await assertPage("/dashboard", 'aria-label="Open navigation"', headers);
+  await assertPage("/dashboard", 'aria-controls="workspace-conversation" aria-expanded="false"', headers);
   await assertPage("/dashboard", 'aria-controls="workspace-conversation"', headers);
   await assertPage("/dashboard?setup=1", 'data-chat-open="true"', headers);
   const setupPage = await request("/dashboard?setup=1", { headers });

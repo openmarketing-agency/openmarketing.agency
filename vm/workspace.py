@@ -876,20 +876,63 @@ def ask_campaign_plan(root, campaign_id, request):
     return answer
 
 
+def campaign_analytics(root, campaign_id, action="", query=""):
+    if not valid_id(campaign_id):
+        raise WorkspaceError(404, "Campaign not found.")
+    try:
+        from hermes_cli.oma_campaigns.analytics import AnalyticsError, list_analytics
+        from hermes_cli.oma_campaigns.analytics_cron import analytics_status, refresh_analytics
+    except ImportError as error:
+        raise WorkspaceError(503, "Update oma-agent to use campaign analytics.") from error
+
+    try:
+        if action:
+            if query:
+                raise AnalyticsError(422, "This analytics action takes no query parameters.")
+            handler = analytics_status if action == "status" else refresh_analytics
+            return handler(root.parent, campaign_id)
+        params = parse_qs(query, keep_blank_values=True, strict_parsing=True, errors="strict", max_num_fields=7)
+        if set(params) - {"source", "account", "metric", "start", "end", "limit", "before"} or any(
+            len(values) != 1 for values in params.values()
+        ):
+            raise AnalyticsError(422, "Check the analytics filters.")
+        filters = {key: values[0] for key, values in params.items()}
+        for key in ("before", "limit"):
+            if key in filters:
+                if not re.fullmatch(r"[0-9]{1,16}", filters[key]):
+                    raise AnalyticsError(422, "Invalid analytics page.")
+                filters[key] = int(filters[key])
+        return list_analytics(root.parent, campaign_id, **filters)
+    except AnalyticsError as error:
+        raise WorkspaceError(error.status, str(error)) from error
+    except (OSError, sqlite3.Error) as error:
+        raise WorkspaceError(503, "Campaign analytics storage is unavailable.") from error
+    except (ValueError, RecursionError) as error:
+        raise WorkspaceError(422, "Check the analytics filters or campaign configuration.") from error
+
+
 def generate_analytics(root, request):
     sections = {"tasks", "timeline", "schedules", "publications"}
-    if (not isinstance(request, dict) or set(request) != {"scope", "targetId", "campaignIds", "snapshot", "prompt"}
+    required = {"scope", "targetId", "campaignIds", "prompt"}
+    if (not isinstance(request, dict) or not required <= request.keys() <= required | {"snapshot"}
             or request["scope"] != "campaigns"
             or not valid_id(request["targetId"])
-            or not isinstance(request["prompt"], str) or not 0 < len(request["prompt"]) <= 32_768
-            or not isinstance(request["snapshot"], dict)
-            or set(request["snapshot"]) != sections | {"updatedAt", "campaignCount"}):
+            or not isinstance(request["prompt"], str) or not 0 < len(request["prompt"]) <= 32_768):
         raise WorkspaceError(422, "Check the analytics snapshot.")
 
-    target_id, snapshot = request["targetId"], request["snapshot"]
-    # Keep the workspace request envelope compatible with existing campaign dashboards.
-    if request["campaignIds"] != [target_id] or type(snapshot["campaignCount"]) is not int or snapshot["campaignCount"] != 1:
+    target_id = request["targetId"]
+    if request["campaignIds"] != [target_id]:
         raise WorkspaceError(422, "Check the analytics campaign ID.")
+    # Previous consoles supply a snapshot. New layouts use a stable query contract.
+    if "snapshot" in request:
+        snapshot = request["snapshot"]
+        if (not isinstance(snapshot, dict) or snapshot.keys() != sections | {"updatedAt", "campaignCount"}
+                or type(snapshot["campaignCount"]) is not int or snapshot["campaignCount"] != 1):
+            raise WorkspaceError(422, "Check the analytics snapshot.")
+        user_message = json.dumps(snapshot, allow_nan=False)
+    else:
+        user_message = "Generate the campaign analytics dashboard using the documented live query."
+    user_message += "\n\nCampaign ID: " + target_id
 
     from agent.auxiliary_client import call_llm
     from agent.runtime_scope import bind_profile_scope
@@ -897,7 +940,7 @@ def generate_analytics(root, request):
 
     messages = [
         {"role": "system", "content": request["prompt"]},
-        {"role": "user", "content": json.dumps(snapshot, allow_nan=False) + "\n\nCampaign ID: " + target_id},
+        {"role": "user", "content": user_message},
     ]
     try:
         home = default_home()
@@ -922,7 +965,7 @@ def generate_analytics(root, request):
     source = raw.strip()
     if len(source) > 16_000:
         raise WorkspaceError(502, "The default agent returned a dashboard that exceeds the report limit.")
-    return source
+    return {"source": source, "userMessage": user_message}
 
 
 def configuration_url(value):
@@ -1998,6 +2041,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         kanban = re.fullmatch(r"/workspace/campaigns/([^/]+)/kanban", self.path)
         lifecycle = re.fullmatch(r"/workspace/campaigns/([^/]+)/lifecycle", self.path)
         changes = re.fullmatch(r"/workspace/campaigns/([^/]+)/changes", self.path)
+        analytics = re.fullmatch(r"/workspace/campaigns/([^/?]+)/analytics(/status)?(?:\?(.*))?", self.path)
         progress = re.fullmatch(r"/workspace/campaigns/([^/]+)/progress", self.path)
         task = re.fullmatch(r"/workspace/campaigns/([^/]+)/tasks/([^/]+)", self.path)
         workspace_task = self.task_path.fullmatch(self.path)
@@ -2024,6 +2068,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = campaign_kanban_status(self.server.root, kanban[1])
             elif lifecycle:
                 result = campaign_lifecycle_status(self.server.root, lifecycle[1])
+            elif analytics:
+                result = campaign_analytics(self.server.root, analytics[1], "status" if analytics[2] else "", analytics[3] or "")
             elif progress:
                 result = campaign_progress(self.server.root, progress[1])
             elif task:
@@ -2071,11 +2117,23 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         except OSError:
             self.reply(503, {"message": "Could not read the agent workspace."})
         else:
-            self.reply(200, result)
+            # Older consoles expect a bare string from this socket endpoint.
+            self.reply(200, result if self.headers.get("X-OMA-Analytics-Details") == "1" else result["source"])
 
     def do_POST(self):
         if self.path == "/workspace/analytics":
             self.post_analytics()
+            return
+        refresh = re.fullmatch(r"/workspace/campaigns/([^/?]+)/analytics/refresh(?:\?(.*))?", self.path)
+        if refresh:
+            try:
+                if self.headers.get("Content-Length", "0") != "0" or self.headers.get("Transfer-Encoding"):
+                    raise WorkspaceError(422, "Analytics refresh takes no request body.")
+                result = campaign_analytics(self.server.root, refresh[1], "refresh", refresh[2] or "")
+            except WorkspaceError as error:
+                self.reply(error.status, {"message": str(error)})
+            else:
+                self.reply(202, result)
             return
         approval = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications/([^/]+)/approve", self.path)
         activity = re.fullmatch(r"/workspace/campaigns/([^/]+)/activity", self.path)

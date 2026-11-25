@@ -29,6 +29,11 @@
 .workbench-brand .brand { min-height: 42px; }
 .workbench-drawer .workbench-brand { padding-right: 48px; }
 .workbench-links { display: grid; gap: 4px; padding: 3px; }
+.workbench-drawer .workbench-links {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
 .workbench-links > span { margin: 0 10px 5px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .workbench-links a {
   display: flex;
@@ -124,6 +129,16 @@
   .workbench-location:has(.workbench-location-page) .workbench-location-group, .workbench-divider { display: none; }
   .workbench-chat :is(.chat-page-heading, .runtime-chat-history, .runtime-messages, .runtime-composer) { padding-inline: 14px; }
   .workbench-chat .runtime-message { max-width: 100%; padding-inline: 10px; }
+}
+
+/* Give the transcript and composer room to scroll when the keyboard or a short window reduces space. */
+@media (max-height: 34rem) {
+  .workbench-chat { overflow-y: auto; overscroll-behavior-y: contain; }
+  .workbench-chat .runtime-chat { height: auto; min-height: 100%; }
+  .workbench-chat .runtime-messages {
+    min-height: 7rem;
+    max-height: max(7rem, 44dvh);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

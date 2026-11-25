@@ -37,7 +37,7 @@
 }
 
 .analytics-toolbar .analytics-notice { margin: 0; }
-.analytics-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.analytics-canvas + .analytics-canvas { margin-top: 16px; }
 
 .analytics-empty {
   display: flex;
@@ -63,3 +63,62 @@
 .analytics-canvas .openui-dashboard-root { background: transparent; }
 .analytics-canvas .openui-dashboard-kpi-value,
 .analytics-canvas .openui-dashboard-card-headline { font-variant-numeric: tabular-nums; }
+
+.analytics-generation {
+  margin: 16px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.analytics-generation summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.analytics-generation summary:hover { background: var(--raised); }
+.analytics-generation summary:focus-visible,
+.analytics-generation pre:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.analytics-generation-body {
+  padding: 0 14px 14px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.analytics-generation-body p,
+.analytics-generation-body dd {
+  max-width: 70ch;
+  color: var(--muted);
+}
+
+.analytics-generation-body h3 {
+  margin: 14px 0 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.analytics-generation-body dl { display: grid; gap: 8px; }
+.analytics-generation-body dt { font-weight: 600; }
+.analytics-generation-body > p:last-child { margin-top: 14px; }
+.analytics-generation-messages { margin-top: 14px; }
+.analytics-generation-messages > details { border-top: 1px solid var(--border); }
+
+.analytics-generation-messages summary { padding-inline: 6px; }
+
+.analytics-generation-messages pre {
+  max-height: 20rem;
+  margin-bottom: 10px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--raised);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

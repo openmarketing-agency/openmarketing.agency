@@ -2,7 +2,8 @@
 
 import { analyticsDateRange } from "@/lib/analytics";
 import { getSessionUser } from "@/lib/dal";
-import { generateAnalytics, queryAnalytics, readAnalytics, requireAnalyticsCampaign } from "@/lib/server/analytics";
+import { generateAnalytics, queryLegacyAnalytics, readAnalytics, requireAnalyticsCampaign } from "@/lib/server/analytics";
+import { queryCampaignObservations } from "@/lib/server/campaign-observations";
 import { workspaceId, WorkspaceRequestError } from "@/lib/server/agent-workspace";
 
 type Context = RouteContext<"/api/workspace/analytics/campaigns/[id]">;
@@ -23,15 +24,22 @@ async function analytics(request: Request, { params }: Context) {
   }
   try {
     const key = { userId: user.id, id };
-    await requireAnalyticsCampaign(id);
-    const dateRanges = new URL(request.url).searchParams.getAll("dateRange");
+    const params = new URL(request.url).searchParams;
+    const dateRanges = params.getAll("dateRange");
     if (!generate && dateRanges.length) {
+      const sources = params.getAll("source");
       const range = analyticsDateRange.safeParse(dateRanges[0]);
       if (dateRanges.length !== 1 || !range.success) {
         return Response.json({ error: "Choose a 7- or 28-day date range." }, { status: 422, headers });
       }
-      return Response.json(await queryAnalytics(id, range.data), { headers });
+      if (sources.length > 1 || (sources.length && sources[0] !== "observations")) {
+        return Response.json({ error: "Unknown dashboard data source." }, { status: 422, headers });
+      }
+      const result = sources[0] === "observations"
+        ? await queryCampaignObservations(id, range.data) : await queryLegacyAnalytics(id, range.data);
+      return Response.json(result, { headers });
     }
+    await requireAnalyticsCampaign(id);
     const result = generate ? await generateAnalytics(key) : readAnalytics(key);
     return Response.json(result, { headers });
   } catch (error) {

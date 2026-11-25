@@ -1,17 +1,6 @@
 /* Styles the shared provider and model editor used in setup and Settings. */
 
 .standalone-model-form { display: grid; gap: 6px; margin-top: 8px; }
-.standalone-model-form input:not([type="hidden"]),
-.standalone-model-form select {
-  min-width: 0;
-  min-height: 44px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text);
-}
-.standalone-model-form select { padding-inline-end: 34px; }
 .standalone-model-form button { justify-self: start; min-height: 44px; }
 .standalone-model-hint { color: var(--muted); }
 .standalone-model-summary {

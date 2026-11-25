@@ -1,7 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* The console has a light palette, so dark variants need an explicit theme class. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
+  color-scheme: light;
   --palette-charcoal: #182a24;
   --palette-stone: #dbe4de;
   --palette-aqua: #b4e5c6;
