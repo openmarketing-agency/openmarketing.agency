@@ -12,6 +12,7 @@ import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-s
 
 import { ProjectForm } from "./project-form";
 import "./onboarding.css";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = { title: "Set up your project" };
 
@@ -32,7 +33,7 @@ export default function OnboardingPage() {
       <header className="workspace-entry-bar">
         <Brand href="/dashboard" />
         <form action={logoutAction}>
-          <button type="submit" className="btn ghost">Sign out</button>
+          <Button type="submit" variant="ghost">Sign out</Button>
         </form>
       </header>
       <main id="main-content" tabIndex={-1} className="project-setup-layout">

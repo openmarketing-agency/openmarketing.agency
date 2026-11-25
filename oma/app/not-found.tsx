@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Brand } from "@/components/brand";
 import "@/components/auth-layout.css";
+import { Button } from "@/components/ui/button";
 
 export default function NotFound() {
   return (
@@ -9,9 +10,9 @@ export default function NotFound() {
       <main id="main-content" tabIndex={-1} className="entry-form-panel entry-missing-page">
         <h1>Page not found</h1>
         <p>Check the address or return to your campaign workspace.</p>
-        <Link className="btn primary" href="/dashboard">
+        <Button asChild><Link href="/dashboard">
           Back to campaigns
-        </Link>
+        </Link></Button>
       </main>
     </div>
   );

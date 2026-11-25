@@ -20,6 +20,8 @@ import { campaignConnectionScope } from "@/lib/agent-connections";
 import type { CampaignKanbanStatus, SavedCampaign } from "@/lib/server/agent-workspace";
 import type { Toolkit } from "@/lib/tool-catalog";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 const views = [
   { id: "progress", label: "Progress" },
@@ -133,24 +135,24 @@ export function CampaignDetail({
           <span className="playbook-mark"><Megaphone size={23} aria-hidden="true" /></span>
           <div className="campaign-title">
             <h1>{name}</h1>
-            <span className="campaign-deployment-status" data-state={deploymentState}>{deploymentState}</span>
-            {campaign.version && <span className="version-label">v{campaign.version}</span>}
+            <Badge variant="secondary" className="campaign-deployment-status" data-state={deploymentState}>{deploymentState}</Badge>
+            {campaign.version && <Badge variant="outline" className="version-label">v{campaign.version}</Badge>}
           </div>
           {description && <p>{description}</p>}
           {view !== "progress" && <CampaignKanban status={kanban} />}
         </header>
         <div className="campaign-header-actions">
           {configuration && (!running && blocked && !pausing && view !== "tools" ? (
-            <Link className="btn primary" {...viewLink("tools")}>Set up required tools</Link>
+            <Button asChild><Link {...viewLink("tools")}>Set up required tools</Link></Button>
           ) : (
             <form action={runAction}>
               <input type="hidden" name="revision" value={configuration.revision} />
               <input type="hidden" name="state" value={running ? "paused" : "resumed"} />
-              <button className={running ? "btn secondary" : "btn primary"}
+              <Button variant={running ? "outline" : "default"}
                 disabled={runPending || pausing || (!running && blocked)}>
                 {running ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
                 {runPending ? (running ? "Pausing…" : "Starting…") : pausing ? "Pausing…" : runLabel}
-              </button>
+              </Button>
             </form>
           ))}
         </div>

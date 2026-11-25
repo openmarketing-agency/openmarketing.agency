@@ -189,7 +189,7 @@
 .approval-status[data-status="approved"] { background: var(--positive-soft); color: var(--positive); }
 .approval-status[data-status="changes"] { background: var(--warning-soft); color: var(--warning); }
 .approvals-empty { padding-block: 36px; }
-.approvals-empty .btn { margin-top: 12px; }
+.approvals-empty [data-slot="button"] { margin-top: 12px; }
 
 .approval-back,
 .approval-chat-jump {
@@ -346,8 +346,8 @@
   padding: 7px 9px;
   font-size: 13px;
 }
-.approval-chat-form .btn { width: 38px; padding-inline: 0; }
-.approvals-page .btn:disabled,
+.approval-chat-form [data-slot="button"] { width: 38px; padding-inline: 0; }
+.approvals-page [data-slot="button"]:disabled,
 .approval-chat-form input:disabled { opacity: 0.55; cursor: not-allowed; }
 
 @media (max-width: 760px) {

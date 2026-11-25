@@ -11,6 +11,7 @@ import { Loading } from "@/components/ui";
 import { analyticsDateRange, analyticsQueryTool, type AnalyticsQueryResult, type AnalyticsView } from "@/lib/analytics";
 import { analyticsLibrary } from "@/lib/analytics-library";
 import "./workspace-analytics.css";
+import { Button, buttonVariants } from "@/components/ui/button";
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const theme: ThemeProviderProps["lightTheme"] = {
@@ -79,10 +80,10 @@ export function WorkspaceAnalytics({ id }: { id: string }) {
   const report = view?.report;
   const busy = submitting || Boolean(view?.generating);
   const generateButton = view && (
-    <button type="button" className={report ? "btn secondary" : "btn primary"} disabled={busy} onClick={generate}>
+    <Button type="button" variant={report ? "outline" : "default"} disabled={busy} onClick={generate}>
       <Sparkles size={16} aria-hidden="true" />
       {busy ? "Generating…" : report ? "Regenerate dashboard" : "Generate dashboard"}
-    </button>
+    </Button>
   );
 
   return (
@@ -101,7 +102,7 @@ export function WorkspaceAnalytics({ id }: { id: string }) {
       {readError && (
         <div className="analytics-feedback" role="alert">
           <p className="form-error">{readError}</p>
-          <button type="button" className="btn secondary" onClick={() => setRetry((revision) => revision + 1)}>Try again</button>
+          <Button type="button" variant="outline" onClick={() => setRetry((revision) => revision + 1)}>Try again</Button>
         </div>
       )}
       {actionError && <p className="form-error" role="alert">{actionError}</p>}
@@ -144,7 +145,7 @@ function OpenUIAnalytics({ source, path, actions }: { source: string; path: stri
         <Renderer.QueryError>
           <div className="analytics-feedback" role="alert">
             <p className="form-error">Couldn’t load the dashboard data.</p>
-            <Renderer.Retry className="btn secondary">Try again</Renderer.Retry>
+            <Renderer.Retry className={buttonVariants({ variant: "outline" })}>Try again</Renderer.Retry>
           </div>
         </Renderer.QueryError>
         <Renderer.Content className="analytics-canvas" />
@@ -163,9 +164,9 @@ function DashboardToolbar({ updatedAt, actions }: { updatedAt?: number; actions:
         )}
       </p>
       <div className="analytics-actions">
-        <button type="button" className="btn secondary" disabled={isLoading} onClick={retry}>
+        <Button type="button" variant="outline" disabled={isLoading} onClick={retry}>
           <RefreshCw size={15} aria-hidden="true" /> Refresh data
-        </button>
+        </Button>
         {actions}
       </div>
     </div>

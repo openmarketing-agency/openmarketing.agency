@@ -10,6 +10,7 @@ import { useCampaignFeed } from "./use-campaign-feed";
 import { CampaignKanban } from "./campaign-kanban";
 import type { CampaignKanbanStatus } from "@/lib/server/agent-workspace";
 import type { CampaignProgressSnapshot, CampaignTask, CampaignTaskActivity } from "@/lib/server/campaign-progress";
+import { Button } from "@/components/ui/button";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const groups = [
@@ -123,9 +124,9 @@ export function CampaignProgress({ campaign, agents, kanban }: {
     <section className="campaign-progress" aria-labelledby={id + "-tasks"}>
       <header className="campaign-progress-toolbar">
         <h2 id={id + "-tasks"}>Kanban tasks</h2>
-        <button type="button" className="btn secondary" onClick={() => setRefresh((value) => value + 1)}>
+        <Button type="button" variant="outline" onClick={() => setRefresh((value) => value + 1)}>
           <RefreshCw size={15} aria-hidden="true" /> Refresh
-        </button>
+        </Button>
       </header>
       {!state && <p role="status">Loading campaign progress…</p>}
       {state?.error && <p className="form-error" role="status">{state.error}{snapshot ? " Showing the last available progress." : ""}</p>}
@@ -166,8 +167,8 @@ export function CampaignProgress({ campaign, agents, kanban }: {
                 </li>;
               })}
             </ul>
-            {filtered.length > pageSize && <button type="button" className="btn secondary"
-              onClick={() => setPageSize((size) => size + 20)}>Show more tasks</button>}
+            {filtered.length > pageSize && <Button type="button" variant="outline"
+              onClick={() => setPageSize((size) => size + 20)}>Show more tasks</Button>}
           </>}
 
         <section className="campaign-progress-section" aria-labelledby={id + "-schedule"}>

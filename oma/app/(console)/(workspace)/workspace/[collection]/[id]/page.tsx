@@ -14,6 +14,7 @@ import { WorkspaceRecordEditor } from "@/components/workspace-record-editor";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, loadBrandDocument, workspaceId, type SavedBrand } from "@/lib/server/agent-workspace";
 import "@/components/workspace-record-detail.css";
+import { Button } from "@/components/ui/button";
 
 type Props = {
   params: Promise<{ collection: string; id: string }>;
@@ -82,9 +83,9 @@ async function RecordDetail({ params, searchParams }: Props) {
               </div>
             </div>
             {!editing && (
-              <Link className="btn secondary" href={sectionPath + (sectionPath === path ? "?" : "&") + "edit=1"}>
+              <Button asChild variant="outline"><Link href={sectionPath + (sectionPath === path ? "?" : "&") + "edit=1"}>
                 <Pencil size={15} aria-hidden="true" /> {brand ? "Edit brand" : "Edit strategy"}
-              </Link>
+              </Link></Button>
             )}
           </header>
           {(query.saved === "1" || query.saved === "knowledge") && !editing && (
@@ -182,9 +183,9 @@ function BrandKnowledge({ brand, path }: { brand: SavedBrand; path: string }) {
       <div className="record-section-heading">
         <h2 id="knowledge-heading">Brand knowledge</h2>
         {brand.knowledgeRevision && (
-          <Link className="btn secondary" href={path + "?edit=knowledge"}>
+          <Button asChild variant="outline"><Link href={path + "?edit=knowledge"}>
             <Pencil size={14} aria-hidden="true" /> Edit knowledge
-          </Link>
+          </Link></Button>
         )}
       </div>
       {brand.knowledgeFile !== undefined && !brand.knowledgeRevision

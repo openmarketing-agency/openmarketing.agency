@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 export function PasswordField({
   confirm = false,
   register = false,
@@ -17,7 +19,7 @@ export function PasswordField({
     <div className="auth-field">
       <label htmlFor={name}>{confirm ? "Confirm password" : "Password"}</label>
       <div className="password-input">
-        <input
+        <Input
           id={name}
           name={name}
           value={value}
@@ -36,14 +38,16 @@ export function PasswordField({
                 : "Enter your password"
           }
         />
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
           aria-label={`${visible ? "Hide" : "Show"} ${visibilityTarget}`}
           aria-controls={name}
           onClick={() => setVisible(!visible)}
         >
           {visible ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
-        </button>
+        </Button>
       </div>
       {hintId && (
         <span id={hintId} className="field-hint">Use 8–128 characters.</span>

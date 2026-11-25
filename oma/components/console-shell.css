@@ -1,65 +1,97 @@
-/* Keeps workspace navigation and chat alongside independently scrolling page content. */
+/* Keeps the workspace and chat side by side on desktops, with full-width views on phones. */
+
 .workbench {
+  --workbench-header: 58px;
   display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-columns: 196px minmax(0, 1fr);
   align-items: start;
   min-height: 100dvh;
+}
+
+.workbench-nav,
+.workbench-drawer[data-slot="sheet-content"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 14px 12px;
+  background: var(--surface);
 }
 
 .workbench-nav {
   position: sticky;
   top: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-  max-height: 100dvh;
+  height: 100dvh;
   overflow-y: auto;
-  padding: 24px 15px 14px;
-  background: var(--raised);
   border-right: 1px solid var(--border);
 }
 
-.workbench-brand { padding: 0 10px 34px; }
-.workbench-links { display: grid; gap: 3px; }
+.workbench-brand { display: flex; padding: 0 8px 22px; }
+.workbench-brand .brand { min-height: 42px; }
+.workbench-drawer .workbench-brand { padding-right: 48px; }
+.workbench-links { display: grid; gap: 4px; padding: 3px; }
+.workbench-links > span { margin: 0 10px 5px; color: var(--muted); font-size: 12px; font-weight: 600; }
 .workbench-links a {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   min-height: 44px;
-  padding: 8px 10px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
   border-radius: 8px;
   color: var(--muted);
+  font-weight: 500;
 }
-
-.workbench-links a:hover { background: var(--active); color: var(--text); }
-.workbench-links a[aria-current] { background: var(--active); color: var(--accent); font-weight: 600; }
+.workbench-links a:focus-visible { outline-offset: -2px; }
+.workbench-links a:hover { background: var(--raised); color: var(--text); }
+.workbench-links a[aria-current] { border-color: #d1e5d8; background: var(--active); color: var(--accent-hover); font-weight: 600; }
 
 .workbench-account {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 11px 0 0;
+  border-top: 1px solid var(--border);
+}
+.workbench-account strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+
+.workbench-stage { min-width: 0; }
+.workbench-bar {
+  position: sticky;
+  z-index: 10;
+  top: 0;
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-top: auto;
-  padding-top: 18px;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: var(--workbench-header);
+  padding-inline: clamp(14px, 3vw, 38px);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
-.workbench-account strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
-.workbench .icon-button { min-width: 40px; min-height: 44px; }
-.workbench-main { width: 100%; min-width: 0; min-height: 100dvh; }
-.workbench-mobile { display: none; }
+.workbench-location { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.workbench-location-page { color: var(--text); font-weight: 600; }
+.workbench-divider { flex: none; }
+.workbench-menu, .workbench-chat-toggle { display: none; }
 
+.workbench-content, .workbench-single { scroll-margin-top: var(--workbench-header); }
 .workbench-content {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(21rem, 35%, 38rem);
+  grid-template-columns: minmax(0, 1fr) clamp(20rem, 32%, 33rem);
   align-items: start;
   min-width: 0;
 }
-.workbench-content .workbench-main {
+.workbench-main {
+  min-width: 0;
+  min-height: calc(100dvh - var(--workbench-header));
   container: workbench-main / inline-size;
   overflow-wrap: anywhere;
 }
 .workbench-chat {
   position: sticky;
-  top: 0;
-  height: 100dvh;
+  top: var(--workbench-header);
+  height: calc(100dvh - var(--workbench-header));
   min-width: 0;
   border-inline-start: 1px solid var(--border);
   background: var(--surface);
@@ -71,63 +103,29 @@
 .workbench-chat .runtime-composer textarea { resize: none; }
 .workbench-chat .runtime-chat > .runtime-prompt { max-height: 65%; overflow: auto; }
 
-@container workbench-main (max-width: 22rem) {
-  .workbench-main :is(.page-content, .workspace-page, .workspace-settings, .agent-library-page, .agent-playbook-page) {
-    padding-inline: 12px;
-  }
+@container workbench-main (max-width: 30rem) {
+  .workbench-main :is(.page-content, .workspace-page, .workspace-settings, .agent-library-page, .agent-playbook-page) { padding-inline: 18px; }
 }
 
-@media (max-width: 840px) {
-  html:has(.workbench) { scroll-padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
-  .workbench {
-    display: block;
-    --mobile-workbench-header: 57px;
-    --mobile-workbench-nav: calc(61px + env(safe-area-inset-bottom));
-    --mobile-workbench-height: calc(100dvh - var(--mobile-workbench-header) - var(--mobile-workbench-nav));
-  }
-  .workbench-mobile {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-height: var(--mobile-workbench-header);
-    padding: 4px 16px;
-    border-bottom: 1px solid var(--border);
-    background: var(--raised);
-  }
-  .workbench-mobile .brand { font-size: 22px; }
-  .workbench-mobile > span { margin-left: auto; color: var(--muted); font-size: 13px; }
-  .workbench-mobile .icon-button { min-width: 44px; }
-  .workbench-nav {
-    position: fixed;
-    z-index: 30;
-    inset: auto 0 0;
-    display: block;
-    min-height: 0;
-    max-height: none;
-    padding: 4px 7px calc(4px + env(safe-area-inset-bottom));
-    border: 0;
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-    overflow: visible;
-  }
-  .workbench-brand, .workbench-account { display: none; }
-  .workbench-links { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; max-width: 40rem; margin-inline: auto; }
-  .workbench-links a { flex-direction: column; justify-content: center; gap: 3px; min-height: 52px; padding: 5px 1px; font-size: 12px; }
-  .workbench-links a:focus-visible { outline-offset: -2px; }
-  .workbench-main { min-height: calc(100dvh - var(--mobile-workbench-header)); padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
-  .workbench:has(.workbench-content) .workbench-mobile { position: sticky; top: 0; z-index: 10; }
-  .workbench-content {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 46%);
-    margin-bottom: var(--mobile-workbench-nav);
-  }
-  .workbench-content .workbench-main { min-height: var(--mobile-workbench-height); padding-bottom: 0; }
-  .workbench-chat { top: var(--mobile-workbench-header); height: var(--mobile-workbench-height); }
+@media (max-width: 1000px) {
+  .workbench { display: block; }
+  .workbench-nav { display: none; }
+  .workbench-menu, .workbench-chat-toggle { display: inline-flex; }
+  .workbench-menu { margin-inline-start: -8px; }
+  .workbench-menu svg { width: 20px; height: 20px; }
+  .workbench-chat-toggle { min-height: 44px; }
+  .workbench-content { display: block; }
+  .workbench-chat { position: static; display: none; border: 0; }
+  .workbench[data-chat-open="true"] .workbench-content > .workbench-main { display: none; }
+  .workbench[data-chat-open="true"] .workbench-chat { display: block; }
 }
 
-@media (max-width: 560px) {
-  .workbench-chat :is(.chat-page-heading, .runtime-chat-history, .runtime-messages, .runtime-composer) { padding-inline: 12px; }
-  .workbench-chat .chat-page-heading .playbook-mark { display: none; }
-  .workbench-chat .btn { max-width: 100%; min-width: 0; white-space: normal; }
+@media (max-width: 520px) {
+  .workbench-location:has(.workbench-location-page) .workbench-location-group, .workbench-divider { display: none; }
+  .workbench-chat :is(.chat-page-heading, .runtime-chat-history, .runtime-messages, .runtime-composer) { padding-inline: 14px; }
   .workbench-chat .runtime-message { max-width: 100%; padding-inline: 10px; }
-  .workbench-chat .chat-error { margin-inline: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="sheet-overlay"], [data-slot="sheet-content"] { animation-duration: 0s; }
 }

@@ -6,6 +6,8 @@ import { ArrowUp, MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { proposeApprovalRevision } from "@/lib/approvals";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type ChatTurn = { request: string; reply: string };
 type Proposal = { text: string; source: string };
@@ -61,11 +63,11 @@ export function ApprovalChat({ body, cta, disabled, onApply }: Props) {
             <div className="approval-proposal-text" tabIndex={0} role="region" aria-label="Suggested draft text">{proposal.text}</div>
             {stale && <p className="approval-proposal-note">The draft changed. Request a new suggestion to apply it.</p>}
             <div className="approval-proposal-actions">
-              <button type="button" className="btn primary" disabled={disabled || stale} onClick={() => {
+              <Button type="button" disabled={disabled || stale} onClick={() => {
                 onApply(proposal.text);
                 setProposal(undefined);
-              }}>Apply to draft</button>
-              <button type="button" className="btn ghost" onClick={() => setProposal(undefined)}>Discard</button>
+              }}>Apply to draft</Button>
+              <Button type="button" variant="ghost" onClick={() => setProposal(undefined)}>Discard</Button>
             </div>
           </div>
         )}
@@ -82,11 +84,11 @@ export function ApprovalChat({ body, cta, disabled, onApply }: Props) {
         )}
         <form className="approval-chat-form" onSubmit={submit}>
           <label htmlFor="approval-chat-request" className="sr-only">Ask for an edit</label>
-          <input id="approval-chat-request" value={input} maxLength={500} onChange={(event) => setInput(event.target.value)}
+          <Input id="approval-chat-request" value={input} maxLength={500} onChange={(event) => setInput(event.target.value)}
             placeholder="Ask for an edit…" disabled={disabled} />
-          <button className="btn primary" type="submit" aria-label="Send edit request" disabled={disabled || !input.trim()}>
+          <Button type="submit" aria-label="Send edit request" disabled={disabled || !input.trim()}>
             <ArrowUp size={18} aria-hidden="true" />
-          </button>
+          </Button>
         </form>
       </div>
     </aside>

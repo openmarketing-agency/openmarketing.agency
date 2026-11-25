@@ -28,6 +28,19 @@ The database tests create isolated SQLite files in a temporary directory. First 
 
 The right-side chat panel appears across the signed-in workspace. It shows live project setup progress and the gateway’s public updates, reported usage, and errors. The panel accepts responses to setup prompts and can retry failed or cancelled runs using the saved links. Chat history is loaded from Hermes and scoped to the workspace or current campaign.
 
+## Console design system
+
+Use the Radix-based shadcn/ui components in [`components/ui/`](components/ui/)
+for console controls and surfaces. [`components.json`](components.json) configures
+the registry aliases, and [`app/globals.css`](app/globals.css) maps the OMA palette
+to Tailwind's component tokens. The registry components retain their
+[upstream MIT license](components/ui/LICENSE). OpenUI campaign dashboards share
+these colors through their existing dashboard theme.
+
+On narrow screens, use **Open chat** to switch between the active workspace page
+and its conversation. The conversation remains mounted so drafts and active
+turns can continue while you review the page.
+
 ## Campaign publishing and approvals
 
 Choose a publishing mode in the campaign’s **Settings**. **Approve** is the default and sends public posts and replies for review. **Control** pauses scheduled work and runs explicitly approved publications. **Yolo** runs automation and auto-approves new publication drafts. **Approvals** shows saved campaign publications with their account, content, media, and reply target. Approving a revision queues the campaign’s publisher agent on its Kanban board. The agent records the result against the reviewed revision. Publication reviews use the native workflow in oma-agent v0.1.20 through the private workspace socket.

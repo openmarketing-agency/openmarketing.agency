@@ -13,6 +13,10 @@ import { AgentActivity } from "./agent-activity";
 import { ChatProgress } from "./chat-progress";
 import { HermesPrompt } from "./hermes-prompt";
 import "./hermes-chat.css";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 
 function runKey(threadId: string, campaignId?: string) {
   return "oma:run:" + (campaignId ?? "workspace") + ":" + threadId;
@@ -301,21 +305,23 @@ export function HermesChat({
             <p>Default profile</p>
           </div>
         </div>
-        <span role="status" className={status.ready ? "chat-status is-ready" : "chat-status"}>{status.ready ? "Connected" : "Offline"}</span>
+        <Badge role="status" variant={status.ready ? "success" : "secondary"}>
+          <span className="chat-status-dot" aria-hidden="true" />{status.ready ? "Connected" : "Offline"}
+        </Badge>
       </header>
       <div className="runtime-chat-history">
-        <select aria-label="Chat history" value={selectionListed ? history.active?.id : ""}
+        <NativeSelect aria-label="Chat history" value={selectionListed ? history.active?.id : ""}
           disabled={navigating || sending || !history.chats.length} onChange={(event) => openChat(event.target.value)}>
           {!selectionListed && <option value="" disabled>{history.chats.length ? "New conversation" : "No saved chats"}</option>}
           {history.chats.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-        </select>
-        <button type="button" className="btn secondary" disabled={navigating || sending || !(history.active || pending)}
-          onClick={() => openChat("new")}><Plus size={15} aria-hidden="true" /> New chat</button>
+        </NativeSelect>
+        <Button type="button" variant="outline" disabled={navigating || sending || !(history.active || pending)}
+          onClick={() => openChat("new")}><Plus size={15} aria-hidden="true" /> New chat</Button>
       </div>
       <div className="runtime-messages" ref={transcript} role="log" aria-label="Conversation">
         <AgentActivity />
-        {offset != null && <button type="button" className="btn secondary runtime-load-older" disabled={loadingOlder}
-          onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : "Load older messages"}</button>}
+        {offset != null && <Button type="button" variant="outline" className="runtime-load-older" disabled={loadingOlder}
+          onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : "Load older messages"}</Button>}
         {!messages.length && !pending && !handle && !history.error && (
           <div className="runtime-conversation-empty">
             <h3>{campaignId ? "What would you like to do with this campaign?" : "What would you like to work on?"}</h3>
@@ -340,14 +346,14 @@ export function HermesChat({
       {!status.ready ? (
         <div className="runtime-composer runtime-chat-offline">
           <p>{status.message}</p>
-          <button className="btn secondary" disabled={navigating} onClick={() => startTransition(() => router.refresh())}>
+          <Button variant="outline" disabled={navigating} onClick={() => startTransition(() => router.refresh())}>
             <RefreshCw size={16} aria-hidden="true" /> {navigating ? "Checking…" : "Check connection"}
-          </button>
+          </Button>
         </div>
       ) : <>
         {pending && !handle && !sending && <div className="runtime-composer runtime-chat-offline">
-          <button type="button" className="btn primary" disabled={navigating}
-            onClick={() => void send(pending.text, true)}>Retry message</button>
+          <Button type="button" disabled={navigating}
+            onClick={() => void send(pending.text, true)}>Retry message</Button>
         </div>}
         {prompt && handle && <HermesPrompt key={prompt.id + ":" + prompt.generation} prompt={prompt} onAnswer={async (answer) => {
           const { id, generation, kind } = prompt;
@@ -356,7 +362,7 @@ export function HermesChat({
         }} />}
         <form className="runtime-form runtime-composer" onSubmit={(event) => { event.preventDefault(); void send(message.trim()); }}>
           <label className="sr-only" htmlFor={headingId + "-message"}>Message oma-agent</label>
-          <textarea id={headingId + "-message"} value={message} onChange={(event) => setMessage(event.target.value)}
+          <Textarea id={headingId + "-message"} value={message} onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
@@ -365,9 +371,9 @@ export function HermesChat({
             }}
             placeholder={handle ? "Steer this turn…" : "Message oma-agent…"}
             maxLength={maxChatMessageLength} rows={3} required disabled={navigating} />
-          <button className="btn primary" disabled={!canSend || !message.trim()}>
+          <Button disabled={!canSend || !message.trim()}>
             <Send size={16} aria-hidden="true" /> {steering ? "Sending…" : handle ? "Send guidance" : campaignId ? "Send" : "Send message"}
-          </button>
+          </Button>
         </form>
       </>}
     </section>

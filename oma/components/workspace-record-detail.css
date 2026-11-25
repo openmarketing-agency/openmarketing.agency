@@ -53,7 +53,7 @@
   line-height: 1.55;
 }
 
-.record-heading > .btn { flex: none; }
+.record-heading > [data-slot="button"] { flex: none; }
 
 .record-tabs {
   display: flex;
@@ -138,7 +138,7 @@
   gap: 8px 16px;
 }
 
-.record-section-heading .btn { min-height: 36px; }
+.record-section-heading [data-slot="button"] { min-height: 36px; }
 
 .record-reading :is(.workspace-markdown, .workspace-record-copy) {
   max-width: 72ch;

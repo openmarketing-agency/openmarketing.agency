@@ -7,6 +7,8 @@ import { useActionState, useState } from "react";
 
 import { skipProjectSetup, submitProjectSetup, type ProjectSetupFormState } from "@/app/actions/project-setup";
 import type { ProjectLinks } from "@/lib/server/project-setup";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const emptyState: ProjectSetupFormState = {};
 
@@ -24,7 +26,7 @@ export function ProjectForm({ initialLinks, needsRetry }: { initialLinks?: Proje
         <label htmlFor="project-website">Website URL</label>
         <div className="project-setup-input">
           <Globe size={18} aria-hidden="true" />
-          <input id="project-website" name="websiteUrl" inputMode="url" autoComplete="url"
+          <Input id="project-website" name="websiteUrl" inputMode="url" autoComplete="url"
             autoCapitalize="none" spellCheck={false} maxLength={2048} placeholder="https://example.com"
             readOnly={readOnly} value={saved ? saved.websiteUrl ?? "" : website} onChange={(event) => setWebsite(event.target.value)}
             aria-invalid={Boolean(errors?.websiteUrl)} aria-describedby={errors?.websiteUrl ? "project-website-error" : undefined} />
@@ -35,7 +37,7 @@ export function ProjectForm({ initialLinks, needsRetry }: { initialLinks?: Proje
         <label htmlFor="project-github">GitHub repository URL</label>
         <div className="project-setup-input">
           <GitFork size={18} aria-hidden="true" />
-          <input id="project-github" name="githubUrl" inputMode="url" autoComplete="off"
+          <Input id="project-github" name="githubUrl" inputMode="url" autoComplete="off"
             autoCapitalize="none" spellCheck={false} maxLength={2048} placeholder="https://github.com/owner/repository"
             readOnly={readOnly} value={saved ? saved.githubUrl ?? "" : github} onChange={(event) => setGithub(event.target.value)}
             aria-invalid={Boolean(errors?.githubUrl)} aria-describedby={errors?.githubUrl ? "project-github-error" : undefined} />
@@ -44,11 +46,11 @@ export function ProjectForm({ initialLinks, needsRetry }: { initialLinks?: Proje
       </div>
       {state.message && <p className="project-setup-error" role="alert">{state.message}</p>}
       <div className="project-setup-actions">
-        <button type="submit" className="btn primary" disabled={pending}>
+        <Button type="submit" disabled={pending}>
           {pending ? "Sending to oma-agent…" : needsRetry || state.saved ? "Retry setup" : "Start setup"}
           <ArrowRight size={16} aria-hidden="true" />
-        </button>
-        <button type="submit" className="btn ghost" formAction={skipProjectSetup} formNoValidate disabled={pending}>Skip setup</button>
+        </Button>
+        <Button type="submit" variant="ghost" formAction={skipProjectSetup} formNoValidate disabled={pending}>Skip setup</Button>
       </div>
     </form>
   );

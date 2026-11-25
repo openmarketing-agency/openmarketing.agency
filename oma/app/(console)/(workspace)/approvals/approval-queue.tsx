@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowUpRight, ClipboardCheck, FileText, Mail, MessageSquare } from "lucide-react";
 import type { CampaignPublication, CampaignPublicationGroup } from "@/lib/server/agent-publications";
 import { PublicationApproval } from "./publication-approval";
+import { Button } from "@/components/ui/button";
 
 const platformLabels: Record<string, string> = {
   x: "X", twitter: "X", linkedin: "LinkedIn", discord: "Discord", facebook: "Facebook",
@@ -91,7 +92,7 @@ export function ApprovalQueue({ groups, selected, error }: {
     <div className="page-content approvals-page publication-queue">
       <header className="approvals-heading">
         <div><h1>Approvals</h1><p>Review the exact publication before queuing the campaign’s publisher.</p></div>
-        {selected && <Link href="/approvals" className="btn secondary">All campaigns</Link>}
+        {selected && <Button asChild variant="outline"><Link href="/approvals">All campaigns</Link></Button>}
       </header>
       {error && <p role="alert" className="form-error">{error}</p>}
       {hasItems && <p className="approvals-count"><ClipboardCheck size={17} aria-hidden="true" /> {pending} pending review</p>}
@@ -105,8 +106,8 @@ export function ApprovalQueue({ groups, selected, error }: {
           <div className="publication-list">
             {group.items.map((item) => <PublicationCard key={item.id} campaignId={group.id} publication={item} />)}
           </div>
-          {group.nextCursor && <Link className="btn secondary"
-            href={`/approvals?campaign=${group.id}&before=${group.nextCursor}`}>Older publications</Link>}
+          {group.nextCursor && <Button asChild variant="outline"><Link
+            href={`/approvals?campaign=${group.id}&before=${group.nextCursor}`}>Older publications</Link></Button>}
         </section>
       ))}
       {!error && !hasItems && <div className="approvals-empty">

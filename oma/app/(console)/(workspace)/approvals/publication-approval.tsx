@@ -4,6 +4,7 @@
 
 import { useActionState } from "react";
 import { approveCampaignPublicationAction } from "@/app/actions/workspace";
+import { Button } from "@/components/ui/button";
 
 export function PublicationApproval({ campaignId, publicationId, revision }: {
   campaignId: string;
@@ -19,9 +20,9 @@ export function PublicationApproval({ campaignId, publicationId, revision }: {
       <input type="hidden" name="revision" value={revision} />
       {result.error && <p role="alert" className="form-error">{result.error}</p>}
       {result.queued && <p role="status">Publisher queued.</p>}
-      <button className="btn primary" type="submit" disabled={pending || result.queued}>
+      <Button type="submit" disabled={pending || result.queued}>
         {pending ? "Approving…" : "Approve and queue"}
-      </button>
+      </Button>
     </form>
   );
 }

@@ -11,6 +11,7 @@
   background: var(--surface);
   color: var(--text);
 }
+.standalone-model-form select { padding-inline-end: 34px; }
 .standalone-model-form button { justify-self: start; min-height: 44px; }
 .standalone-model-hint { color: var(--muted); }
 .standalone-model-summary {

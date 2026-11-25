@@ -1,8 +1,11 @@
 "use client";
 import { useActionState, useState } from "react";
-import { ArrowRight, LoaderCircle } from "lucide-react";
+import { ArrowRight, CircleAlert, LoaderCircle } from "lucide-react";
 import { loginAction, type AuthFormState } from "@/app/actions/auth";
 import { PasswordField } from "@/components/password-field";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 export function LoginForm() {
   const [email, setEmail] = useState("");
   const [state, action, pending] = useActionState<AuthFormState, FormData>(
@@ -13,7 +16,7 @@ export function LoginForm() {
     <form action={action} className="auth-form" aria-busy={pending}>
       <div className="auth-field">
         <label htmlFor="email">Email address</label>
-        <input
+        <Input
           id="email"
           name="email"
           value={email}
@@ -26,11 +29,12 @@ export function LoginForm() {
       </div>
       <PasswordField />
       {state?.error && (
-        <p role="alert" className="form-error">
-          {state.error}
-        </p>
+        <Alert variant="destructive">
+          <CircleAlert aria-hidden="true" />
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
       )}
-      <button className="btn primary auth-submit" disabled={pending}>
+      <Button className="auth-submit" disabled={pending}>
         {pending ? (
           <>
             <LoaderCircle size={17} className="spin" aria-hidden="true" />
@@ -42,7 +46,7 @@ export function LoginForm() {
             <ArrowRight size={17} aria-hidden="true" />
           </>
         )}
-      </button>
+      </Button>
     </form>
   );
 }
