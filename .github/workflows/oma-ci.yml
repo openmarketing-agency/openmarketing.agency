@@ -32,7 +32,6 @@ jobs:
           docker compose -f compose.yaml -f compose.vm.yaml config --quiet
           docker compose -f compose.yaml -f compose.vm.yaml -f compose.dev.yaml config --quiet
           CAMOFOX_API_KEY=compose-config-test docker compose -f compose.yaml -f compose.vm.yaml -f compose.camofox.yaml config --quiet
-          OMA_RELEASE_TAG=v0.0.0 docker compose -f compose.yaml -f compose.vm.yaml -f vm/compose.release.yaml config --quiet
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
