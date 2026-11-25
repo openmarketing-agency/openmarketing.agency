@@ -3,7 +3,7 @@
 import type { AgentActivityUpdate } from "@/lib/agent-activity";
 
 const previewLength = 480;
-const frameLimit = 64 * 1024;
+const frameLimit = 1024 * 1024;
 const redaction = "[redacted]";
 
 function redact(value: string, key: string) {
@@ -29,13 +29,14 @@ function eventData(line: string): Record<string, unknown> | undefined {
   }
 }
 
-export function projectActivityEvents(source: ReadableStream<Uint8Array>, key: string): ReadableStream<Uint8Array> {
+export function projectActivityEvents(source: ReadableStream<Uint8Array>, key: string, mode: "preview" | "chat" = "preview"): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   let pending = "";
   let reply = "";
   let previous = "";
-  const replyLimit = previewLength + Math.max(key.length * 2, 1);
+  const display = mode === "chat" ? (text: string) => text.slice(0, 64 * 1024).trimEnd() : excerpt;
+  const replyLimit = (mode === "chat" ? 64 * 1024 : previewLength) + Math.max(key.length * 2, 1);
 
   return source.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
@@ -47,7 +48,7 @@ export function projectActivityEvents(source: ReadableStream<Uint8Array>, key: s
         const event = eventData(line);
         let update: AgentActivityUpdate;
         if (event?.event === "message.interim" && typeof event.text === "string") {
-          const message = previewAgentMessage(event.text, key);
+          const message = display(redact(event.text, key));
           if (!message) continue;
           reply = "";
           update = { phase: "update", message };
@@ -56,15 +57,25 @@ export function projectActivityEvents(source: ReadableStream<Uint8Array>, key: s
           const safe = redact(reply, key);
           // Hold enough trailing text to catch the gateway key even when it spans multiple deltas.
           const stable = key.length > 1 ? safe.slice(0, -(key.length - 1)) : safe;
-          const message = excerpt(stable);
+          const message = display(stable);
           update = { phase: "writing", ...(message ? { message } : {}) };
         } else if (event?.event === "run.completed" && typeof event.output === "string") {
-          const message = previewAgentMessage(event.output, key);
+          const message = display(redact(event.output, key));
           if (!message) continue;
           update = { phase: "update", message };
+        } else if (mode === "chat" && (event?.event === "subagent.start" || event?.event === "subagent.complete")) {
+          const id = typeof event.subagent_id === "string" ? event.subagent_id : event.child_session_id ?? event.task_index;
+          if ((typeof id !== "string" && typeof id !== "number") || !/^[\w.-]{1,128}$/.test(String(id)) || String(id).includes(key)) continue;
+          const status = event.event === "subagent.start" ? "started"
+            : ["completed", "done", "success"].includes(String(event.status)) ? "completed"
+              : ["cancelled", "interrupted", "stopped"].includes(String(event.status)) ? "stopped" : "failed";
+          const goal = event.goal ?? event.preview;
+          const label = status === "started" && typeof goal === "string" ? previewAgentMessage(goal, key) : undefined;
+          update = { phase: "delegation", child: { id: String(id), status, ...(label ? { label } : {}) } };
         } else {
           continue;
         }
+        if (mode === "chat" && typeof event?.seq === "number" && Number.isSafeInteger(event.seq)) update.seq = event.seq;
         const data = JSON.stringify(update);
         if (data !== previous) {
           previous = data;

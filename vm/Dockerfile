@@ -44,6 +44,9 @@ COPY --from=omactl-package /tmp/omactl/LICENSE /opt/omactl/LICENSE
 COPY vm/bootstrap.py vm/campaign_activity.py vm/register_campaign_suggestions.py vm/start.sh vm/sync_standalone.py vm/workspace.py /opt/oma/
 RUN /opt/hermes/.venv/bin/python /opt/oma/register_campaign_suggestions.py \
     /opt/hermes/hermes_cli/oma_campaigns/schemas/campaign.schema.json
+COPY vm/oma_chat_delivery.py /opt/hermes/gateway/oma_chat_delivery.py
+COPY vm/install_chat_delivery.py /opt/oma/install_chat_delivery.py
+RUN /opt/hermes/.venv/bin/python /opt/oma/install_chat_delivery.py /opt/hermes
 
 ARG OMA_AGENT_IMAGE
 ARG OMACTL_TAG=v0.1.0

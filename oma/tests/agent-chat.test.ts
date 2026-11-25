@@ -337,6 +337,25 @@ test("streams only public assistant text for the owner and redacts a credential 
   assert.doesNotMatch(rendered, /fixture|internal thinking|sensitive command|private approval|run_progress/);
 });
 
+test("chat projects public subagent lifecycle and complete reply text without tool payloads", async () => {
+  const { projectActivityEvents } = await import("../lib/server/agent-activity-events");
+  const events = [
+    { seq: 4, event: "subagent.start", subagent_id: "child-one", goal: "Check docs" },
+    { seq: 5, event: "tool.started", args: { secret: "invisible" } },
+    { seq: 6, event: "subagent.complete", subagent_id: "child-one", status: "error", result: "invisible" },
+    { seq: 7, event: "run.completed", output: "A".repeat(600) + "\nSecond line" },
+  ];
+  const source = new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")).body!;
+  const result = await new Response(projectActivityEvents(source, key, "chat")).text();
+  const updates = result.split("\n").filter((line) => line.startsWith("data:")).map((line) => JSON.parse(line.slice(5)));
+  assert.deepEqual(updates.slice(0, 2), [
+    { phase: "delegation", seq: 4, child: { id: "child-one", status: "started", label: "Check docs" } },
+    { phase: "delegation", seq: 6, child: { id: "child-one", status: "failed" } },
+  ]);
+  assert.equal(updates[2]?.message, events[3].output);
+  assert.doesNotMatch(result, /invisible/);
+});
+
 test("reads aggregate activity from protected detailed health with the configured profile prefix", async (t) => {
   useGateway(t);
   let valid = true;
