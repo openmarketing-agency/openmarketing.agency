@@ -914,7 +914,8 @@ def campaign_analytics(root, campaign_id, action="", query=""):
 def generate_analytics(root, request):
     sections = {"tasks", "timeline", "schedules", "publications"}
     required = {"scope", "targetId", "campaignIds", "prompt"}
-    if (not isinstance(request, dict) or not required <= request.keys() <= required | {"snapshot"}
+    if (not isinstance(request, dict) or not required <= request.keys() <= required | {"snapshot", "observationContext"}
+            or {"snapshot", "observationContext"} <= request.keys()
             or request["scope"] != "campaigns"
             or not valid_id(request["targetId"])
             or not isinstance(request["prompt"], str) or not 0 < len(request["prompt"]) <= 32_768):
@@ -923,8 +924,18 @@ def generate_analytics(root, request):
     target_id = request["targetId"]
     if request["campaignIds"] != [target_id]:
         raise WorkspaceError(422, "Check the analytics campaign ID.")
-    # Previous consoles supply a snapshot. New layouts use a stable query contract.
-    if "snapshot" in request:
+    if "observationContext" in request:
+        context = request["observationContext"]
+        if (not isinstance(context, dict) or context.get("campaign_id") != target_id
+                or not isinstance(context.get("observations"), list)
+                or not isinstance(context.get("measurement_fields"), list)
+                or len(context["observations"]) > 100 or len(context["measurement_fields"]) > 32):
+            raise WorkspaceError(422, "Check the campaign observation context.")
+        data = json.dumps(context, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        if len(data.encode("utf-8")) > 36 * 1024:
+            raise WorkspaceError(422, "The campaign observation context is too large.")
+        user_message = "Generate the campaign analytics dashboard using the live query and this JSON sample.\n\n" + data
+    elif "snapshot" in request:
         snapshot = request["snapshot"]
         if (not isinstance(snapshot, dict) or snapshot.keys() != sections | {"updatedAt", "campaignCount"}
                 or type(snapshot["campaignCount"]) is not int or snapshot["campaignCount"] != 1):

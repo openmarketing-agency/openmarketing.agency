@@ -71,7 +71,7 @@ export function WorkspaceAnalytics({ id }: { id: string }) {
     setActionError("");
     setSubmitting(true);
     try {
-      setView(await requestAnalytics<AnalyticsView>(path, {
+      setView(await requestAnalytics<AnalyticsView>(view?.report ? path + "?regenerate=1" : path, {
         method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(190_000),
       }));
       setReadError("");
@@ -84,10 +84,10 @@ export function WorkspaceAnalytics({ id }: { id: string }) {
 
   const report = view?.report;
   const busy = submitting || Boolean(view?.generating);
-  const generateButton = view && !report && (
-    <Button type="button" disabled={busy} onClick={generate}>
+  const generateButton = view && (
+    <Button type="button" variant={report ? "outline" : "default"} disabled={busy} onClick={generate}>
       <Sparkles size={16} aria-hidden="true" />
-      {busy ? "Generating…" : "Generate dashboard"}
+      {busy ? "Generating…" : report ? "Regenerate dashboard" : "Generate dashboard"}
     </Button>
   );
 
@@ -129,6 +129,7 @@ export function WorkspaceAnalytics({ id }: { id: string }) {
       {report && (
         <>
           <OpenUIAnalytics
+            key={report.generatedAt}
             source={report.dataSource === "observations" ? report.source : observationDashboard}
             path={path}
             collectorPath={`/api/campaigns/${id}/analytics`}

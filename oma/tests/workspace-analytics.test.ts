@@ -1,4 +1,4 @@
-/** Exercises live analytics aggregation, immutable SQLite layouts, and live observation binding. */
+/** Exercises live analytics aggregation, saved SQLite layouts, and live observation binding. */
 
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { createParser, evaluateRoot, type LibrarySpec } from "@openuidev/lang-core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -15,9 +16,9 @@ import { getDb, sqliteSchemaVersion } from "../lib/db";
 import { analyticsLibrary } from "../lib/analytics-library";
 import spec from "../lib/server/analytics-library.spec.json";
 import { validateAnalyticsProgram } from "../lib/server/analytics-program";
-import { generateAnalytics, queryLegacyAnalytics, readAnalytics, requireAnalyticsCampaign } from "../lib/server/analytics";
+import { generateAnalytics, queryAnalytics, queryLegacyAnalytics, readAnalytics, requireAnalyticsCampaign } from "../lib/server/analytics";
 import { analyticsQueryResult, summarizeAnalytics } from "../lib/server/analytics-data";
-import { queryCampaignObservations } from "../lib/server/campaign-observations";
+import type { MeasurementField } from "../lib/server/campaign-observations";
 import { observationDashboard } from "../lib/observation-dashboard";
 import type { CampaignProgressSnapshot } from "../lib/server/campaign-progress";
 
@@ -61,15 +62,44 @@ test("analytics counts only observed sources and task completions in the UTC win
 
 test("the OpenUI renderer and server share a spec and accept only live read-only programs", () => {
   assert.deepEqual(JSON.parse(JSON.stringify(analyticsLibrary.toSpec())), spec);
-  assert.equal(validateAnalyticsProgram(observationDashboard), observationDashboard);
+  assert.deepEqual(validateAnalyticsProgram(observationDashboard), { source: observationDashboard, measurementFields: [] });
   assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("campaign_observations", "unavailable_tool")));
   assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("{dateRange: $dateRange}", '{dateRange: $dateRange, campaignId: "other"}')));
-  assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("activity.sources.counts", "[10, 30]")), /bind displayed values/i);
+  assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("activity.sources.counts", "[10, 30]")), /bind the chart labels and values/i);
   assert.throws(() => validateAnalyticsProgram(observationDashboard + '\nchange = Mutation("write", {})'));
   assert.throws(() => validateAnalyticsProgram(observationDashboard.replace('Column("Source", activity.observations.source, "primary")',
     'Column("Source", activity.observations.source, "link")')), /columns/i);
   assert.throws(() => validateAnalyticsProgram(observationDashboard.replace('activity.observations.value, "text"',
     'activity.observations.value, "number"')), /columns/i);
+});
+
+function measurementDashboard(id: string, pageId?: string) {
+  const field = `activity.measurements.${id}`;
+  const chart = observationDashboard.replace('Kpi("Observations shown", activity.sources.total, "number")',
+    `Kpi("Latest clicks", ${field}.latest, "number")`)
+    .replace(/Card\("Observations by source"[^\n]+/,
+      `Card("Clicks by period", [Bars(${field}.labels, [Series("Clicks", ${field}.values)], "number")], "full", ${field}.note)], 320)`);
+  if (!pageId) return chart;
+  const page = `activity.measurements.${pageId}`;
+  return chart.replace("[summary, coverage, records]", "[summary, coverage, pages, records]") +
+    `\npages = Row([Card("First saved page", [Table([Column("Period", ${page}.labels, "primary"), Column("Page", ${page}.display, "text")])], "full", ${page}.note)])`;
+}
+
+test("OpenUI uses only offered measurements with matching chart labels and values", () => {
+  const field = { id: "m1111111111111111", source: "search", account: "website", metric: "search",
+    unit: "count", numeric: true, path: ["totals", "clicks"] };
+  const other = { ...field, id: "m2222222222222222", path: ["totals", "impressions"] };
+  const source = measurementDashboard(field.id);
+  assert.deepEqual(validateAnalyticsProgram(source, [field, other]), { source, measurementFields: [field] });
+  assert.throws(() => validateAnalyticsProgram(source, []), /bind displayed values/i);
+  assert.throws(() => validateAnalyticsProgram(source, [{ ...field, numeric: false }]), /bind displayed values/i);
+  assert.throws(() => validateAnalyticsProgram(source.replace(`${field.id}.values`, `${other.id}.values`), [field, other]), /same query dataset/);
+  assert.throws(() => validateAnalyticsProgram(observationDashboard, [field]), /show actual values/i);
+  const text = observationDashboard.replace(/Card\("Observations by source"[^\n]+/,
+    `Card("Variant", [Table([Column("Period", activity.measurements.${field.id}.labels, "primary"), Column("Variant", activity.measurements.${field.id}.display, "text")])], "full", activity.measurements.${field.id}.note)], 320)`);
+  const textField = { ...field, numeric: false, path: ["variant"] };
+  assert.deepEqual(validateAnalyticsProgram(text, [textField]).measurementFields, [textField]);
+  assert.throws(() => validateAnalyticsProgram(text.replace(`${field.id}.labels`, `${other.id}.labels`), [textField, other]), /same measurement ID/);
 });
 
 test("generation details show the saved inputs and escape agent-generated source", () => {
@@ -116,11 +146,14 @@ test("generation saves the layout once and reads revised observations from the s
     name: "Campaign", description: "", version: "", orchestrator: "", agentIds: [],
     goals: [], plans: [], board: "", playbookId: "strategy",
   };
-  const source = observationDashboard;
+  let source = observationDashboard;
   let taskCount = 1;
   let sent: Record<string, unknown> = {};
+  let measurement: MeasurementField;
+  let pageField: MeasurementField;
   let userMessage = "";
-  let recordedValue = 12;
+  const rawValue = (clicks?: number) => ({ totals: { clicks, impressions: 250 }, rows: [{ "page/path": "/pricing", clicks: 2 }], active: false, rate: null });
+  let recordedValue: ReturnType<typeof rawValue> | null = rawValue(12);
   let invalid = 1;
   const started = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
@@ -140,15 +173,16 @@ test("generation saves the layout once and reads revised observations from the s
       }));
     } else if (request.url === "/workspace/campaigns/seo/publications?limit=6") {
       response.end(JSON.stringify({ campaign_id: "seo", publications: [] }));
-    } else if (request.url?.startsWith("/workspace/campaigns/seo/analytics?")) {
+    } else if (request.url?.match(/^\/workspace\/campaigns\/(seo|other)\/analytics\?/)) {
       const filters = new URL(request.url, "http://localhost").searchParams;
-      assert.equal(filters.get("start"), "2026-11-18T00:00:00.000Z");
+      const id = request.url.split("/")[3];
+      assert.ok(["2026-11-18T00:00:00.000Z", "2026-10-28T00:00:00.000Z"].includes(filters.get("start") ?? ""));
       assert.equal(filters.get("end"), "2026-11-25T00:00:00.000Z");
       assert.equal(filters.get("limit"), "100");
       response.end(JSON.stringify({
-        campaign_id: "seo",
-        observations: recordedValue ? [{
-          id: 1, source: "google-search-console", metric: "clicks", account: "sc-domain:example.test",
+        campaign_id: id,
+        observations: recordedValue && id === "seo" ? [{
+          id: 1, source: "google-search-console", metric: "search_performance", account: "sc-domain:example.test",
           value: recordedValue, unit: "count", dimensions: { country: "NP" },
           period_start: "2026-11-23T00:00:00.000000+00:00", period_end: "2026-11-24T00:00:00.000000+00:00",
           collected_at: "2026-11-24T10:00:00.000000+00:00",
@@ -160,10 +194,18 @@ test("generation saves the layout once and reads revised observations from the s
       for await (const chunk of request) body += chunk;
       assert.equal(request.headers["x-oma-analytics-details"], "1");
       sent = JSON.parse(body);
-      userMessage = "Generate the campaign analytics dashboard using the documented live query.\n\nCampaign ID: " + sent.targetId;
+      const context = sent.observationContext as { observations: { value: unknown }[]; measurement_fields: MeasurementField[] };
+      const clicks = context.measurement_fields.find((field) => field.path.join(".") === "totals.clicks");
+      const page = context.measurement_fields.find((field) => field.path.join(".") === "rows.0.page/path");
+      if (clicks && page) {
+        measurement = clicks;
+        pageField = page;
+        source = measurementDashboard(clicks.id, page.id);
+      }
+      userMessage = `Generate the campaign analytics dashboard.\n\n${JSON.stringify(context)}\n\nCampaign ID: ${sent.targetId}`;
       started.resolve();
       await release.promise;
-      const output = invalid-- > 0 ? "incomplete program" : source;
+      const output = invalid-- > 0 ? sent.targetId === "seo" && recordedValue ? observationDashboard : "incomplete program" : source;
       response.end(JSON.stringify({ source: output, userMessage }));
     } else {
       response.writeHead(404).end(JSON.stringify({ message: "Not found" }));
@@ -207,30 +249,59 @@ test("generation saves the layout once and reads revised observations from the s
   assert.equal(sent.scope, "campaigns");
   assert.match(String(sent.prompt), /OpenUI Lang/);
   assert.equal(sent.snapshot, undefined);
-  assert.match(String(sent.prompt), /Correct the following validation issue/);
+  assert.match(String(sent.prompt), /Show actual values/);
+  const [sample] = JSON.parse(userMessage.split("\n\n")[1]).observations;
+  assert.deepEqual(sample.value, rawValue(12));
+  assert.deepEqual(sample.dimensions, { country: "NP" });
   assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 2);
-  assert.ok(!paths.some((path) => path.startsWith("/workspace/campaigns/seo/")));
+  assert.equal(paths.filter((path) => path.startsWith("/workspace/campaigns/seo/analytics?start=2026-10-28")).length, 1);
   assert.doesNotMatch(JSON.stringify(sent), /Private brief|Private job/);
   assert.equal(readAnalytics({ ...key, userId: "other-id" }).report, null);
   assert.equal(readAnalytics({ ...key, id: "other" }).report, null);
 
-  const firstData = await queryCampaignObservations(key.id, "7d");
-  assert.deepEqual(firstData.observations.value, ["12 count"]);
+  const firstData = await queryAnalytics(key, "7d");
+  const measurementId = measurement!.id;
+  const pageId = pageField!.id;
+  assert.deepEqual(firstData.observations.value, [`${JSON.stringify(rawValue(12))} count`]);
   assert.deepEqual(firstData.observations.dimensions, ['{"country":"NP"}']);
   assert.deepEqual(firstData.sources.labels, ["Google Search Console"]);
+  assert.deepEqual(Object.keys(firstData.measurements), [measurementId, pageId]);
+  assert.deepEqual(firstData.measurements[measurementId].values, [12]);
+  assert.match(firstData.measurements[measurementId].labels[0], /2026-11-23.*NP/);
+  assert.equal(firstData.measurements[measurementId].latest, 12);
+  assert.deepEqual(firstData.measurements[pageId].display, ["/pricing"]);
 
-  recordedValue = 26;
-  const updated = await queryCampaignObservations(key.id, "7d");
-  assert.deepEqual(updated.observations.value, ["26 count"]);
+  const library = spec as LibrarySpec;
+  const program = createParser(library.schema!, library.root).parse(source);
+  const evaluated = evaluateRoot(program, {
+    ctx: { getState: () => "7d", resolveRef: (name) => name === "activity" ? firstData : null },
+    library: analyticsLibrary, store: null,
+  });
+  const rendered = JSON.stringify(evaluated);
+  assert.match(rendered, /"label":"Latest clicks","value":12/);
+  assert.match(rendered, /"name":"Clicks","values":\[12\]/);
+  assert.match(rendered, /"label":"Page","values":\["\/pricing"\]/);
+
+  recordedValue = rawValue(0);
+  const updated = await queryAnalytics(key, "28d");
+  assert.deepEqual(updated.measurements[measurementId].values, [0]);
+  assert.equal(updated.measurements[measurementId].latest, 0);
   assert.deepEqual(updated.sources, firstData.sources);
   assert.deepEqual(readAnalytics(key), saved);
   assert.deepEqual(await generateAnalytics(key), saved);
   assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 2);
 
-  recordedValue = 0;
-  const empty = await queryCampaignObservations(key.id, "7d");
+  recordedValue = rawValue();
+  const missing = await queryAnalytics(key, "7d");
+  assert.deepEqual(missing.measurements[measurementId].values, [null]);
+  assert.equal(missing.measurements[measurementId].latest, null);
+
+  recordedValue = null;
+  const empty = await queryAnalytics(key, "7d");
   assert.deepEqual(empty.observations.value, []);
   assert.equal(empty.observations.note, "No saved observations in this period.");
+  assert.deepEqual(empty.measurements[measurementId].values, []);
+  assert.equal(empty.measurements[measurementId].latest, null);
 
   const otherKey = { ...key, id: "other" };
   invalid = 2;
@@ -246,4 +317,12 @@ test("generation saves the layout once and reads revised observations from the s
   assert.deepEqual(readAnalytics(otherKey), legacy);
   assert.deepEqual(await generateAnalytics(otherKey), legacy);
   assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 4);
+
+  invalid = 2;
+  await assert.rejects(generateAnalytics(key, true), { status: 502 });
+  assert.deepEqual(readAnalytics(key), saved);
+  recordedValue = rawValue(18);
+  const regenerated = await generateAnalytics(key, true);
+  assert.notDeepEqual(regenerated.report?.generation, saved.report?.generation);
+  assert.equal((await queryAnalytics(key, "7d")).measurements[measurementId].latest, 18);
 });
