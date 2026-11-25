@@ -45,6 +45,7 @@ export function ProjectForm({ initialLinks, needsRetry }: { initialLinks?: Proje
         {errors?.githubUrl && <p className="project-setup-error" id="project-github-error" role="alert">{errors.githubUrl}</p>}
       </div>
       {state.message && <p className="project-setup-error" role="alert">{state.message}</p>}
+      {pending && <p role="status">Saving your links and starting project setup. Progress will appear in Chat.</p>}
       <div className="project-setup-actions">
         <Button type="submit" disabled={pending}>
           {pending ? "Sending to oma-agent…" : needsRetry || state.saved ? "Retry setup" : "Start setup"}

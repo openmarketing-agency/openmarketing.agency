@@ -91,6 +91,11 @@ try {
   await assertPage("/dashboard", 'href="/tasks"', headers);
   await assertPage("/dashboard", 'aria-label="Open navigation"', headers);
   await assertPage("/dashboard", 'aria-controls="workspace-conversation"', headers);
+  await assertPage("/dashboard?setup=1", 'data-chat-open="true"', headers);
+  await assertPage("/dashboard?setup=1", 'id="project-setup-activity"', headers);
+  const chatActivity = "/api/chat/activity?thread=" + randomUUID();
+  assert.ok([307, 401].includes((await request(chatActivity)).status));
+  assert.equal((await request("/api/chat/activity?thread=invalid", { headers })).status, 422);
   await assertPage("/tasks", "Tasks unavailable", headers);
   await assertPage("/campaigns/fixture?view=deploy", "Campaign chat", headers);
   const lifecyclePath = "/api/campaigns/fixture/lifecycle";

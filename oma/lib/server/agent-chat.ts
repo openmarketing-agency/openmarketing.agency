@@ -216,6 +216,27 @@ export async function readAgentSessionApi(path: string) {
   };
 }
 
+const sessionActivitySchema = z.object({
+  run_id: runId.nullable(),
+  delegations: z.array(z.object({ id: z.string().regex(/^[\w.-]{1,128}$/), status: z.enum(["running", "stalling", "finalizing"]), task_count: z.number().int().positive() })).max(64),
+});
+
+/** The caller must resolve the session in the signed-in user's namespace first. */
+export async function readAgentSessionActivity(userId: string, sessionId: string, scope: ProfileScope = "default") {
+  const config = await gateway(scope);
+  try {
+    const api = { ...config, baseUrl: config.baseUrl.slice(0, -"/v1".length) };
+    const parsed = sessionActivitySchema.safeParse(await readJson(await sendRequest(api,
+      "/api/sessions/" + encodeURIComponent(sessionId) + "/oma-activity")));
+    if (!parsed.success) throw new AgentChatError(502, "oma-agent returned invalid session activity.");
+    const { run_id, delegations } = parsed.data;
+    return { handle: run_id ? run_id + "." + signature(userId, config, run_id) : null, delegations };
+  } catch (error) {
+    if (error instanceof AgentChatError && error.status === 404) return { handle: null, delegations: [] };
+    throw error;
+  }
+}
+
 export async function agentStatus(scope?: ProfileScope): Promise<AgentStatus> {
   try {
     const response = await sendRequest(await gateway(scope), "/models");
@@ -348,8 +369,8 @@ export async function getAgentRunProgress(userId: string, handle: unknown): Prom
 }
 
 /** Stream only the user-visible progress of a Run handle owned by this account. */
-export async function streamAgentRunActivity(userId: string, handle: unknown, signal: AbortSignal) {
-  const config = await gateway();
+export async function streamAgentRunActivity(userId: string, handle: unknown, signal: AbortSignal, scope?: ProfileScope, mode?: "preview" | "chat") {
+  const config = await gateway(scope);
   const id = readHandle(userId, config, handle);
   const streamSignal = AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
   const response = await sendRequest(config, "/runs/" + id + "/events", { streamSignal });
@@ -357,7 +378,7 @@ export async function streamAgentRunActivity(userId: string, handle: unknown, si
     await response.body?.cancel();
     throw new AgentChatError(502, "oma-agent didn’t return a run event stream.");
   }
-  return projectActivityEvents(response.body, config.key);
+  return projectActivityEvents(response.body, config.key, mode);
 }
 
 export async function answerAgentPrompt(userId: string, handle: unknown, prompt: unknown, scope?: ProfileScope) {

@@ -10,7 +10,8 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 
 import { getDb } from "../lib/db";
-import { loadChatHistory, loadOlderChatMessages, sendNativeChatTurn } from "../lib/server/chat-history";
+import { getAgentRun } from "../lib/server/agent-chat";
+import { loadChatHistory, loadOlderChatMessages, readChatSession, sendNativeChatTurn } from "../lib/server/chat-history";
 
 test("Hermes supplies history and owns new conversations while retired SQLite links stay read-only", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "oma-native-chat-"));
@@ -82,6 +83,11 @@ test("Hermes supplies history and owns new conversations while retired SQLite li
       const entries = Array.from(saved, ([id, { title }]) => ({ id, title }));
       return Response.json({ data: offset === "0" ? entries.slice(0, 2) : entries.slice(2), has_more: offset === "0" });
     }
+    if (endpoint.pathname.endsWith("/oma-activity")) {
+      const session = endpoint.pathname.split("/").at(-2)!;
+      if (!saved.has(session)) return Response.json({}, { status: 404 });
+      return Response.json({ run_id: "run_fixture", delegations: [{ id: "deleg_a", status: "running", task_count: 2 }] });
+    }
     assert.match(endpoint.pathname, /\/api\/sessions\/[^/]+\/messages$/);
     assert.equal(endpoint.searchParams.get("order"), "latest");
     assert.equal(endpoint.searchParams.get("include_compacted"), "true");
@@ -98,6 +104,10 @@ test("Hermes supplies history and owns new conversations while retired SQLite li
       { id: 2, role: "assistant", content: "Agent answer fixture-gateway-key", reasoning: "Private reasoning" },
       { id: 3, role: "assistant", content: "Private prompt", display_kind: "hidden" },
       { id: 4, role: "tool", content: "Private tool output" },
+      ...(entry.text.startsWith("Current launch") ? [
+        { id: 6, role: "user", display_kind: "async_delegation_complete", content: "Research finished" },
+        { id: 7, role: "assistant", display_kind: "commentary", content: "I’ll review the findings.", tool_calls: [{}] },
+      ] : []),
     ];
     return Response.json({ data });
   });
@@ -112,11 +122,23 @@ test("Hermes supplies history and owns new conversations while retired SQLite li
   assert.notEqual(requests[0].session, requests[2].session);
   const launch = await loadChatHistory(owner, "launch", threadId);
   assert.deepEqual(launch.chats.map(({ id }) => id), [oldThread, threadId]);
-  assert.deepEqual(launch.active?.messages.map(({ text }) => text), ["Current launch", "Focus on replies", "Agent answer [redacted]"]);
+  assert.deepEqual(launch.active?.messages.map(({ text, role }) => [role, text]), [
+    ["user", "Current launch"], ["user", "Focus on replies"], ["assistant", "Agent answer [redacted]"],
+    ["notification", "Research finished"], ["assistant", "I’ll review the findings."],
+  ]);
   assert.ok(requests.some(({ endpoint }) => endpoint === "sessions 200"));
   assert.deepEqual((await loadChatHistory(owner)).chats.map(({ id }) => id), [threadId]);
   assert.deepEqual((await loadChatHistory(owner, "reviews", threadId)).active?.messages, []);
   assert.deepEqual((await loadChatHistory("another-account", "launch", threadId)).chats, []);
+  const activity = await readChatSession(owner, threadId, "launch");
+  assert.match(activity.handle ?? "", /^run_fixture\.[\w-]+$/);
+  assert.deepEqual(activity.delegations, [{ id: "deleg_a", status: "running", task_count: 2 }]);
+  assert.ok(activity.messages.some(({ role }) => role === "notification"));
+  await assert.rejects(getAgentRun("another-account", activity.handle, "default"), { status: 404 });
+  assert.deepEqual(await readChatSession("another-account", threadId, "launch"), {
+    messages: [], nextOffset: null, handle: null, delegations: [],
+  });
+  assert.equal((await readChatSession(owner, threadId, "reviews")).handle, null);
 
   const older = await loadOlderChatMessages(owner, oldThread, 0, "launch");
   assert.equal(older.messages[0].text, "Agent-owned older answer");

@@ -33,8 +33,10 @@ export function ConsoleShell(props: ConsoleProps) {
 
 function PathAwareConsole(props: ConsoleProps) {
   const pathname = usePathname();
-  const chat = useSearchParams().get("chat");
-  return <ConsoleFrame {...props} pathname={pathname} selectedChat={pathname.startsWith("/campaigns/") ? null : chat} chatLinked={Boolean(chat)} />;
+  const params = useSearchParams();
+  const chat = params.get("chat");
+  const showSetup = pathname === "/dashboard" && params.get("setup") === "1";
+  return <ConsoleFrame {...props} pathname={pathname} selectedChat={pathname.startsWith("/campaigns/") ? null : chat} chatLinked={Boolean(chat) || showSetup} />;
 }
 
 function SignOut() {

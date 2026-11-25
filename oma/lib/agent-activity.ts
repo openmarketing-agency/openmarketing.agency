@@ -19,7 +19,7 @@ export type AgentActivity = {
   setup: AgentRunProgress | { status: "not_sent" | "unavailable" | "connection_lost" } | null;
 };
 
-export type AgentActivityUpdate = {
-  phase: "writing" | "update";
-  message?: string;
-};
+export type AgentActivityUpdate = { seq?: number } & (
+  | { phase: "writing" | "update"; message?: string }
+  | { phase: "delegation"; message?: never; child: { id: string; status: "started" | "completed" | "failed" | "stopped"; label?: string } }
+);

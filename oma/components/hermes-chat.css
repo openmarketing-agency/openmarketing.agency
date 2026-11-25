@@ -94,6 +94,10 @@
   align-self: flex-end;
   background: var(--accent-soft);
 }
+.runtime-message.from-notification {
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
 .runtime-message strong { font-size: 12px; }
 .runtime-message p {
   color: var(--text);

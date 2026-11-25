@@ -1,4 +1,4 @@
-/** Displays Hermes-native history and keeps in-progress run handles in the current browser tab. */
+/** Displays Hermes-native history, live replies, and session-scoped notifications. */
 
 "use client";
 
@@ -11,6 +11,7 @@ import { maxChatMessageLength, type ActiveAgentRun, type AgentStatus, type ChatH
 import type { CampaignChanges } from "@/lib/server/agent-workspace";
 import { AgentActivity } from "./agent-activity";
 import { ChatProgress } from "./chat-progress";
+import { useChatRunEvents, useChatSessionActivity } from "./chat-session-activity";
 import { HermesPrompt } from "./hermes-prompt";
 import "./hermes-chat.css";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +102,9 @@ export function HermesChat({
   const transcript = useRef<HTMLDivElement>(null);
   const scrollDistanceFromEnd = useRef<number | undefined>(undefined);
   const thread = useRef(history.active?.id);
+  const [threadId, setThreadId] = useState(history.active?.id);
+  const [finishedHandle, setFinishedHandle] = useState<string>();
+  const { snapshot, unavailable } = useChatSessionActivity(threadId, campaignId, status.ready);
   const storageKey = history.active ? runKey(history.active.id, campaignId) : undefined;
   const storedHandle = useSyncExternalStore(subscribeToTab, () => runInTab(storageKey), () => null);
   const handedOffDraft = useSyncExternalStore(subscribeToTab, () => draftInTab(storageKey), () => "");
@@ -113,11 +117,15 @@ export function HermesChat({
     setDraft(next);
     if (key && next !== current) handOffDraft(key, "");
   }, [campaignId]);
-  const handle = currentHandle === undefined ? storedHandle : currentHandle;
+  const candidate = currentHandle ?? snapshot?.handle ?? (currentHandle === undefined ? storedHandle : null);
+  const handle = candidate !== finishedHandle ? candidate : null;
+  const feed = useChatRunEvents(handle);
+  const live = handle && feed?.handle === handle ? feed : undefined;
+  const backgroundCount = snapshot?.delegations.reduce((count, item) => count + item.task_count, 0) ?? 0;
   const prompt = run?.prompt;
   const canSend = status.ready && !navigating && !sending && !steering && (Boolean(handle) || !pending);
-  const offset = nextOffset === undefined ? history.active?.nextOffset : nextOffset;
-  const recent = history.active?.messages;
+  const offset = nextOffset === undefined ? (snapshot ? snapshot.nextOffset : history.active?.nextOffset) : nextOffset;
+  const recent = snapshot?.messages ?? history.active?.messages;
   const recentIds = new Set(recent?.map(({ id }) => id));
   const messages = [...older.filter(({ id }) => !recentIds.has(id)), ...(recent ?? [])];
 
@@ -127,7 +135,7 @@ export function HermesChat({
       log.scrollTop = log.scrollHeight - (scrollDistanceFromEnd.current ?? 0);
       scrollDistanceFromEnd.current = undefined;
     }
-  }, [older, recent, pending, prompt, guidance]);
+  }, [older, recent, pending, prompt, guidance, live]);
 
   useEffect(() => {
     if (!handle || !status.ready) return;
@@ -172,6 +180,7 @@ export function HermesChat({
         if (key) rememberRun(key, null);
         if (cancelled) return;
         campaignSnapshot.current = undefined;
+        setFinishedHandle(run);
         setCurrentHandle(null);
         setPending(undefined);
         const pendingSteer = result.ok && result.data.status !== "running" ? result.data.pendingSteer : undefined;
@@ -237,6 +246,7 @@ export function HermesChat({
     }
     thread.current ??= crypto.randomUUID();
     const threadId = thread.current;
+    setThreadId(threadId);
     if (!history.active) {
       const url = new URL(window.location.href);
       url.searchParams.set("chat", threadId);
@@ -328,19 +338,30 @@ export function HermesChat({
           </div>
         )}
         {messages.map(({ id, role, text }) => (
-          <div key={id} className={role === "user" ? "runtime-message from-user" : "runtime-message"}>
-            <strong>{role === "user" ? "You" : "oma-agent"}</strong><p>{text}</p>
+          <div key={id} className={"runtime-message" + (role === "user" ? " from-user" : role === "notification" ? " from-notification" : "")}>
+            <strong>{role === "user" ? "You" : role === "notification" ? "Hermes notification" : "oma-agent"}</strong><p>{text}</p>
           </div>
         ))}
-        {pending && <div className="runtime-message from-user"><strong>You</strong><p>{pending.text}</p></div>}
+        {pending && messages.findLast(({ role }) => role === "user")?.text !== pending.text &&
+          <div className="runtime-message from-user"><strong>You</strong><p>{pending.text}</p></div>}
         {guidance.filter((item) => item.handle === handle).map(({ id, text }) => (
           <div key={id} className="runtime-message from-user"><strong>You</strong><p>{text}</p></div>
         ))}
+        {live?.updates.map(({ message, seq }, index) => message && !messages.some(({ text }) => text === message) &&
+          <div key={seq ?? index} className="runtime-message"><strong>oma-agent</strong><p>{message}</p></div>)}
+        {live?.children.map(({ id, status, label }) => <div key={id} className="runtime-message from-notification">
+          <strong>Subagent {status}</strong>{label && <p>{label}</p>}
+        </div>)}
       </div>
       {syncStatus ? <div className="runtime-progress">
         <p className="runtime-progress-state" role="status">{syncStatus}</p>
       </div> : status.ready && (sending || handle) &&
         <ChatProgress run={run} sending={sending} reconnecting={!!handle && !!error} />}
+      {backgroundCount > 0 && <p className="runtime-progress" role="status">
+        {backgroundCount} background {backgroundCount === 1 ? "task" : "tasks"} running.
+        {!handle && " This chat will resume when the results arrive."}
+      </p>}
+      {unavailable && !error && <p className="runtime-progress" role="status">Couldn’t refresh session activity.</p>}
       {(error || history.error) && <p className="form-error chat-error" role="alert">{error || history.error}</p>}
       {guidanceError && <p className="form-error chat-error" role="status">{guidanceError}</p>}
       {!status.ready ? (
