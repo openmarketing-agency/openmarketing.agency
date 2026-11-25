@@ -32,7 +32,7 @@ jobs:
           docker compose config --quiet
           docker compose -f compose.yaml -f compose.vm.yaml config --quiet
           HERMES_HOME=/var/lib/oma-agent docker compose -f compose.yaml -f compose.vm.yaml config --format json |
-            jq -e '.services.vm | .environment.HERMES_HOME == "/var/lib/oma-agent" and any(.volumes[]; .source == "vm-data" and .target == "/var/lib/oma-agent")'
+            jq -e '.services | .app.environment.HERMES_HOME == "/var/lib/oma-agent" and (.vm | .environment.HERMES_HOME == "/var/lib/oma-agent" and any(.volumes[]; .source == "vm-data" and .target == "/var/lib/oma-agent"))'
           docker compose -f compose.yaml -f compose.vm.yaml -f compose.dev.yaml config --quiet
           CAMOFOX_API_KEY=compose-config-test docker compose -f compose.yaml -f compose.vm.yaml -f compose.camofox.yaml config --quiet
 

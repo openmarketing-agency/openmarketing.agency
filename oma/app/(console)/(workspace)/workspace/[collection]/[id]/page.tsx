@@ -9,11 +9,13 @@ import { ArrowLeft, ArrowRight, BookOpen, Megaphone, Pencil, Tag } from "lucide-
 import { BrandAssets } from "@/components/brand-assets";
 import { BrandChannels, BrandResearch } from "@/components/brand-sources";
 import { Loading } from "@/components/ui";
-import { WorkspaceText } from "@/components/workspace-text";
+import { WorkspaceDocument, WorkspaceDocumentContents } from "@/components/workspace-document";
 import { WorkspaceRecordEditor } from "@/components/workspace-record-editor";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, loadBrandDocument, workspaceId, type SavedBrand } from "@/lib/server/agent-workspace";
+import { parseWorkspaceDocument, type WorkspaceDocument as ParsedDocument } from "@/lib/workspace-document";
 import "@/components/workspace-record-detail.css";
+import "@/components/workspace-document.css";
 import { Button } from "@/components/ui/button";
 
 type Props = {
@@ -57,6 +59,8 @@ async function RecordDetail({ params, searchParams }: Props) {
   const view = documentId !== undefined ? "research" : brandViews.find(({ id }) => id === query.view)?.id ?? "overview";
   const sectionPath = brand ? brandViewPath(path, view) : path;
   const selectedDocument = brand && !editing && documentId !== undefined ? await loadBrandDocument(id, documentId) : undefined;
+  const knowledgeDocument = brand && view === "overview" ? parseWorkspaceDocument(brand.knowledge) : undefined;
+  const strategyDocument = playbook ? parseWorkspaceDocument(playbook.strategy) : undefined;
   const relatedBrand = playbook && records?.brands.find(({ id }) => id === playbook.brandId);
   const relatedPlaybooks = brand ? records?.playbooks.filter(({ brandId }) => brandId === brand.id) ?? [] : [];
   const relatedCampaigns = playbook ? records?.campaigns.filter(({ playbookId }) => playbookId === playbook.id) ?? [] : [];
@@ -109,19 +113,19 @@ async function RecordDetail({ params, searchParams }: Props) {
                   ))}
                 </nav>
               )}
-              {brand && view === "overview" && (
-                <RecordColumns related={relatedPlaybooks.length > 0 && (
+              {brand && knowledgeDocument && (
+                <RecordColumns contents={knowledgeDocument} related={relatedPlaybooks.length > 0 && (
                   <RecordLinks heading="Playbooks" icon={<BookOpen size={16} aria-hidden="true" />}
                     items={relatedPlaybooks} base="/workspace/playbooks/" />
                 )}>
-                  <BrandKnowledge brand={brand} path={path} />
+                  <BrandKnowledge brand={brand} path={path} document={knowledgeDocument} />
                 </RecordColumns>
               )}
               {brand && view === "channels" && <BrandChannels brand={brand} />}
               {brand && view === "research" && <BrandResearch brand={brand} path={path} selected={selectedDocument} />}
               {brand && view === "assets" && <BrandAssets brand={brand} />}
-              {playbook && (
-                <RecordColumns related={(relatedBrand || relatedCampaigns.length > 0) && (
+              {playbook && strategyDocument && (
+                <RecordColumns contents={strategyDocument} related={(relatedBrand || relatedCampaigns.length > 0) && (
                   <>
                     {relatedBrand && <RecordLinks heading="Brand" icon={<Tag size={16} aria-hidden="true" />}
                       items={[relatedBrand]} base="/workspace/brands/" />}
@@ -129,9 +133,9 @@ async function RecordDetail({ params, searchParams }: Props) {
                       items={relatedCampaigns} base="/campaigns/" />}
                   </>
                 )}>
-                  <section className="record-reading" aria-labelledby="strategy-heading">
-                    <h2 id="strategy-heading">Strategy</h2>
-                    <WorkspaceText text={playbook.strategy} html={playbook.strategyHtml} empty="No strategy saved yet." />
+                  <section className="record-document" aria-labelledby="strategy-heading">
+                    <div className="record-section-heading"><h2 id="strategy-heading">Strategy</h2></div>
+                    <WorkspaceDocument document={strategyDocument} name={playbook.name} empty="No strategy saved yet." />
                   </section>
                 </RecordColumns>
               )}
@@ -150,11 +154,17 @@ async function RecordDetail({ params, searchParams }: Props) {
   );
 }
 
-function RecordColumns({ children, related }: { children: ReactNode; related: ReactNode }) {
+function RecordColumns({ children, related, contents }: { children: ReactNode; related: ReactNode; contents?: ParsedDocument }) {
+  const toc = contents && contents.sections.length >= 2;
   return (
     <div className="record-columns">
       {children}
-      {related && <aside className="record-related" aria-label="Related workspace records">{related}</aside>}
+      {(related || toc) && (
+        <aside className="record-related" aria-label="Related workspace records">
+          {contents && <WorkspaceDocumentContents document={contents} />}
+          {related}
+        </aside>
+      )}
     </div>
   );
 }
@@ -177,9 +187,9 @@ function RecordLinks({ heading, icon, items, base }: {
   );
 }
 
-function BrandKnowledge({ brand, path }: { brand: SavedBrand; path: string }) {
+function BrandKnowledge({ brand, path, document }: { brand: SavedBrand; path: string; document: ParsedDocument }) {
   return (
-    <section className="record-reading" id="brand-knowledge" aria-labelledby="knowledge-heading">
+    <section className="record-document" id="brand-knowledge" aria-labelledby="knowledge-heading">
       <div className="record-section-heading">
         <h2 id="knowledge-heading">Brand knowledge</h2>
         {brand.knowledgeRevision && (
@@ -190,7 +200,7 @@ function BrandKnowledge({ brand, path }: { brand: SavedBrand; path: string }) {
       </div>
       {brand.knowledgeFile !== undefined && !brand.knowledgeRevision
         ? <p className="form-error">The saved brand knowledge file could not be read.</p>
-        : <WorkspaceText text={brand.knowledge} html={brand.knowledgeHtml} empty="No brand knowledge saved yet." />}
+        : <WorkspaceDocument document={document} name={brand.name} empty="No brand knowledge saved yet." />}
       {brand.knowledgeFile && <small className="record-knowledge-source">Source: {brand.knowledgeFile}</small>}
     </section>
   );

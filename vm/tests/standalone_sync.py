@@ -14,6 +14,7 @@ from unittest.mock import patch
 from agent.runtime_scope import bind_profile_scope
 from agent.secret_scope import load_env_file
 from hermes_cli.config import atomic_config_replace
+from hermes_cli.config_home import OMA_BASE_TOOLSETS, OMA_EAGER_TOOLSETS
 from hermes_cli.runtime_provider import resolve_runtime_provider
 from hermes_yaml import safe_load
 
@@ -44,6 +45,15 @@ def request(address, method, path, body=None):
 
 def post(address, agent, body):
     return request(address, "POST", f"/workspace/agents/{agent}/sync", body)
+
+
+def synced_profile(model, *toolsets):
+    """Expected native configuration after the agent adds its required toolsets."""
+    return {
+        "model": model,
+        "agent": {"enabled_toolsets": list(dict.fromkeys((*toolsets, *OMA_BASE_TOOLSETS)))},
+        "tools": {"tool_search": {"enabled": "on", "eager_toolsets": list(OMA_EAGER_TOOLSETS)}},
+    }
 
 
 with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
@@ -77,7 +87,7 @@ with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
             status, result = post(address, "default", {})
             revision = sha256(record.read_bytes()).hexdigest()
             assert (status, result) == (200, {"id": "default", "revision": revision}), (status, result)
-            assert safe_load(native.read_bytes()) == {"model": "after", "agent": {"enabled_toolsets": ["file", "web"]}}
+            assert safe_load(native.read_bytes()) == synced_profile("after", "file", "web")
             installed = home / "skills" / "fixture" / "SKILL.md"
             assert installed.read_bytes() == skill.read_bytes()
             atomic_config_replace(record, {**safe_load(record.read_bytes()), "oma_skills": []})
@@ -121,8 +131,8 @@ with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
             assert post(address, "default", {"revision": staged["revisions"]["default"]})[0] == 200
             assert safe_load(maintenance.read_bytes()) == previous
             assert post(address, "maintenance", {"revision": staged["revisions"]["maintenance"]})[0] == 200
-            assert safe_load(native.read_bytes()) == {"model": expected, "agent": {"enabled_toolsets": ["file", "web"]}}
-            assert safe_load(maintenance.read_bytes()) == {"model": expected, "agent": {"enabled_toolsets": ["terminal"]}}
+            assert safe_load(native.read_bytes()) == synced_profile(expected, "file", "web")
+            assert safe_load(maintenance.read_bytes()) == synced_profile(expected, "terminal")
 
             key = "sk-or-v1-test-standalone-key"
             key_env = {"HERMES_MODEL_API_KEY": key}

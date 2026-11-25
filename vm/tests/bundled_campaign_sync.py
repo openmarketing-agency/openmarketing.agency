@@ -13,6 +13,7 @@ def verify_sync(home):
     from agent.secret_scope import load_env_file
     from hermes_cli import kanban_db
     from hermes_cli.config import atomic_config_replace
+    from hermes_cli.config_home import OMA_BASE_TOOLSETS, OMA_EAGER_TOOLSETS
     from hermes_cli.oma_campaigns.install import _status
     from hermes_yaml import safe_load
     from workspace import WorkspaceError, change_campaign_lifecycle, sync_campaign_configuration
@@ -98,7 +99,12 @@ def verify_sync(home):
         assert native["kanban"]["profile_board"] == board
         assert (profile / "SOUL.md").read_text() == "Preserve this installed legacy persona."
         assert native["kanban"]["orchestrator_profile"] == coordinator
-        assert native["agent"]["enabled_toolsets"] == ["file"]
+        required_tools = ["file", *OMA_BASE_TOOLSETS]
+        if name == coordinator:
+            required_tools.append("kanban")
+        required_tools.extend(["mcp-composio", "mcp-oma-custom-hacker-news"])
+        assert native["agent"]["enabled_toolsets"] == list(dict.fromkeys(required_tools))
+        assert native["tools"]["tool_search"] == {"enabled": "on", "eager_toolsets": list(OMA_EAGER_TOOLSETS)}
         assert native["model"] == data["model"] and native["mcp_servers"] == data["mcp_servers"]
         assert (profile / "cron" / "jobs.json").read_text() == '{"jobs":[]}'
         env = load_env_file(profile / ".env")

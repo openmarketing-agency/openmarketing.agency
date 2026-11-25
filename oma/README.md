@@ -41,6 +41,8 @@ On narrow screens, use **Open chat** to switch between the active workspace page
 and its conversation. The conversation remains mounted so drafts and active
 turns can continue while you review the page.
 
+Brand knowledge and playbook strategy display saved Markdown as document sections. Use **On this page** to jump between sections when the document has multiple headings.
+
 ## Campaign publishing and approvals
 
 Choose a publishing mode in the campaign’s **Settings**. **Approve** is the default and sends public posts and replies for review. **Control** pauses scheduled work and runs explicitly approved publications. **Yolo** runs automation and auto-approves new publication drafts. **Approvals** shows saved campaign publications with their account, content, media, and reply target. Approving a revision queues the campaign’s publisher agent on its Kanban board. The agent records the result against the reviewed revision. Publication reviews use the native workflow in oma-agent v0.1.20 through the private workspace socket.
