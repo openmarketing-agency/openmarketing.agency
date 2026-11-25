@@ -27,7 +27,7 @@ export type AgentRun =
 
 export type ChatMessage = {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "notification";
   text: string;
 };
 

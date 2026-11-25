@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { type ChatHistory, type ChatMessagePage } from "../agent-chat";
 import { getDb } from "../db";
-import { AgentChatError, readAgentSessionApi, scopedAgentSessionId, startAgentRun } from "./agent-chat";
+import { AgentChatError, readAgentSessionActivity, readAgentSessionApi, scopedAgentSessionId, startAgentRun } from "./agent-chat";
 import { workspaceId } from "./agent-workspace";
 
 const id = z.uuid();
@@ -84,11 +84,14 @@ async function readTranscript(sessionId: string, offset: number, campaignId?: st
   const messages: ChatMessagePage["messages"] = [];
   for (const row of parsed.data.data) {
     if ((row.role !== "user" && row.role !== "assistant") || typeof row.content !== "string"
-      || row.display_kind === "hidden" || row.display_kind === "commentary" || row.tool_calls?.length) continue;
+      || row.display_kind === "hidden" || (row.tool_calls?.length && row.display_kind !== "commentary")) continue;
+    if (row.role === "user" && row.content.startsWith("[OMA_INTERNAL_DELEGATION_WAKE_V1] The gateway saved a background delegation result above.")) continue;
+    const role = row.display_kind === "async_delegation_complete" || row.display_kind === "internal_notification" || row.display_kind?.startsWith("notification")
+      ? "notification" : row.role;
     const content = row.role === "user" && row.display_kind === "steer" ? row.display_content ?? row.content : row.content;
     const text = row.role === "user" && campaignSuffix && content.endsWith(campaignSuffix)
       ? content.slice(0, -campaignSuffix.length) : content;
-    if (text.trim()) messages.push({ id: (row.session_id ?? sessionId) + ":" + row.id, role: row.role, text: redact(text) });
+    if (text.trim()) messages.push({ id: (row.session_id ?? sessionId) + ":" + row.id, role, text: redact(text) });
   }
   return { messages, nextOffset: parsed.data.data.length === messagePageSize ? offset + messagePageSize : null };
 }
@@ -97,6 +100,16 @@ export async function loadOlderChatMessages(userId: string, threadId: unknown, o
   const input = z.object({ threadId: id, offset: offsetValue, campaignId: workspaceId.optional() }).safeParse({ threadId, offset, campaignId });
   if (!input.success) throw new AgentChatError(422, "Invalid chat history request.");
   return readTranscript(resolveSessionId(userId, input.data.threadId, campaignId), input.data.offset, campaignId);
+}
+
+export async function readChatSession(userId: string, threadId: unknown, campaignId?: unknown) {
+  const input = z.object({ threadId: id, campaignId: workspaceId.optional() }).safeParse({ threadId, campaignId });
+  if (!input.success) throw new AgentChatError(422, "Invalid chat session.");
+  const session = resolveSessionId(userId, input.data.threadId, input.data.campaignId);
+  const [page, activity] = await Promise.all([
+    readTranscript(session, 0, input.data.campaignId), readAgentSessionActivity(userId, session),
+  ]);
+  return { ...page, ...activity };
 }
 
 export async function loadChatHistory(userId: string, campaignId?: string, selected?: string | string[]): Promise<ChatHistory> {

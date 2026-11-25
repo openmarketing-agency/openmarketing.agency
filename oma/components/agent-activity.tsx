@@ -4,7 +4,7 @@
 
 import { Activity } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useId, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 
 import { answerProjectSetupPrompt, retryProjectSetup } from "@/app/actions/project-setup";
 
@@ -36,10 +36,17 @@ const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-d
 export function AgentActivity() {
   const router = useRouter();
   const headingId = useId();
+  const setupAnchor = useRef<HTMLElement>(null);
   const [retryResult, retryAction, retrying] = useActionState(retryProjectSetup, {});
   const [data, setData] = useState<Snapshot>();
   const [error, setError] = useState("");
   const [updates, setUpdates] = useState<AgentActivityUpdate[]>([]);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("setup") === "1") {
+      setupAnchor.current?.scrollIntoView({ block: "start" });
+    }
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -145,7 +152,7 @@ export function AgentActivity() {
     ? "Writing a reply" : setup ? setupStatus[setup.status] : "";
 
   return (
-    <section className="agent-activity" aria-labelledby={headingId}>
+    <section id="project-setup-activity" ref={setupAnchor} className="agent-activity" aria-labelledby={headingId}>
       <header className="agent-activity-header">
         <h2 id={headingId}><Activity size={17} aria-hidden="true" /> Agent activity</h2>
         <span className="agent-activity-state" data-working={busy} role="status">{status}</span>

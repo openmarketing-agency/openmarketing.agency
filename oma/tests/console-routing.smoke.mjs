@@ -13,6 +13,8 @@ const data = await mkdtemp(join(tmpdir(), "oma-routing-"));
 const port = "3217";
 const origin = "http://127.0.0.1:" + port;
 const development = process.argv.includes("--dev");
+// The first request to a dev route also waits for Turbopack to compile it.
+const requestTimeoutMs = development ? 30_000 : 5_000;
 const command = development
   ? ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1"]
   : [".next/standalone/server.js"];
@@ -39,7 +41,7 @@ if (development) {
 }
 
 function request(path, options) {
-  return fetch(origin + path, { redirect: "manual", signal: AbortSignal.timeout(5000), ...options });
+  return fetch(origin + path, { redirect: "manual", signal: AbortSignal.timeout(requestTimeoutMs), ...options });
 }
 
 async function assertRedirect(path, destination) {
@@ -57,7 +59,7 @@ async function assertPage(path, text, headers) {
 try {
   let ready = false;
   for (let attempt = 0; app.exitCode === null && attempt < 100; attempt++) {
-    const response = await request("/health").catch(() => null);
+    const response = await request("/health", { signal: AbortSignal.timeout(5_000) }).catch(() => null);
     if (response?.ok) {
       ready = true;
       break;
@@ -91,6 +93,11 @@ try {
   await assertPage("/dashboard", 'href="/tasks"', headers);
   await assertPage("/dashboard", 'aria-label="Open navigation"', headers);
   await assertPage("/dashboard", 'aria-controls="workspace-conversation"', headers);
+  await assertPage("/dashboard?setup=1", 'data-chat-open="true"', headers);
+  await assertPage("/dashboard?setup=1", 'id="project-setup-activity"', headers);
+  const chatActivity = "/api/chat/activity?thread=" + randomUUID();
+  assert.ok([307, 401].includes((await request(chatActivity)).status));
+  assert.equal((await request("/api/chat/activity?thread=invalid", { headers })).status, 422);
   await assertPage("/tasks", "Tasks unavailable", headers);
   await assertPage("/campaigns/fixture?view=deploy", "Campaign chat", headers);
   const lifecyclePath = "/api/campaigns/fixture/lifecycle";

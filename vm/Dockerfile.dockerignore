@@ -2,6 +2,9 @@
 
 !vm/
 !vm/bootstrap.py
+!vm/campaign_activity.py
+!vm/install_chat_delivery.py
+!vm/oma_chat_delivery.py
 !vm/register_campaign_suggestions.py
 !vm/start.sh
 !vm/sync_standalone.py

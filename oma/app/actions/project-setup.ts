@@ -12,10 +12,10 @@ import { readProjectSetup, retrySavedProjectSetup, sendProjectSetup, skipSavedPr
 
 export type ProjectSetupFormState = { errors?: Partial<Record<ProjectFields, string>>; message?: string; saved?: boolean };
 
-function goToWorkspace(): never {
+function goToWorkspace(showProgress = false): never {
   revalidatePath("/dashboard");
   revalidatePath("/onboarding");
-  redirect("/dashboard", "replace");
+  redirect(showProgress ? "/dashboard?setup=1#project-setup-activity" : "/dashboard", "replace");
 }
 
 export async function submitProjectSetup(
@@ -36,7 +36,7 @@ export async function submitProjectSetup(
     console.error("Project setup failed", error instanceof Error ? error.name : "Unknown error");
     return { message: "Couldn’t finish project setup. Try again." };
   }
-  goToWorkspace();
+  goToWorkspace(true);
 }
 
 export async function retryProjectSetup() {
