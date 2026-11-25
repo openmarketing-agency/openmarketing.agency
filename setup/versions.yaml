@@ -1,0 +1,15 @@
+# Component versions pinned by setup/install.sh and recorded in every OMA release.
+# Values are plain unquoted scalars (optionally with a trailing `#` comment).
+#
+# nextjs is the self-hosted console version (the Next.js app). It matches the OMA
+# release tag, which is also the ghcr.io/openmarketing-agency/oma-server image tag.
+nextjs: v0.1.0
+
+# omactl CLI release and the SHA-256 of its published linux-x64 archive.
+omactl: v0.1.0
+omactl_sha256: 24bbb2443de35879b8952f9db8cb61e2f59b5d4e2bc33bba5eb6f10d71f03f40
+
+# OMA Agent release: the source commit and the SHA-256 of its installer script.
+oma-agent: v0.1.25
+oma-agent_commit: a3d92e8232cb19e6027075238883c650c47c4fc4
+oma-agent_installer_sha256: 8cc2786bf717f1038b5b49f5457ab454a654bb542bca1d339f8520f3f875fe42

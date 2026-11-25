@@ -29,12 +29,33 @@ jobs:
         run: |
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
           package="oma-setup-$GITHUB_REF_NAME-debian-amd64"
-          mkdir -p "$RUNNER_TEMP/$package"
+          read_version() {
+            awk -v key="$1" '
+              $0 ~ "^" key ":" {
+                sub(/^[^:]*:[[:space:]]*/, "")
+                sub(/[[:space:]]*#.*$/, "")
+                sub(/[[:space:]]+$/, "")
+                print
+                exit
+              }
+            ' setup/versions.yaml
+          }
           bash -n setup/install.sh
-          cp setup/install.sh LICENSE "$RUNNER_TEMP/$package/"
-          tar -C "$RUNNER_TEMP" -czf "$package.tar.gz" "$package"
+          [[ "$(read_version nextjs)" == "$GITHUB_REF_NAME" ]] \
+            || { printf 'setup/versions.yaml nextjs (%s) must match release tag %s\n' "$(read_version nextjs)" "$GITHUB_REF_NAME" >&2; exit 1; }
+          stage="$RUNNER_TEMP/stage"
+          mkdir -p "$stage/$package"
+          cp -a setup "$stage/$package/"
+          cp LICENSE "$stage/$package/"
+          tar -C "$stage" -czf "$package.tar.gz" "$package"
           sha256sum "$package.tar.gz" > SHA256SUMS
-          printf 'Native Debian installer: `%s.tar.gz` (no Docker required to install)\n' "$package" > "$RUNNER_TEMP/oma-release.md"
+          {
+            printf 'Native Debian installer: `%s.tar.gz` (no Docker required to install; contains the `setup/` directory)\n\n' "$package"
+            printf 'Pinned versions from `setup/versions.yaml`:\n'
+            printf -- '- console (nextjs): `%s`\n' "$(read_version nextjs)"
+            printf -- '- omactl: `%s`\n' "$(read_version omactl)"
+            printf -- '- oma-agent: `%s`\n' "$(read_version oma-agent)"
+          } > "$RUNNER_TEMP/oma-release.md"
           cat "$RUNNER_TEMP/oma-release.md" >> "$GITHUB_STEP_SUMMARY"
           gh release create "$GITHUB_REF_NAME" "$package.tar.gz" SHA256SUMS \
             --verify-tag --title "OMA $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/oma-release.md"

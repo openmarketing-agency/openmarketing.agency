@@ -23,11 +23,32 @@ for command in curl git; do
     command -v "$command" >/dev/null || fail 'Install prerequisites: sudo apt-get install ca-certificates curl git libatomic1'
 done
 
-# omactl publishes an x86-64 archive; OMA Agent publishes a native source installer.
-omactl_tag=v0.1.0
-omactl_sha=24bbb2443de35879b8952f9db8cb61e2f59b5d4e2bc33bba5eb6f10d71f03f40
-agent_commit=a3d92e8232cb19e6027075238883c650c47c4fc4 # v0.1.25
-agent_installer_sha=8cc2786bf717f1038b5b49f5457ab454a654bb542bca1d339f8520f3f875fe42
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+versions_file="$script_dir/versions.yaml"
+[[ -r $versions_file ]] || fail "Missing $versions_file; run the installer from the setup directory."
+
+read_version() {
+    local value
+    value=$(awk -v key="$1" '
+        $0 ~ "^" key ":" {
+            sub(/^[^:]*:[[:space:]]*/, "")
+            sub(/[[:space:]]*#.*$/, "")
+            sub(/[[:space:]]+$/, "")
+            print
+            exit
+        }
+    ' "$versions_file")
+    [[ -n $value ]] || fail "versions.yaml is missing a value for '$1'."
+    printf '%s' "$value"
+}
+
+# setup/versions.yaml is the single source of truth for the pinned component versions.
+console_version=$(read_version nextjs)
+omactl_tag=$(read_version omactl)
+omactl_sha=$(read_version omactl_sha256)
+agent_version=$(read_version oma-agent)
+agent_commit=$(read_version oma-agent_commit)
+agent_installer_sha=$(read_version oma-agent_installer_sha256)
 agent_repo=https://github.com/openmarketing-agency/oma-agent.git
 bin_dir="$HOME/.local/bin"
 omactl_dir="$HOME/.local/share/omactl/$omactl_tag"
@@ -42,7 +63,7 @@ fetch_verified() {
         || fail "SHA-256 checksum mismatch for $file."
 }
 
-log "Downloading and verifying omactl $omactl_tag and OMA Agent v0.1.25"
+log "Downloading and verifying omactl $omactl_tag and OMA Agent $agent_version"
 fetch_verified "https://github.com/openmarketing-agency/omactl/releases/download/$omactl_tag/omactl-linux-x64.tar.gz" omactl.tar.gz "$omactl_sha"
 fetch_verified "https://raw.githubusercontent.com/openmarketing-agency/oma-agent/$agent_commit/scripts/install.sh" agent-install.sh "$agent_installer_sha"
 tar -xzf "$tmp/omactl.tar.gz" --no-same-owner -C "$tmp"
@@ -62,4 +83,5 @@ install -m 0755 "$tmp/bin/omactl" "$bin_dir/omactl"
 "$bin_dir/oma-agent" --version
 
 log 'Native installation complete. Use oma-agent setup to configure your model provider.'
+log "This setup pairs with the OMA console image ghcr.io/openmarketing-agency/oma-server:$console_version"
 log "If the commands are not on PATH, run: export PATH=\"\$HOME/.local/bin:\$PATH\""

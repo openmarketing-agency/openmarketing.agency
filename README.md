@@ -107,12 +107,12 @@ sudo apt-get install ca-certificates curl git libatomic1
 bash setup/install.sh
 ```
 
-For a packaged release, download `oma-setup-<tag>-debian-amd64.tar.gz` and `SHA256SUMS` from the same [OMA release](https://github.com/openmarketing-agency/openmarketing.agency/releases). Verify with `sha256sum -c SHA256SUMS`, extract the archive, and run `bash install.sh` from the extracted directory. Do not use `sudo` for the installer itself.
+For a packaged release, download `oma-setup-<tag>-debian-amd64.tar.gz` and `SHA256SUMS` from the same [OMA release](https://github.com/openmarketing-agency/openmarketing.agency/releases). Verify with `sha256sum -c SHA256SUMS`, extract the archive, and run `bash setup/install.sh` from the extracted directory. The archive contains the whole [`setup/`](setup/) directory, including [`versions.yaml`](setup/versions.yaml), which pins the console, `omactl`, and OMA Agent versions the installer uses. Do not use `sudo` for the installer itself.
 
 The installer puts `oma-agent` and `omactl` in `~/.local/bin`, with OMA Agent data in `~/.local/share/oma-agent` and the versioned `omactl` catalog in `~/.local/share/omactl`. Run `oma-agent setup` to configure your model provider. The installer does not install Docker, start any services, or install the web console. `omactl` can report its version without Docker, but its app-management commands still require Docker and Compose.
 
 ## Release
 
-Pushing a `vX.Y.Z` tag publishes the native Debian installer and checksum on GitHub. A separate job builds the AMD64 Next.js server image and publishes it as `ghcr.io/openmarketing-agency/oma-server:<tag>`. Installer publishing does not use Docker or wait for the image. Tag pushes no longer build or publish the VM image; local full-stack development still builds it from source.
+Pushing a `vX.Y.Z` tag publishes the native Debian installer and checksum on GitHub. The installer archive packages the whole `setup/` directory, including [`versions.yaml`](setup/versions.yaml), and its pinned `nextjs` version must match the release tag. A separate job builds the AMD64 Next.js server image and publishes it as `ghcr.io/openmarketing-agency/oma-server:<tag>`. Installer publishing does not use Docker or wait for the image. Tag pushes no longer build or publish the VM image; local full-stack development still builds it from source.
 
 OMA is distributed under the [Apache License 2.0](LICENSE). Individual skills may include their own license notices.
