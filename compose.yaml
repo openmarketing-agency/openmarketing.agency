@@ -35,6 +35,7 @@ services:
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
       OMA_AGENT_URL: ${OMA_AGENT_URL:-}
       OMA_AGENT_API_KEY: ${OMA_AGENT_API_KEY:-}
+      HERMES_HOME: ${HERMES_HOME:-/opt/data}
     healthcheck:
       test:
         - CMD-SHELL
