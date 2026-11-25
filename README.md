@@ -84,7 +84,7 @@ fi
 docker compose --env-file .env.camofox -f compose.yaml -f compose.vm.yaml -f compose.camofox.yaml up --build -d --wait
 ```
 
-Before starting Hermes, the VM writes `CAMOFOX_URL=http://camofox:9377` and `CAMOFOX_API_KEY` to the mounted Hermes home: `/opt/data/.env` for `default` and `/opt/data/profiles/maintenance/.env` for `maintenance`. It preserves unrelated entries. The key is required for Camofox API requests other than health checks and is not sent to Next.js. This runs the upstream browser image separately; it does not bundle the browser into the Apache-2.0 OMA image.
+Before starting Hermes, the VM writes `CAMOFOX_URL=http://camofox:9377` and `CAMOFOX_API_KEY` to the mounted Hermes home: `/opt/data/.env` for `default` and `/opt/data/profiles/maintenance/.env` for `maintenance`. It preserves unrelated entries. The key is required for Camofox API requests other than health checks and is not sent to Next.js. This runs the upstream browser image separately; it does not bundle the browser into the Apache-2.0 OMA image. The [Debian installer](#install-natively-on-debian) runs the same pinned image as the `oma-camofox` container on `127.0.0.1:9377`.
 
 ### Console only
 
@@ -103,16 +103,20 @@ On x86-64 Debian, run the [installer](setup/install.sh) from this checkout as th
 
 ```sh
 sudo apt-get update
-sudo apt-get install ca-certificates curl git libatomic1
+sudo apt-get install ca-certificates curl git libatomic1 docker.io
 bash setup/install.sh
 ```
 
-For a packaged release, download `oma-setup-<tag>-debian-amd64.tar.gz` and `SHA256SUMS` from the same [OMA release](https://github.com/openmarketing-agency/openmarketing.agency/releases). Verify with `sha256sum -c SHA256SUMS`, extract the archive, and run `bash setup/install.sh` from the extracted directory. The archive contains the whole [`setup/`](setup/) directory, including [`versions.yaml`](setup/versions.yaml), which pins the console, `omactl`, and OMA Agent versions the installer uses. Do not use `sudo` for the installer itself.
+For a packaged release, download `oma-setup-<tag>-debian-amd64.tar.gz` and `SHA256SUMS` from the same [OMA release](https://github.com/openmarketing-agency/openmarketing.agency/releases). Verify with `sha256sum -c SHA256SUMS`, extract the archive, and run `bash setup/install.sh` from the extracted directory. The archive contains the whole [`setup/`](setup/) directory, including [`versions.yaml`](setup/versions.yaml), which pins the `oma-server` console, `omactl`, OMA Agent, and Camofox image versions the installer uses. Do not use `sudo` for the installer itself.
 
-The installer puts `oma-agent` and `omactl` in `~/.local/bin`, with OMA Agent data in `~/.local/share/oma-agent` and the versioned `omactl` catalog in `~/.local/share/omactl`. Run `oma-agent setup` to configure your model provider. The installer does not install Docker, start any services, or install the web console. `omactl` can report its version without Docker, but its app-management commands still require Docker and Compose.
+The installer puts `oma-agent` and `omactl` in `~/.local/bin`, with OMA Agent data in `~/.local/share/oma-agent` and the versioned `omactl` catalog in `~/.local/share/omactl`. Run `oma-agent setup` to configure your model provider.
+
+It then runs the runtime's containers from the pinned versions, both bound to `127.0.0.1` with `--restart unless-stopped`: `oma-server` (the console, on port 3000, with its SQLite data in `~/.local/share/oma-server/data`) and `oma-camofox` (the pinned browser sidecar on port 9377). Re-running the installer replaces both containers, so a re-run picks up a newer pinned version. Camofox and the agent share one generated API key, kept in `~/.local/share/oma-agent/camofox.env` and written to the agent's default and maintenance profile `.env` files as `CAMOFOX_URL` and `CAMOFOX_API_KEY`. The installer does not install Docker itself and does not configure your model provider. `omactl` can report its version without Docker, but its app-management commands still require Docker and Compose.
+
+The console starts with the same environment defaults as the Compose stack. Export `OMA_SECRET_KEY`, `OMA_REFRESH_SECRET_KEY`, and `OMA_INTEGRATION_ENCRYPTION_KEY` before running the installer to give a deployment reachable beyond localhost its own cookie and integration secrets, and set `OMA_AGENT_URL` and `OMA_AGENT_API_KEY` to connect the console to a gateway running on the host (`http://host.docker.internal:8642`).
 
 ## Release
 
-Pushing a `vX.Y.Z` tag publishes the native Debian installer and checksum on GitHub. The installer archive packages the whole `setup/` directory, including [`versions.yaml`](setup/versions.yaml), and its pinned `nextjs` version must match the release tag. A separate job builds the AMD64 Next.js server image and publishes it as `ghcr.io/openmarketing-agency/oma-server:<tag>`. Installer publishing does not use Docker or wait for the image. Tag pushes no longer build or publish the VM image; local full-stack development still builds it from source.
+Pushing a `vX.Y.Z` tag publishes the native Debian installer and checksum on GitHub. The installer archive packages the whole `setup/` directory, including [`versions.yaml`](setup/versions.yaml), and its pinned `oma-server` version must match the release tag. A separate job builds the AMD64 Next.js server image and publishes it as `ghcr.io/openmarketing-agency/oma-server:<tag>`. Installer publishing does not use Docker or wait for the image. Tag pushes no longer build or publish the VM image; local full-stack development still builds it from source.
 
 OMA is distributed under the [Apache License 2.0](LICENSE). Individual skills may include their own license notices.

@@ -41,8 +41,8 @@ jobs:
             ' setup/versions.yaml
           }
           bash -n setup/install.sh
-          [[ "$(read_version nextjs)" == "$GITHUB_REF_NAME" ]] \
-            || { printf 'setup/versions.yaml nextjs (%s) must match release tag %s\n' "$(read_version nextjs)" "$GITHUB_REF_NAME" >&2; exit 1; }
+          [[ "$(read_version oma-server)" == "$GITHUB_REF_NAME" ]] \
+            || { printf 'setup/versions.yaml oma-server (%s) must match release tag %s\n' "$(read_version oma-server)" "$GITHUB_REF_NAME" >&2; exit 1; }
           stage="$RUNNER_TEMP/stage"
           mkdir -p "$stage/$package"
           cp -a setup "$stage/$package/"
@@ -50,11 +50,12 @@ jobs:
           tar -C "$stage" -czf "$package.tar.gz" "$package"
           sha256sum "$package.tar.gz" > SHA256SUMS
           {
-            printf 'Native Debian installer: `%s.tar.gz` (no Docker required to install; contains the `setup/` directory)\n\n' "$package"
+            printf 'Native Debian installer: `%s.tar.gz` (installs oma-agent and omactl natively, then runs the console and Camofox containers with Docker; contains the `setup/` directory)\n\n' "$package"
             printf 'Pinned versions from `setup/versions.yaml`:\n'
-            printf -- '- console (nextjs): `%s`\n' "$(read_version nextjs)"
+            printf -- '- console (oma-server): `%s`\n' "$(read_version oma-server)"
             printf -- '- omactl: `%s`\n' "$(read_version omactl)"
             printf -- '- oma-agent: `%s`\n' "$(read_version oma-agent)"
+            printf -- '- camofox image: `%s`\n' "$(read_version camofox_image)"
           } > "$RUNNER_TEMP/oma-release.md"
           cat "$RUNNER_TEMP/oma-release.md" >> "$GITHUB_STEP_SUMMARY"
           gh release create "$GITHUB_REF_NAME" "$package.tar.gz" SHA256SUMS \
