@@ -89,6 +89,8 @@ try {
     await assertPage(path, "Workspace chat", headers);
   }
   await assertPage("/dashboard", 'href="/tasks"', headers);
+  await assertPage("/dashboard", 'aria-label="Open navigation"', headers);
+  await assertPage("/dashboard", 'aria-controls="workspace-conversation"', headers);
   await assertPage("/tasks", "Tasks unavailable", headers);
   await assertPage("/campaigns/fixture?view=deploy", "Campaign chat", headers);
   const lifecyclePath = "/api/campaigns/fixture/lifecycle";

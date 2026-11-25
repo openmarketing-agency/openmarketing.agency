@@ -19,9 +19,9 @@ const html = `<!doctype html>
   <title>OMA API documentation</title>
   <link rel="stylesheet" href="/docs/swagger-ui.css">
   <style>
-    :root { color-scheme: light; --ground: #f7f8f5; --ink: #182b2b; --rule: #d9e3dc; --accent: #00584e; }
+    :root { color-scheme: light; --ground: #f7f9f7; --ink: #182a24; --rule: #dbe4de; --accent: #165c43; }
     body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.55 system-ui, sans-serif; }
-    .reference-bar { background: #eef2ec; border-bottom: 1px solid var(--rule); }
+    .reference-bar { background: #fff; border-bottom: 1px solid var(--rule); }
     .reference-bar > div, .reference-heading { box-sizing: border-box; max-width: 1460px; margin: auto; padding: 14px 20px; }
     .reference-bar > div { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
     .reference-bar a, .reference-heading a { color: var(--accent); text-underline-offset: 3px; }

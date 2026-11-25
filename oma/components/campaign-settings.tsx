@@ -5,6 +5,8 @@
 import { useActionState, useRef, useState } from "react";
 import { deployCampaignAction, saveCampaignSettingsAction } from "@/app/actions/workspace";
 import type { CampaignConfiguration } from "@/lib/server/agent-workspace";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function CampaignSettings({
   campaignId, configuration, firstStart = false, canStart = true,
@@ -38,25 +40,25 @@ export function CampaignSettings({
           <div className="campaign-settings-intro">
             <p>Leave the model fields blank to use the default agent’s model.</p>
             {(provider || modelId || baseUrl) && (
-              <button type="button" className="btn secondary" onClick={useDefaultModel}>Use default agent model</button>
+              <Button type="button" variant="outline" onClick={useDefaultModel}>Use default agent model</Button>
             )}
           </div>
           <div className="campaign-model-fields">
             <label>Provider
-              <input name="provider" value={provider} onChange={(event) => setProvider(event.target.value)}
+              <Input name="provider" value={provider} onChange={(event) => setProvider(event.target.value)}
                 placeholder="custom" maxLength={80} spellCheck={false} />
             </label>
             <label>Model ID
-              <input name="modelId" value={modelId} onChange={(event) => setModelId(event.target.value)}
+              <Input name="modelId" value={modelId} onChange={(event) => setModelId(event.target.value)}
                 placeholder="model-id" maxLength={200} spellCheck={false} />
             </label>
           </div>
           <label>Base URL
-            <input name="baseUrl" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)}
+            <Input name="baseUrl" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)}
               placeholder="https://provider.example.com/v1" maxLength={2048} />
           </label>
           <label>Model API key
-            <input name="modelKey" type="password" ref={modelKey} autoComplete="new-password" maxLength={4096}
+            <Input name="modelKey" type="password" ref={modelKey} autoComplete="new-password" maxLength={4096}
               aria-describedby="model-api-key-hint" />
           </label>
           <p id="model-api-key-hint">
@@ -68,9 +70,9 @@ export function CampaignSettings({
         {(result.state === "resumed" || (result.synced && modelMatches)) &&
           <p className="workspace-save-status" role="status">{firstStart ? "Campaign started." : "Model settings synced."}</p>}
         {firstStart && !canStart && <p>Set up the required tools before starting with an override.</p>}
-        <button className="btn primary" type="submit" disabled={pending || (firstStart && !canStart)}>
+        <Button type="submit" disabled={pending || (firstStart && !canStart)}>
           {pending ? "Syncing model settings…" : firstStart ? "Save model and start" : "Save model"}
-        </button>
+        </Button>
       </form>
     </details>
   );

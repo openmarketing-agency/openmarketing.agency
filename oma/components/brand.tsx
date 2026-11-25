@@ -1,7 +1,7 @@
 import Link from "next/link";
-export function Brand({ href = "/dashboard" }: { href?: string }) {
+export function Brand({ href = "/dashboard", onNavigate }: { href?: string; onNavigate?: () => void }) {
   return (
-    <Link href={href} className="brand" aria-label="OMA home">
+    <Link href={href} onNavigate={onNavigate} className="brand" aria-label="OMA home">
       <svg
         viewBox="0 0 32 32"
         width="30"

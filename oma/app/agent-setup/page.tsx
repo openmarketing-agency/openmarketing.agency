@@ -12,6 +12,7 @@ import { needsAgentSetup } from "@/lib/server/agent-setup";
 import { loadAgentWorkspace } from "@/lib/server/agent-workspace";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
 import "@/app/onboarding/onboarding.css";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = { title: "Set up your agents" };
 
@@ -32,7 +33,7 @@ export default function AgentSetupPage() {
     <div className="workspace-entry">
       <header className="workspace-entry-bar">
         <Brand href="/dashboard" />
-        <form action={logoutAction}><button type="submit" className="btn ghost">Sign out</button></form>
+        <form action={logoutAction}><Button type="submit" variant="ghost">Sign out</Button></form>
       </header>
       <main id="main-content" tabIndex={-1} className="project-setup-layout">
         <header className="project-setup-heading">

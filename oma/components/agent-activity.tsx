@@ -12,6 +12,7 @@ import type { AgentActivity as Snapshot, AgentActivityUpdate } from "@/lib/agent
 
 import { HermesPrompt } from "./hermes-prompt";
 import "./agent-activity.css";
+import { Button } from "@/components/ui/button";
 
 type SetupStatus = NonNullable<Snapshot["setup"]>["status"];
 const setupStatus: Record<SetupStatus, string> = {
@@ -190,9 +191,9 @@ export function AgentActivity() {
       )}
       {(canRetry || retrying) && (
         <form action={retryAction} className="agent-activity-retry" onSubmit={() => setUpdates([])}>
-          <button type="submit" className="btn secondary" disabled={retrying}>
+          <Button type="submit" variant="outline" disabled={retrying}>
             {retrying ? "Retrying setup…" : "Retry setup"}
-          </button>
+          </Button>
         </form>
       )}
       {retryResult.error && <p className="agent-activity-error" role="alert">{retryResult.error}</p>}

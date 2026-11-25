@@ -8,6 +8,8 @@ import { listWorkspaceTasks, readWorkspaceTask } from "@/lib/server/workspace-ta
 import { groupTasks, taskHref, taskKey, taskStatusLabel } from "@/lib/tasks";
 import { TaskActions } from "./task-actions";
 import "./tasks.css";
+import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 
 type Query = { board?: string | string[]; task?: string | string[] };
 const dateFormat = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -60,11 +62,11 @@ async function Tasks({ searchParams }: { searchParams: Promise<Query> }) {
             <p>{total} {total === 1 ? "task" : "tasks"} <span aria-hidden="true">·</span> {visible.length} {visible.length === 1 ? "board" : "boards"}</p>
             {boards.length > 1 && <form action="/tasks">
               <label className="sr-only" htmlFor="task-board-filter">Filter by board</label>
-              <select id="task-board-filter" name="board" defaultValue={filteredBoard?.slug ?? ""} key={filteredBoard?.slug ?? "all"}>
+              <NativeSelect id="task-board-filter" name="board" defaultValue={filteredBoard?.slug ?? ""} key={filteredBoard?.slug ?? "all"}>
                 <option value="">All boards</option>
                 {boards.map((board) => <option key={board.slug} value={board.slug}>{board.name}</option>)}
-              </select>
-              <button className="btn secondary" type="submit">Apply</button>
+              </NativeSelect>
+              <Button variant="outline" type="submit">Apply</Button>
             </form>}
           </div>
           {unread.length > 0 && <p className="tasks-warning" role="status">Couldn’t load {unread.map((board) => board.name).join(", ")}. The list may be incomplete.</p>}
@@ -117,7 +119,7 @@ async function Tasks({ searchParams }: { searchParams: Promise<Query> }) {
 }
 
 async function TaskPanel({ board, id, filter, boardName }: { board: string; id: string; filter?: string; boardName: string }) {
-  const close = <Link className="btn ghost task-detail-close" href={taskHref(filter)} scroll={false} aria-label="Close task details"><X size={18} aria-hidden="true" /></Link>;
+  const close = <Button asChild variant="ghost" className="task-detail-close"><Link href={taskHref(filter)} scroll={false} aria-label="Close task details"><X size={18} aria-hidden="true" /></Link></Button>;
   const detail = await readWorkspaceTask(board, id).then(
     (value) => ({ value }),
     (error: unknown) => ({ missing: error instanceof WorkspaceRequestError && error.status === 404 }),

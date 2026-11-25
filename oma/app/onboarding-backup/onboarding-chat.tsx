@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, useTransition, type FormEvent } from "reac
 
 import { answerSetup, finishSetup, refreshSetup, resetDevelopmentSetup, startSetup } from "./actions";
 import { maxSetupAnswerLength, type OnboardingView, type SetupQuestion } from "@/lib/onboarding";
+import { Input } from "@/components/ui/input";
 
 export function OnboardingChat({ initial, resetOnOpen }: { initial: OnboardingView; resetOnOpen: boolean }) {
   const router = useRouter();
@@ -231,7 +232,7 @@ function QuestionAnswer({ question, pending, onAnswer }: {
       <div className="onboarding-composer">
         <div className="onboarding-custom-answer">
           <label className="sr-only" htmlFor="onboarding-answer">Your response</label>
-          <input id="onboarding-answer" autoComplete="off" maxLength={maxSetupAnswerLength}
+          <Input id="onboarding-answer" autoComplete="off" maxLength={maxSetupAnswerLength}
             placeholder={question.choices.length ? "Write your own response" : "Write a response"} readOnly={pending} value={custom}
             onChange={(event) => setCustom(event.target.value)} />
         </div>

@@ -5,7 +5,6 @@ import {
   AppWindow,
   ArrowUpRight,
   Check,
-  ChevronDown,
   LoaderCircle,
   Plus,
   RefreshCw,
@@ -27,6 +26,9 @@ import {
 import type { RequiredIntegration } from "@/lib/server/agent-workspace";
 import type { ConnectionSnapshot } from "@/lib/tool-connection-service";
 import type { CatalogPage, Toolkit } from "@/lib/tool-catalog";
+import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Input } from "@/components/ui/input";
 
 const EMPTY_TOOLKITS: Toolkit[] = [];
 const NO_REQUIRED_INTEGRATIONS: RequiredIntegration[] = [];
@@ -380,7 +382,7 @@ export function ToolkitBrowser({
         <div className="tool-browser-filters">
           <label className="search-box">
             <Search size={16} />
-            <input
+            <Input
               ref={searchInput}
               aria-label="Search tools"
               placeholder={tab === "all" ? "Search tools…" : "Search connected tools…"}
@@ -405,7 +407,7 @@ export function ToolkitBrowser({
           </label>
           {showCategories && canBrowseCatalog && <label className="tool-category-filter">
             <span className="sr-only">Tool category</span>
-            <select
+            <NativeSelect
               aria-label="Tool category"
               value={category}
               onChange={(event) => {
@@ -428,8 +430,7 @@ export function ToolkitBrowser({
                   {item.name}
                 </option>
               ))}
-            </select>
-            <ChevronDown size={14} />
+            </NativeSelect>
           </label>}
         </div>
       )}
@@ -511,8 +512,7 @@ export function ToolkitBrowser({
                         <Check size={13} />
                         {isCampaign ? "Ready" : tool.noAuth ? "Enabled" : "Connected"}
                       </span>
-                      {!isCampaign && <button
-                        className="btn ghost"
+                      {!isCampaign && <Button variant="ghost"
                         disabled={pending}
                         onClick={() => mutate(tool, true)}
                         aria-label={`${tool.noAuth ? "Remove" : "Disconnect"} ${tool.name}`}
@@ -524,12 +524,11 @@ export function ToolkitBrowser({
                         ) : (
                           "Disconnect"
                         )}
-                      </button>}
+                      </Button>}
                     </>
                   ) : (
                     <>
-                      <button
-                        className="btn secondary"
+                      <Button variant="outline"
                         disabled={pending || !snapshot.configured}
                         onClick={() => mutate(tool)}
                         aria-label={`${tool.noAuth ? "Enable" : reconnect ? "Reconnect" : "Connect"} ${tool.name}`}
@@ -546,7 +545,7 @@ export function ToolkitBrowser({
                             )}
                           </>
                         )}
-                      </button>
+                      </Button>
                     </>
                   )}
                 </div>
@@ -572,8 +571,7 @@ export function ToolkitBrowser({
                 ? "Explore the catalog to connect an account or add a tool that needs no sign-in."
                 : "Try a different search or category."}
             </p>
-            <button
-              className="btn secondary"
+            <Button variant="outline"
               onClick={() => {
                 setSearch("");
                 setCategory("");
@@ -584,15 +582,14 @@ export function ToolkitBrowser({
             >
               Browse all tools
               <ArrowUpRight size={14} />
-            </button>
+            </Button>
           </div>
         )}
       </div>
       {tab === "all" && catalogError && (
         <div className="tool-catalog-error" role="alert">
           <p>{catalogError}</p>
-          <button
-            className="btn secondary"
+          <Button variant="outline"
             onClick={() =>
               page.items.length && page.nextCursor
                 ? loadMore()
@@ -600,13 +597,12 @@ export function ToolkitBrowser({
             }
           >
             Try again
-          </button>
+          </Button>
         </div>
       )}
       {tab === "all" && !loading && page.nextCursor && (
         <div className="tool-load-more">
-          <button
-            className="btn secondary"
+          <Button variant="outline"
             disabled={loadingMore}
             onClick={loadMore}
           >
@@ -616,7 +612,7 @@ export function ToolkitBrowser({
               <Plus size={14} />
             )}
             Load more tools
-          </button>
+          </Button>
           <span>
             Showing {page.items.length} of {page.total.toLocaleString()}
           </span>

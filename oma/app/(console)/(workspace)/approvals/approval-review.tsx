@@ -13,6 +13,9 @@ import {
 import { useApprovalDrafts } from "@/lib/approval-storage";
 
 import { ApprovalChat } from "./approval-chat";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type Copy = { title: string; body: string };
 type Notice = { message: string; error?: true };
@@ -89,11 +92,11 @@ export function ApprovalReview({ approval, userId }: { approval: Approval; userI
             </dl>
 
             <label htmlFor="approval-draft-title">Title</label>
-            <input id="approval-draft-title" value={draft.title} maxLength={approvalTitleLimit}
+            <Input id="approval-draft-title" value={draft.title} maxLength={approvalTitleLimit}
               onChange={(event) => change({ title: event.target.value })} readOnly={approved} />
 
             <label htmlFor="approval-draft-body">Draft copy</label>
-            <textarea id="approval-draft-body" value={draft.body} maxLength={approvalBodyLimit} rows={8}
+            <Textarea id="approval-draft-body" value={draft.body} maxLength={approvalBodyLimit} rows={8}
               onChange={(event) => change({ body: event.target.value })} readOnly={approved} />
 
             <div className="approval-editor-footer">
@@ -101,16 +104,16 @@ export function ApprovalReview({ approval, userId }: { approval: Approval; userI
                 ? <p role="alert" className="approval-editor-error">{notice.message}</p>
                 : <p role="status">{notice?.message ?? (dirty ? "Unsaved changes" : "")}</p>}
               {approved ? (
-                <button type="button" className="btn secondary" onClick={() => persist("pending")}>Reopen review</button>
+                <Button type="button" variant="outline" onClick={() => persist("pending")}>Reopen review</Button>
               ) : (
                 <div className="approval-editor-actions">
-                  <button className="btn secondary" type="submit" disabled={!dirty}>Save draft</button>
+                  <Button variant="outline" type="submit" disabled={!dirty}>Save draft</Button>
                   {saved.status !== "changes" && (
-                    <button className="btn ghost" type="button" onClick={() => persist("changes")}>Request changes</button>
+                    <Button variant="ghost" type="button" onClick={() => persist("changes")}>Request changes</Button>
                   )}
-                  <button className="btn primary" type="button" onClick={() => persist("approved")}>
+                  <Button type="button" onClick={() => persist("approved")}>
                     <Check size={16} aria-hidden="true" /> Approve draft
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>

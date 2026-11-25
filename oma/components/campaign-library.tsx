@@ -4,10 +4,14 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, Search, Users } from "lucide-react";
+import { ArrowRight, Bot, ClipboardList, Link2, Megaphone, Search, Users } from "lucide-react";
 
 import { CampaignKanban } from "@/components/campaign-kanban";
 import type { CampaignKanbanStatus } from "@/lib/server/agent-workspace";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type SavedCampaignSummary = {
   id: string;
@@ -47,14 +51,14 @@ export function CampaignLibrary({ setup, sidebar, error, saved }: {
             <p>{setup.needsRetry
               ? "Your project links are saved. Reopen setup to send them to oma-agent."
               : "Share a website or GitHub repository so oma-agent has context to plan your campaigns."}</p>
-            <Link className="btn primary" href="/onboarding">
+            <Button asChild variant="inverse" size="lg"><Link href="/onboarding">
               {setup.needsRetry ? "Finish project setup" : "Set up your project"}<ArrowRight size={16} aria-hidden="true" />
-            </Link>
+            </Link></Button>
           </div>
           <ol aria-label="Campaign workflow">
-            <li>{setup.needsRetry ? "Project links saved" : "Share your project links"}</li>
-            <li>Review the saved campaign plan</li>
-            <li>Configure agents and deploy</li>
+            <li><Link2 size={18} aria-hidden="true" />{setup.needsRetry ? "Project links saved" : "Share your project links"}</li>
+            <li><ClipboardList size={18} aria-hidden="true" />Review the saved campaign plan</li>
+            <li><Bot size={18} aria-hidden="true" />Configure agents and deploy</li>
           </ol>
         </section>
       )}
@@ -65,7 +69,7 @@ export function CampaignLibrary({ setup, sidebar, error, saved }: {
             <div className="campaign-search">
               <label className="search-box">
                 <Search size={16} aria-hidden="true" />
-                <input ref={search} type="search" aria-label="Search campaigns" placeholder="Search by campaign, brand, or playbook"
+                <Input ref={search} type="search" aria-label="Search campaigns" placeholder="Search by campaign, brand, or playbook"
                   value={query} onChange={(event) => setQuery(event.target.value)} />
               </label>
               <span role="status">
@@ -74,26 +78,27 @@ export function CampaignLibrary({ setup, sidebar, error, saved }: {
             </div>
           )}
           {filtered.length > 0 && (
-            <ul className="campaign-list">
+            <Card className="campaign-list-panel"><ul className="campaign-list">
               {filtered.map(({ id, name, description, version, brand, playbook, agentCount, status, kanban }) => (
                 <li className="campaign-entry" key={id}>
                   <h3>
                     <Link className="campaign-entry-link" href={"/campaigns/" + id}>
-                      <span>{name}</span><ArrowRight size={18} aria-hidden="true" />
+                      <span className="campaign-entry-icon"><Megaphone size={19} aria-hidden="true" /></span>
+                      <span className="campaign-entry-name">{name}</span><ArrowRight size={17} aria-hidden="true" />
                     </Link>
                   </h3>
                   {description && <p>{description}</p>}
                   <div className="campaign-entry-context">
-                    {status && <span className="campaign-deployment-status" data-state={status}>{status}</span>}
+                    {status && <Badge variant="secondary" className="campaign-deployment-status" data-state={status}>{status}</Badge>}
                     <span className="campaign-agent-count"><Users size={14} aria-hidden="true" />{agentCount} {agentCount === 1 ? "agent" : "agents"}</span>
                     {brand && <Link href={"/workspace/brands/" + brand.id}>{brand.name}</Link>}
                     {playbook && <Link href={"/workspace/playbooks/" + playbook.id}>{playbook.name}</Link>}
-                    {version && <span className="version-label">v{version}</span>}
+                    {version && <Badge variant="outline" className="version-label">v{version}</Badge>}
                   </div>
                   {kanban && <CampaignKanban status={kanban} />}
                 </li>
               ))}
-            </ul>
+            </ul></Card>
           )}
           {saved?.length === 0 && (
             <div className="empty-state campaign-empty">
@@ -111,7 +116,7 @@ export function CampaignLibrary({ setup, sidebar, error, saved }: {
             <div className="empty-state campaign-empty">
               <h3>No matching campaigns</h3>
               <p>Try a campaign, brand, or playbook name.</p>
-              <button className="btn secondary" onClick={() => { setQuery(""); search.current?.focus(); }}>Clear search</button>
+              <Button variant="outline" onClick={() => { setQuery(""); search.current?.focus(); }}>Clear search</Button>
             </div>
           )}
         </section>

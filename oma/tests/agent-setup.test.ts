@@ -41,7 +41,7 @@ test("agent setup leaves submission available for browser validation before hydr
   }));
   const button = html.match(/<button[^>]*>Sync and continue<\/button>/)?.[0];
   assert.ok(button);
-  assert.doesNotMatch(button, /\bdisabled\b/);
+  assert.doesNotMatch(button, /(?:^|\s)disabled(?:=""|(?=\s|>))/);
   for (const field of ["provider", "modelId", "baseUrl", "modelKey"]) {
     const input = html.match(new RegExp(`<input(?=[^>]*name="${field}")[^>]*>`))?.[0];
     assert.ok(input, `Missing input for ${field}`);

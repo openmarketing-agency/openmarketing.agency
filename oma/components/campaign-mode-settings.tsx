@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { saveCampaignModeAction } from "@/app/actions/workspace";
 import type { CampaignConfiguration, CampaignMode } from "@/lib/server/agent-workspace";
+import { Button } from "@/components/ui/button";
+import { NativeSelect } from "@/components/ui/native-select";
 
 const options: Record<CampaignMode, { label: string; description: string }> = {
   approve: { label: "Approve", description: "Review publication drafts before queuing the publisher." },
@@ -28,19 +30,19 @@ export function CampaignModeSettings({ campaignId, configuration, installed }: {
       <form action={action} className="workspace-editor">
         <input type="hidden" name="revision" value={configuration.revision} />
         <label htmlFor="campaign-mode">Mode</label>
-        <select id="campaign-mode" name="mode" disabled={pending} value={mode}
+        <NativeSelect id="campaign-mode" name="mode" disabled={pending} value={mode}
           aria-describedby="campaign-mode-description"
           onChange={(event) => setMode(event.target.value as CampaignMode)}>
           {Object.entries(options).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}
-        </select>
+        </NativeSelect>
         <p id="campaign-mode-description">{options[mode].description}</p>
         {result.error && <p role="alert" className="form-error">{result.error}</p>}
         {result.saved && !pending && mode === saved && <p role="status">{installed ? "Mode synced." : "Mode saved for first start."}</p>}
         <div className="campaign-mode-actions">
-          <button type="submit" className="btn primary" disabled={pending || (mode === saved && !result.error)}>
+          <Button type="submit" disabled={pending || (mode === saved && !result.error)}>
             {pending ? "Saving and syncing…" : "Save mode"}
-          </button>
-          <Link className="btn secondary" href={`/approvals?campaign=${campaignId}`}>Review publications</Link>
+          </Button>
+          <Button asChild variant="outline"><Link href={`/approvals?campaign=${campaignId}`}>Review publications</Link></Button>
         </div>
       </form>
     </section>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function ConsoleNotFound() {
   return (
@@ -10,7 +11,7 @@ export default function ConsoleNotFound() {
         <h1 id="console-not-found-heading">Page not found</h1>
         <p>Check the address or return to your campaigns.</p>
       </header>
-      <div><Link className="btn primary" href="/dashboard"><ArrowLeft size={16} aria-hidden="true" /> Back to campaigns</Link></div>
+      <div><Button asChild><Link href="/dashboard"><ArrowLeft size={16} aria-hidden="true" /> Back to campaigns</Link></Button></div>
     </section>
   );
 }

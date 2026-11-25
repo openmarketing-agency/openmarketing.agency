@@ -48,4 +48,4 @@
 .project-setup-input input[readonly] { background: var(--raised); }
 .project-setup-error { color: var(--negative); margin-top: 5px; font-size: 0.875rem; }
 .project-setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
-.project-setup-actions .btn { min-height: 44px; }
+.project-setup-actions [data-slot="button"] { min-height: 44px; }

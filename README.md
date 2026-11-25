@@ -24,7 +24,7 @@ docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm omactl d
 docker compose -f compose.yaml -f compose.vm.yaml exec --user hermes vm hermes chat
 ```
 
-Chat stays open on the right throughout the signed-in workspace. **Agent activity** in the panel shows project setup status, public agent messages, and reported token counts or errors. Answer setup prompts in the panel or choose **Retry setup** after a failure or cancellation to start a fresh attempt with the saved links.
+Chat stays open on the right on desktop. On narrower screens, use **Open chat** to switch to the conversation. **Agent activity** in the panel shows project setup status, public agent messages, and reported token counts or errors. Answer setup prompts in the panel or choose **Retry setup** after a failure or cancellation to start a fresh attempt with the saved links.
 
 The panel uses oma-agent’s default profile. The full stack supplies its gateway address and default-profile key automatically. Use **Chat history** to reopen a saved conversation and **New chat** to start another. The workspace and each campaign have separate histories in oma-agent, which the console reads through the Hermes Sessions API. Existing links to the former chat page open the panel on Campaigns. While oma-agent is working, use **Send guidance** to steer the current turn at its next tool boundary. If the turn cannot accept the message or finishes before using it, the composer keeps the guidance available as a follow-up.
 
@@ -46,7 +46,7 @@ A campaign uses the default agent’s model when its model fields are blank. Dep
 
 Starting a campaign or selecting **Sync tools** creates a Composio connection from the campaign’s configured integrations. It then writes the model and generated MCP URL to `campaigns/<id>/config.yaml` in the mounted workspace and uses the private `POST /workspace/campaigns/<id>/sync` endpoint to update installed campaign profiles. For bundled campaigns created by earlier Docker images, the first sync creates the campaign board and adds missing routing to the existing profiles. Syncing a campaign with no configured integrations clears its generated Composio connection. YAML stores only key references. The model and MCP settings support per-agent overrides. Rebuild and recreate the console and VM after updating the stack.
 
-The campaign chat stays open on the right as you move between campaign sections. Use it to discuss the plan or request changes. Every message is sent to oma-agent’s default profile with the saved campaign ID.
+The campaign conversation stays available as you move between campaign sections. Use it to discuss the plan or request changes. Every message is sent to oma-agent’s default profile with the saved campaign ID.
 
 With a compatible agent image, trusted local processes can edit `/opt/data/oma/agents/{default,maintenance}/config.yaml` and then call `POST /workspace/agents/<id>/sync` over the private workspace Unix socket with JSON `{}` or `{"revision":"<sha256 of saved YAML>"}`. To apply an API key with a staged provider selection, include `"env": {"HERMES_MODEL_API_KEY": "<provider API key>"}` alongside the exact saved revision. The endpoint applies the saved model and reasoning settings. Trusted socket callers can also supply named profile credentials explicitly in `env` for agent or campaign sync. Values are passed to the native sync process over standard input. `409` means the saved file changed before it could be applied.
 

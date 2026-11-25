@@ -5,6 +5,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { AgentPrompt as Prompt } from "@/lib/agent-chat";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 export function HermesPrompt({ prompt, onAnswer, autoFocus = true }: {
   prompt: Prompt;
@@ -60,13 +63,13 @@ export function HermesPrompt({ prompt, onAnswer, autoFocus = true }: {
           {prompt.description && <p>{prompt.description}</p>}
           <pre className="runtime-output">{prompt.command}</pre>
           <div className="runtime-actions">
-            <button type="button" className="btn secondary" onClick={() => void answer("deny")}>Deny</button>
-            <button type="button" className="btn primary" onClick={() => void answer("once")}>Approve once</button>
+            <Button type="button" variant="outline" onClick={() => void answer("deny")}>Deny</Button>
+            <Button type="button" onClick={() => void answer("once")}>Approve once</Button>
           </div>
         </> : <>
           {prompt.choices.map((choice, index) => (
             <label className="runtime-choice" key={index}>
-              <input name="choice" type={prompt.multiSelect ? "checkbox" : "radio"} value={index} onChange={() => setOtherSelected(false)} />
+              <Input name="choice" type={prompt.multiSelect ? "checkbox" : "radio"} value={index} onChange={() => setOtherSelected(false)} />
               <span>{choice}</span>
             </label>
           ))}
@@ -74,11 +77,11 @@ export function HermesPrompt({ prompt, onAnswer, autoFocus = true }: {
             <label className="runtime-choice"><input name="choice" type="radio" value="other" onChange={() => setOtherSelected(true)} /> Other</label>
           )}
           {(prompt.choices.length === 0 || otherSelected || prompt.multiSelect) && (
-            <label>{prompt.multiSelect ? "Other answer (optional)" : "Your answer"}<textarea name="other" rows={2} maxLength={16_000} /></label>
+            <label>{prompt.multiSelect ? "Other answer (optional)" : "Your answer"}<Textarea name="other" rows={2} maxLength={16_000} /></label>
           )}
           <div className="runtime-actions">
-            <button type="button" className="btn secondary" onClick={() => void answer("")}>Skip</button>
-            <button type="submit" className="btn primary">Send answer</button>
+            <Button type="button" variant="outline" onClick={() => void answer("")}>Skip</Button>
+            <Button type="submit">Send answer</Button>
           </div>
         </>}
       </fieldset>
