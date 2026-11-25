@@ -40,6 +40,7 @@ guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_deploy.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/analytics.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/test_campaign_publications.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_kanban.py"
+guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_activity.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/campaign_pause_recovery.py"
 guest bash -euo pipefail -c '
     test -x /usr/local/bin/omactl
