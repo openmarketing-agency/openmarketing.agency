@@ -44,6 +44,14 @@ function legacySessions(userId: string, campaignId?: string) {
   return rows.filter((row) => id.safeParse(row.id).success && id.safeParse(row.session_id).success);
 }
 
+/** The private VM activity service uses the same roots as the account’s chat history. */
+export function campaignChatScope(userId: string, campaignId: string) {
+  return {
+    chatPrefix: sessionPrefix(userId, campaignId),
+    legacySessions: legacySessions(userId, campaignId).map((row) => row.session_id),
+  };
+}
+
 function resolveSessionId(userId: string, threadId: string, campaignId?: string) {
   return legacySessions(userId, campaignId).find((row) => row.id === threadId)?.session_id
     ?? sessionPrefix(userId, campaignId) + threadId.toLowerCase();

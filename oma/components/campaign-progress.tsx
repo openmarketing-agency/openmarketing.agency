@@ -2,15 +2,15 @@
 
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, RefreshCw } from "lucide-react";
+import { CampaignAgentActivity } from "./campaign-agent-activity";
+import { useCampaignFeed } from "./use-campaign-feed";
 import { CampaignKanban } from "./campaign-kanban";
 import type { CampaignKanbanStatus } from "@/lib/server/agent-workspace";
 import type { CampaignProgressSnapshot, CampaignTask, CampaignTaskActivity } from "@/lib/server/campaign-progress";
 
-type LoadState<T> = { path: string; data?: T; error?: string };
-const refreshInterval = 12_000;
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const groups = [
   { id: "all", label: "All tasks" },
@@ -20,48 +20,6 @@ const groups = [
   { id: "done", label: "Done" },
 ] as const;
 type Group = typeof groups[number]["id"];
-
-function useProgress<T>(path: string, refresh: number) {
-  const [state, setState] = useState<LoadState<T>>();
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    let request: AbortController | undefined;
-    let disposed = false;
-    async function read() {
-      if (disposed || request || document.hidden) return;
-      const controller = new AbortController();
-      request = controller;
-      try {
-        const response = await fetch(path, { cache: "no-store", signal: controller.signal });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || "Couldn’t refresh campaign progress.");
-        if (!disposed) setState({ path, data: result as T });
-      } catch (error) {
-        if (!disposed) setState((previous) => ({
-          path, data: previous?.path === path ? previous.data : undefined,
-          error: error instanceof Error && error.name === "Error" ? error.message : "Couldn’t refresh campaign progress.",
-        }));
-      } finally {
-        request = undefined;
-        if (!disposed && !document.hidden) timer = setTimeout(() => void read(), refreshInterval);
-      }
-    }
-
-    function visibility() {
-      clearTimeout(timer);
-      if (!document.hidden) void read();
-    }
-    document.addEventListener("visibilitychange", visibility);
-    void read();
-    return () => {
-      disposed = true;
-      request?.abort();
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", visibility);
-    };
-  }, [path, refresh]);
-  return state?.path === path ? state : undefined;
-}
 
 function label(value: string) {
   const names: Record<string, string> = {
@@ -96,7 +54,7 @@ const boardMessages = {
 };
 
 function TaskDetail({ path, refresh, agents }: { path: string; refresh: number; agents: Record<string, string> }) {
-  const state = useProgress<CampaignTaskActivity>(path, refresh);
+  const state = useCampaignFeed<CampaignTaskActivity>(path, refresh);
   if (!state) return <p role="status">Loading task activity…</p>;
   const task = state.data;
   return <>
@@ -144,7 +102,7 @@ export function CampaignProgress({ campaign, agents, kanban }: {
   const [expanded, setExpanded] = useState<string>();
   const [pageSize, setPageSize] = useState(20);
   const id = useId();
-  const state = useProgress<CampaignProgressSnapshot>(path, refresh);
+  const state = useCampaignFeed<CampaignProgressSnapshot>(path, refresh);
   const snapshot = state?.data;
   const tasks = snapshot?.board.state === "ready" ? snapshot.board.tasks : [];
   const totals = { all: tasks.length, running: 0, attention: 0, queued: 0, done: 0 };
@@ -160,7 +118,8 @@ export function CampaignProgress({ campaign, agents, kanban }: {
     return null;
   }
 
-  return (
+  return (<>
+    <CampaignAgentActivity key={campaign} campaign={campaign} agents={agents} />
     <section className="campaign-progress" aria-labelledby={id + "-tasks"}>
       <header className="campaign-progress-toolbar">
         <h2 id={id + "-tasks"}>Kanban tasks</h2>
@@ -251,5 +210,5 @@ export function CampaignProgress({ campaign, agents, kanban }: {
         </section>
       </>}
     </section>
-  );
+  </>);
 }
