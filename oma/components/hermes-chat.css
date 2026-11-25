@@ -61,6 +61,7 @@
   margin: auto;
   text-align: center;
 }
+.runtime-messages:has(.agent-activity .runtime-prompt) > .runtime-conversation-empty { display: none; }
 .runtime-conversation-empty h3 { font-size: 1.125rem; font-weight: 650; }
 .runtime-conversation-empty p { margin-top: 5px; }
 .runtime-progress {
@@ -128,7 +129,29 @@
 .runtime-chat-offline p { color: var(--muted); font-size: 0.875rem; }
 .runtime-prompt fieldset { display: grid; gap: 10px; border: 0; margin: 0; padding: 0; min-width: 0; }
 .runtime-prompt legend { font-weight: 600; overflow-wrap: anywhere; white-space: pre-wrap; margin-bottom: 8px; }
-.runtime-prompt .runtime-choice { display: flex; align-items: baseline; gap: 8px; overflow-wrap: anywhere; }
+.runtime-prompt .runtime-choice {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-content: center;
+  align-items: start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.runtime-prompt .runtime-choice input {
+  width: 1rem;
+  height: 1rem;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.runtime-choice:has(input:not(:disabled)) { cursor: pointer; }
+.runtime-choice:has(input:not(:disabled)):hover { background: var(--raised); }
+.runtime-choice:has(input:checked) { border-color: var(--accent); background: var(--active); }
 .runtime-prompt textarea { margin-top: 5px; }
 .runtime-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .chat-error { margin: 0 24px 12px; }

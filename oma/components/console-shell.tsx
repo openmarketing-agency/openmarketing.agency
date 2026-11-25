@@ -123,7 +123,7 @@ function ConsoleFrame({ email, children, conversation, pathname, selectedChat, c
           </div>
           {hasConversation && (
             <Button type="button" variant={chatOpen ? "default" : "outline"} className="workbench-chat-toggle"
-              aria-controls="workspace-conversation" onClick={() => setMobilePane({ pathname, chat: !chatOpen })}>
+              aria-controls="workspace-conversation" aria-expanded={chatOpen} onClick={() => setMobilePane({ pathname, chat: !chatOpen })}>
               {chatOpen ? <PanelLeft aria-hidden="true" /> : <MessageSquare aria-hidden="true" />}
               {chatOpen ? "Back to workspace" : "Open chat"}
             </Button>

@@ -5,9 +5,11 @@ import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { HermesPrompt } from "../components/hermes-prompt";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { NativeSelect } from "../components/ui/native-select";
+import { Textarea } from "../components/ui/textarea";
 
 test("a button styled as a link renders one native navigation target", () => {
   const markup = renderToStaticMarkup(
@@ -56,4 +58,32 @@ test("a labeled select keeps its name, native options, and selected value", () =
   assert.match(markup, /<select[^>]*name="category"/);
   assert.match(markup, /<option value="worker" selected="">Kanban workers/);
   assert.match(markup, /<svg[^>]*aria-hidden="true"/);
+});
+
+test("chat options render native radios and checkboxes without text-field styles", () => {
+  for (const multiSelect of [false, true]) {
+    const markup = renderToStaticMarkup(createElement(HermesPrompt, {
+      prompt: { id: "ask-1", generation: 1, kind: "clarify", question: "What should the campaign drive?",
+        choices: ["Waitlist sign-ups", "Organic traffic"], multiSelect },
+      onAnswer: async () => undefined,
+    }));
+
+    const controls = markup.match(/<input[^>]*name="choice"[^>]*>/g) ?? [];
+    const type = multiSelect ? "checkbox" : "radio";
+    assert.equal(controls.length, multiSelect ? 2 : 3);
+    for (const control of controls) {
+      assert.ok(control.includes(`type="${type}"`));
+      assert.doesNotMatch(control, /data-slot="input"/);
+    }
+    assert.ok(controls[0].includes('value="0"'));
+    assert.ok(controls[1].includes('value="1"'));
+    if (!multiSelect) assert.ok(controls[2].includes('value="other"'));
+  }
+});
+
+test("multiline controls honor the row count chosen by the caller", () => {
+  const markup = renderToStaticMarkup(createElement(Textarea, { rows: 12, name: "strategy" }));
+
+  assert.match(markup, /<textarea[^>]*rows="12"/);
+  assert.doesNotMatch(markup, /field-sizing-content/);
 });

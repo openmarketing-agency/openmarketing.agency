@@ -371,6 +371,7 @@
 
 .publication-queue { max-width: 960px; }
 .publication-list { display: grid; gap: 14px; margin-top: 14px; }
+.publication-queue .approval-group > [data-slot="button"] { margin-top: 12px; }
 .publication-card {
   padding: clamp(14px, 3vw, 24px);
   border: 1px solid var(--border);

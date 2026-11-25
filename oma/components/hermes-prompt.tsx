@@ -6,7 +6,6 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { AgentPrompt as Prompt } from "@/lib/agent-chat";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 export function HermesPrompt({ prompt, onAnswer, autoFocus = true }: {
@@ -69,12 +68,15 @@ export function HermesPrompt({ prompt, onAnswer, autoFocus = true }: {
         </> : <>
           {prompt.choices.map((choice, index) => (
             <label className="runtime-choice" key={index}>
-              <Input name="choice" type={prompt.multiSelect ? "checkbox" : "radio"} value={index} onChange={() => setOtherSelected(false)} />
+              <input name="choice" type={prompt.multiSelect ? "checkbox" : "radio"} value={index} onChange={() => setOtherSelected(false)} />
               <span>{choice}</span>
             </label>
           ))}
           {prompt.choices.length > 0 && !prompt.multiSelect && (
-            <label className="runtime-choice"><input name="choice" type="radio" value="other" onChange={() => setOtherSelected(true)} /> Other</label>
+            <label className="runtime-choice">
+              <input name="choice" type="radio" value="other" onChange={() => setOtherSelected(true)} />
+              <span>Other</span>
+            </label>
           )}
           {(prompt.choices.length === 0 || otherSelected || prompt.multiSelect) && (
             <label>{prompt.multiSelect ? "Other answer (optional)" : "Your answer"}<Textarea name="other" rows={2} maxLength={16_000} /></label>
