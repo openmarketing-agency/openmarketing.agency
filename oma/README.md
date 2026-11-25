@@ -4,7 +4,7 @@ This directory contains the Next.js console and API, the SQLite database schema,
 
 ## Develop
 
-From the repository root, run `make dev` for the full local stack or `make dev-console` to work on the console alone. Both commands watch console source changes. Open [http://localhost:3000](http://localhost:3000).
+From the repository root, run `make dev` (or `make dev-console`) to start the console and watch source changes. Open [http://localhost:3000](http://localhost:3000). To use an agent, configure the [separate gateway and workspace integrations](../README.md#connect-an-existing-oma-agent).
 
 For native development, use Node.js 24 and npm. Run these commands from `oma/`.
 
@@ -24,7 +24,7 @@ npm run typecheck
 npm run build
 ```
 
-The database tests create isolated SQLite files in a temporary directory. First sign-in on the full stack opens agent setup, where the user provides a provider API key, an HTTPS base URL, and a shared reasoning effort for the built-in agents. The console forwards the key in both private agent sync requests. Hermes stores it with the profiles. Project setup at `/onboarding` accepts a website, a GitHub repository, or both. It saves the supplied links and forwards the questions and answers through the configured oma-agent gateway. Failed deliveries can be retried with the saved links. In development, loading `/onboarding-backup` directly or refreshing it resets the backed-up agent conversation so it can be tested again.
+The database tests create isolated SQLite files in a temporary directory. When the console has a compatible workspace socket, first sign-in opens agent setup, where the user supplies a model provider API key, an HTTPS base URL, and a shared reasoning effort. The console forwards settings in both private agent sync requests. Hermes stores the key with the profiles. Project setup at `/onboarding` accepts a website, a GitHub repository, or both. It saves the supplied links and forwards the questions and answers through the configured oma-agent gateway. Failed deliveries can be retried with the saved links. In development, loading `/onboarding-backup` directly or refreshing it resets the backed-up agent conversation so it can be tested again.
 
 The right-side chat panel appears across the signed-in workspace. It shows live project setup progress and the gateway’s public updates, reported usage, and errors. The panel accepts responses to setup prompts and can retry failed or cancelled runs using the saved links. Chat history is loaded from Hermes and scoped to the workspace or current campaign.
 
@@ -69,6 +69,6 @@ The first registration creates the installation's sole account. The nullable `us
 
 Set `COMPOSIO_API_KEY` in the Docker environment to enable the Connections catalog and campaign MCP sync. A campaign’s visible integrations and MCP session both come from the saved YAML `integrations` list. List unique canonical IDs such as `discord` and `facebook`. Connect the suggested integrations from the campaign’s **Tools** tab, then select **Sync tools** to apply them. Use campaign chat to request changes to the list. Composio remains the source for account authorization and connection status. Workspace-level tool enablement is stored in the agent workspace’s `tool-selections.json`.
 
-When upgrading from schema version 3, rebuild the console and VM together. The first tool view or action imports saved campaign, legacy specialist, and workspace selections. SQLite drops the old `tool_assignments` table after the agent workspace confirms the import. If the agent workspace is unavailable, the SQLite rows stay in place and the next tool request retries the import. The `/api/v1/tool-assignments` endpoints have been retired.
+When upgrading from schema version 3 with a compatible workspace service connected, the first tool view or action imports saved campaign, legacy specialist, and workspace selections. SQLite drops the old `tool_assignments` table after the agent workspace confirms the import. If the agent workspace is unavailable, the SQLite rows stay in place and the next tool request retries the import. The `/api/v1/tool-assignments` endpoints have been retired.
 
 Authenticated custom MCP connections also require `OMA_INTEGRATION_ENCRYPTION_KEY`. Generate one with `openssl rand -base64 32 | tr '+/' '-_'` and back it up securely. Authenticated endpoints use HTTPS, with HTTP allowed for loopback endpoints.
