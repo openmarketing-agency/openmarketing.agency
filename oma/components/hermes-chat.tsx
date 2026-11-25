@@ -10,6 +10,7 @@ import { answerChatPrompt, readChatTurn, readOlderChatMessages, sendChatMessage,
 import { maxChatMessageLength, type ActiveAgentRun, type AgentStatus, type ChatHistory, type ChatMessage } from "@/lib/agent-chat";
 import type { CampaignChanges } from "@/lib/server/agent-workspace";
 import { AgentActivity } from "./agent-activity";
+import { ChatMessageText } from "./chat-message-text";
 import { ChatProgress } from "./chat-progress";
 import { useChatRunEvents, useChatSessionActivity } from "./chat-session-activity";
 import { HermesPrompt } from "./hermes-prompt";
@@ -117,7 +118,8 @@ export function HermesChat({
     setDraft(next);
     if (key && next !== current) handOffDraft(key, "");
   }, [campaignId]);
-  const candidate = currentHandle ?? snapshot?.handle ?? (currentHandle === undefined ? storedHandle : null);
+  const candidate = currentHandle ?? (snapshot ? snapshot.handle : history.active?.handle)
+    ?? (currentHandle === undefined ? storedHandle : null);
   const handle = candidate !== finishedHandle ? candidate : null;
   const feed = useChatRunEvents(handle);
   const live = handle && feed?.handle === handle ? feed : undefined;
@@ -126,6 +128,8 @@ export function HermesChat({
   const canSend = status.ready && !navigating && !sending && !steering && (Boolean(handle) || !pending);
   const offset = nextOffset === undefined ? (snapshot ? snapshot.nextOffset : history.active?.nextOffset) : nextOffset;
   const recent = snapshot?.messages ?? history.active?.messages;
+  const recordedTools = snapshot ? snapshot.recordedTools : history.active?.recordedTools;
+  const showRunProgress = status.ready && Boolean(sending || handle);
   const recentIds = new Set(recent?.map(({ id }) => id));
   const messages = [...older.filter(({ id }) => !recentIds.has(id)), ...(recent ?? [])];
 
@@ -328,35 +332,39 @@ export function HermesChat({
         <Button type="button" variant="outline" disabled={navigating || sending || !(history.active || pending)}
           onClick={() => openChat("new")}><Plus size={15} aria-hidden="true" /> New chat</Button>
       </div>
-      <div className="runtime-messages" ref={transcript} role="log" aria-label="Conversation">
-        <AgentActivity />
-        {offset != null && <Button type="button" variant="outline" className="runtime-load-older" disabled={loadingOlder}
-          onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : "Load older messages"}</Button>}
-        {!messages.length && !pending && !handle && !history.error && (
-          <div className="runtime-conversation-empty">
-            <h3>{campaignId ? "What would you like to do with this campaign?" : "What would you like to work on?"}</h3>
-          </div>
-        )}
-        {messages.map(({ id, role, text }) => (
-          <div key={id} className={"runtime-message" + (role === "user" ? " from-user" : role === "notification" ? " from-notification" : "")}>
-            <strong>{role === "user" ? "You" : role === "notification" ? "Hermes notification" : "oma-agent"}</strong><p>{text}</p>
-          </div>
-        ))}
-        {pending && messages.findLast(({ role }) => role === "user")?.text !== pending.text &&
-          <div className="runtime-message from-user"><strong>You</strong><p>{pending.text}</p></div>}
-        {guidance.filter((item) => item.handle === handle).map(({ id, text }) => (
-          <div key={id} className="runtime-message from-user"><strong>You</strong><p>{text}</p></div>
-        ))}
-        {live?.updates.map(({ message, seq }, index) => message && !messages.some(({ text }) => text === message) &&
-          <div key={seq ?? index} className="runtime-message"><strong>oma-agent</strong><p>{message}</p></div>)}
-        {live?.children.map(({ id, status, label }) => <div key={id} className="runtime-message from-notification">
-          <strong>Subagent {status}</strong>{label && <p>{label}</p>}
-        </div>)}
-      </div>
+      <AgentActivity showSetup={Boolean(history.active?.isProjectSetup)}>{({ summary, notices }) => <>
+        {summary}
+        <div className="runtime-messages" ref={transcript} role="log" aria-label="Conversation">
+          {notices}
+          {offset != null && <Button type="button" variant="outline" className="runtime-load-older" disabled={loadingOlder}
+            onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : "Load older messages"}</Button>}
+          {!messages.length && !pending && !handle && !history.error && !history.active?.isProjectSetup && (
+            <div className="runtime-conversation-empty">
+              <h3>{campaignId ? "What would you like to do with this campaign?" : "What would you like to work on?"}</h3>
+            </div>
+          )}
+          {messages.map(({ id, role, text }) => (
+            <div key={id} className={"runtime-message" + (role === "user" ? " from-user" : role === "notification" ? " from-notification" : "")}>
+              <strong>{role === "user" ? "You" : role === "notification" ? "Hermes notification" : "oma-agent"}</strong><ChatMessageText text={text} />
+            </div>
+          ))}
+          {pending && messages.findLast(({ role }) => role === "user")?.text !== pending.text &&
+            <div className="runtime-message from-user"><strong>You</strong><ChatMessageText text={pending.text} /></div>}
+          {guidance.filter((item) => item.handle === handle).map(({ id, text }) => (
+            <div key={id} className="runtime-message from-user"><strong>You</strong><ChatMessageText text={text} /></div>
+          ))}
+          {live?.updates.map(({ message, phase, seq }, index) => message && !messages.some(({ text }) => text === message) &&
+            <div key={phase === "writing" ? "writing" : seq ?? index} className="runtime-message"><strong>oma-agent</strong><ChatMessageText text={message} /></div>)}
+          {live?.children.map(({ id, status, label }) => <div key={id} className="runtime-message from-notification">
+            <strong>Subagent {status}</strong>{label && <p>{label}</p>}
+          </div>)}
+        </div>
+      </>}</AgentActivity>
       {syncStatus ? <div className="runtime-progress">
         <p className="runtime-progress-state" role="status">{syncStatus}</p>
-      </div> : status.ready && (sending || handle) &&
-        <ChatProgress run={run} sending={sending} reconnecting={!!handle && !!error} />}
+      </div> : (showRunProgress || (history.active?.isProjectSetup && Boolean(recordedTools?.length))) &&
+        <ChatProgress active={showRunProgress} run={run} sending={sending} reconnecting={!!handle && !!error}
+          tools={live?.tools} reasoning={live?.reasoning} recordedTools={recordedTools} />}
       {backgroundCount > 0 && <p className="runtime-progress" role="status">
         {backgroundCount} background {backgroundCount === 1 ? "task" : "tasks"} running.
         {!handle && " This chat will resume when the results arrive."}
@@ -393,7 +401,7 @@ export function HermesChat({
             placeholder={handle ? "Steer this turn…" : "Message oma-agent…"}
             maxLength={maxChatMessageLength} rows={3} required disabled={navigating} />
           <Button disabled={!canSend || !message.trim()}>
-            <Send size={16} aria-hidden="true" /> {steering ? "Sending…" : handle ? "Send guidance" : campaignId ? "Send" : "Send message"}
+            <Send size={16} aria-hidden="true" /> {steering ? "Steering…" : handle ? "Steer" : campaignId ? "Send" : "Send message"}
           </Button>
         </form>
       </>}

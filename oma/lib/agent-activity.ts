@@ -19,7 +19,11 @@ export type AgentActivity = {
   setup: AgentRunProgress | { status: "not_sent" | "unavailable" | "connection_lost" } | null;
 };
 
+export type ChatToolCall = { id?: string; name: string; status: "running" | "completed" | "failed" | "recorded" };
+
 export type AgentActivityUpdate = { seq?: number } & (
   | { phase: "writing" | "update"; message?: string }
-  | { phase: "delegation"; message?: never; child: { id: string; status: "started" | "completed" | "failed" | "stopped"; label?: string } }
+  | { phase: "delegation"; child: { id: string; status: "started" | "completed" | "failed" | "stopped"; label?: string } }
+  | { phase: "tool"; tool: ChatToolCall }
+  | { phase: "reasoning" }
 );

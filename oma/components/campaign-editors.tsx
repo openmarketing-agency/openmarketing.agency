@@ -3,8 +3,8 @@
 "use client";
 
 import { useActionState, useRef, useState, type ToggleEvent } from "react";
-import { saveCampaignPlanAction, syncCampaignToolsAction, syncCampaignAgentsAction } from "@/app/actions/workspace";
-import type { CampaignConfigurationResult, SavedCampaign } from "@/lib/server/agent-workspace";
+import { saveCampaignCustomMcpAction, saveCampaignPlanAction, syncCampaignToolsAction, syncCampaignAgentsAction } from "@/app/actions/workspace";
+import type { CampaignConfigurationResult, ManualCampaignIntegration, SavedCampaign } from "@/lib/server/agent-workspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,6 +78,31 @@ export function CampaignToolSync({ campaignId, revision, disabled }: {
       <Button variant="outline" disabled={disabled || pending}>{pending ? "Syncing tools…" : "Sync tools"}</Button>
       <SaveMessage result={result} />
     </form>
+  );
+}
+
+export function CampaignCustomMcp({ campaignId, revision, integration }: {
+  campaignId: string; revision: string; integration: ManualCampaignIntegration;
+}) {
+  const [result, action, pending] = useActionState(saveCampaignCustomMcpAction.bind(null, campaignId, integration.id), {});
+  const [url, setUrl] = useState(integration.url);
+  return (
+    <details className="campaign-edit-disclosure">
+      <summary>{integration.name} <span>{integration.url ? "Saved" : "Setup required"}</span></summary>
+      <form action={action} className="workspace-editor">
+        <input type="hidden" name="revision" value={revision} />
+        <label>MCP endpoint URL
+          <Input type="url" name="url" value={url} onChange={(event) => setUrl(event.target.value)}
+            placeholder="https://mcp.example.com/mcp" maxLength={2048} readOnly={pending} required />
+        </label>
+        <p>Use an approved HTTPS Streamable HTTP endpoint. Don’t include credentials in the URL.</p>
+        {!pending && result.error && <p className="form-error" role="alert">{result.error}</p>}
+        {!pending && result.mcpToolCount && <p className="workspace-save-status" role="status">
+          MCP health check passed. Found {result.mcpToolCount} {result.mcpToolCount === 1 ? "tool" : "tools"}. Use Sync tools or Start to apply the saved connection.
+        </p>}
+        <Button disabled={pending} variant="outline">{pending ? "Checking MCP…" : "Test and save"}</Button>
+      </form>
+    </details>
   );
 }
 

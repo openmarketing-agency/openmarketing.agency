@@ -31,6 +31,7 @@ guest() { "$engine" exec --interactive --user hermes "$container" "$@"; }
 omactl_tag=$("$engine" image inspect "$image" --format '{{index .Config.Labels "agency.openmarketing.omactl.version"}}')
 guest /opt/hermes/.venv/bin/python - fresh < "$root/tests/smoke.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/workspace.py"
+guest /opt/hermes/.venv/bin/python - < "$root/tests/custom_mcp.py"
 guest /opt/hermes/.venv/bin/python - < "$root/tests/tool_selections.py"
 if guest test -f /opt/hermes/hermes_cli/oma_campaigns/standalone.py; then
     guest /opt/hermes/.venv/bin/python - < "$root/tests/standalone_sync.py"

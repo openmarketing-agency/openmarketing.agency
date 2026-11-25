@@ -37,6 +37,8 @@ from hermes_yaml import YAMLError, roundtrip_yaml, safe_load
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.scalarstring import LiteralScalarString
 
+from custom_mcp import MCPCheckError, approved_url, check_tools
+
 
 COLLECTIONS = ("brands", "playbooks", "campaigns", "agents")
 SINGLETONS = {"brands": "brand", "playbooks": "playbook"}
@@ -59,6 +61,9 @@ BRAND_ASSET_TYPES = {
 }
 MODEL_KEY = "HERMES_MODEL_API_KEY"
 COMPOSIO_KEY = "COMPOSIO_API_KEY"
+CUSTOM_MCP_PREFIX = "oma-custom-"
+INTEGRATION_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+CUSTOM_MCP_PROBE = Lock()
 CAMPAIGN_MODES = ("approve", "control", "yolo")
 RUNTIME_ENV = ("PATH", "HOME", "USER", "LOGNAME", "HERMES_HOME", "HERMES_DIR", "PYTHONPATH", "LANG",
                "LC_ALL", "XDG_RUNTIME_DIR", "VIRTUAL_ENV")
@@ -391,13 +396,26 @@ def campaign_integrations(data):
 
     catalog = integration_catalog()
     entries = data.get("integrations", [])
-    required = [
-        {"id": key, "name": catalog[key]["name"], "slug": catalog[key]["composio"]}
-        for key in dict.fromkeys(strings(entries)) if key in catalog
-    ]
+    required, manual, seen = [], [], set()
+    invalid = not isinstance(entries, list)
+    servers = mapping(data.get("mcp_servers"))
+    for key in entries if isinstance(entries, list) else []:
+        if not isinstance(key, str) or len(key) > 64 or not INTEGRATION_ID.fullmatch(key) or key in seen:
+            invalid = True
+            continue
+        seen.add(key)
+        item = catalog.get(key, {})
+        name, slug = item.get("name", key), item.get("composio")
+        if slug:
+            required.append({"id": key, "name": name, "slug": slug})
+        else:
+            config = mapping(servers.get(CUSTOM_MCP_PREFIX + key))
+            url = approved_url(config["url"]) if config.keys() == {"url"} else ""
+            manual.append({"id": key, "name": name, "url": url})
     return {
         "requiredIntegrations": required,
-        "integrationConfigInvalid": not isinstance(entries, list) or len(required) != len(entries),
+        "manualIntegrations": manual,
+        "integrationConfigInvalid": invalid,
     }
 
 
@@ -983,6 +1001,52 @@ def campaign_configuration(source):
     }
 
 
+def update_campaign_custom_mcp(root, campaign_id, update, edit_lock):
+    if (not isinstance(update, dict) or update.keys() != {"revision", "integrationId", "url"}
+            or not MIGRATION_ID.fullmatch(string(update["revision"]))
+            or len(string(update["integrationId"])) > 64 or not INTEGRATION_ID.fullmatch(string(update["integrationId"]))):
+        raise WorkspaceError(422, "Reload the campaign and choose a required integration.")
+    url = approved_url(update["url"])
+    if not url:
+        raise WorkspaceError(422, "Use an approved HTTPS MCP endpoint. Ask the deployment operator to add its exact URL to OMA_CUSTOM_MCP_URLS.")
+    key = CUSTOM_MCP_PREFIX + update["integrationId"]
+
+    def validate(source):
+        if sha256(source).hexdigest() != update["revision"]:
+            raise WorkspaceError(409, "This campaign changed. Reload its tools and try again.")
+        data = parse_record(source, campaign_id)
+        if not any(item["id"] == update["integrationId"] for item in campaign_integrations(data)["manualIntegrations"]):
+            raise WorkspaceError(422, "Only required integrations without a managed connection can use custom MCP.")
+        servers = data.get("mcp_servers", {})
+        if not isinstance(servers, dict) or (key in servers and mapping(servers[key]).keys() != {"url"}):
+            raise WorkspaceError(409, "A custom MCP setting conflicts with this integration. Review the campaign’s saved MCP settings.")
+
+    with editable_record(root, "campaigns", campaign_id) as (_, source, _):
+        validate(source)
+    # Don’t hold the workspace edit lock over remote I/O. Recheck the revision
+    # before replacing the file, including changes made outside the console.
+    if not CUSTOM_MCP_PROBE.acquire(blocking=False):
+        raise WorkspaceError(429, "Another MCP health check is running. Try again in a moment.")
+    try:
+        count = check_tools(url)
+    except MCPCheckError as error:
+        raise WorkspaceError(422, str(error)) from None
+    finally:
+        CUSTOM_MCP_PROBE.release()
+    with edit_lock, editable_record(root, "campaigns", campaign_id) as (record, source, mode):
+        validate(source)
+        yaml = roundtrip_yaml()
+        document = yaml.load(source)
+        servers = document.setdefault("mcp_servers", {})
+        if servers.get(key) != {"url": url}:
+            servers[key] = {"url": url}
+            text = StringIO()
+            yaml.dump(document, text)
+            updated = text.getvalue().encode()
+            replace_file(record, "config.yaml", mode, updated, lambda: read_file(record)[0] == source)
+        return {"toolCount": count}
+
+
 def update_campaign_mode(root, campaign_id, update):
     if (not isinstance(update, dict) or update.keys() != {"revision", "mode"}
             or not MIGRATION_ID.fullmatch(string(update["revision"])) or update["mode"] not in CAMPAIGN_MODES):
@@ -1013,8 +1077,13 @@ def validate_campaign_settings(update):
         or (update["setModelKey"] and not update["baseUrl"])
     ):
         raise WorkspaceError(422, "Check the campaign model and Composio URL fields.")
-    if "integrations" in update and campaign_integrations(update)["integrationConfigInvalid"]:
-        raise WorkspaceError(422, "Choose unique integrations from the campaign catalog.")
+    if "integrations" in update:
+        from hermes_cli.oma_campaigns.integrations import integration_catalog
+
+        if campaign_integrations(update)["integrationConfigInvalid"] or any(
+            key not in integration_catalog() for key in update["integrations"]
+        ):
+            raise WorkspaceError(422, "Choose unique integrations from the campaign catalog.")
 
 
 def update_campaign_configuration(root, campaign_id, update):
@@ -2119,34 +2188,24 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self.reply(200, result)
 
     def do_PUT(self):
-        path = re.fullmatch(r"/workspace/([^/]+)/([^/]+)(/knowledge|/config|/plan|/lifecycle|/mode)?", self.path)
+        path = re.fullmatch(r"/workspace/([^/]+)/([^/]+)(/knowledge|/config|/plan|/lifecycle|/mode|/custom-mcp)?", self.path)
         selection = self.path == "/workspace/tool-selections"
         if not selection and (not path or (path[3] == "/knowledge" and path[1] != "brands") or (
-            (path[1] == "campaigns") != (path[3] in ("/config", "/plan", "/lifecycle", "/mode"))
+            (path[1] == "campaigns") != (path[3] in ("/config", "/plan", "/lifecycle", "/mode", "/custom-mcp"))
         )):
             self.reply(404, {"message": "Unknown workspace request."})
             return
         lifecycle = path and path[3] == "/lifecycle"
+        custom_mcp = path and path[3] == "/custom-mcp"
         try:
             if lifecycle and self.headers.get_content_type() != "application/json":
                 raise WorkspaceError(415, "Campaign lifecycle requires a JSON request.")
-            request = self.read_update(256 if lifecycle else MAX_FILE_SIZE)
+            request = self.read_update(256 if lifecycle else 4096 if custom_mcp else MAX_FILE_SIZE)
             result = {}
-            with self.server.edit_lock:
-                if selection:
-                    result = update_tool_selections(self.server.root, request)
-                elif path[3] == "/lifecycle":
-                    result = change_campaign_lifecycle(self.server.root, path[2], request)
-                elif path[3] == "/mode":
-                    result = update_campaign_mode(self.server.root, path[2], request)
-                elif path[3] == "/config":
-                    result = update_campaign_configuration(self.server.root, path[2], request)
-                elif path[3] == "/plan":
-                    result = update_campaign_plan(self.server.root, path[2], request)
-                elif path[3]:
-                    update_knowledge(self.server.root, path[2], request)
-                else:
-                    update_record(self.server.root, path[1], path[2], request)
+            if custom_mcp:
+                result = update_campaign_custom_mcp(self.server.root, path[2], request, self.server.edit_lock)
+            else:
+                result = self.update_with_lock(selection, path, request)
         except (ValueError, RecursionError):
             self.reply(400, {"message": "Invalid workspace update."})
         except WorkspaceError as error:
@@ -2156,6 +2215,24 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         else:
             status = 409 if lifecycle and result.get("missing_model") else 202 if lifecycle and result["state"] == "pausing" else 200
             self.reply(status, result)
+
+    def update_with_lock(self, selection, path, request):
+        with self.server.edit_lock:
+            if selection:
+                return update_tool_selections(self.server.root, request)
+            if path[3] == "/lifecycle":
+                return change_campaign_lifecycle(self.server.root, path[2], request)
+            if path[3] == "/mode":
+                return update_campaign_mode(self.server.root, path[2], request)
+            if path[3] == "/config":
+                return update_campaign_configuration(self.server.root, path[2], request)
+            if path[3] == "/plan":
+                return update_campaign_plan(self.server.root, path[2], request)
+            if path[3]:
+                update_knowledge(self.server.root, path[2], request)
+            else:
+                update_record(self.server.root, path[1], path[2], request)
+            return {}
 
 
 def pending_pause_revision(root, campaign_id):

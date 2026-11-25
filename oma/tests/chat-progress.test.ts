@@ -30,3 +30,22 @@ test("chat distinguishes waiting for input from reconnecting and working", () =>
   assert.match(reconnecting, /Reconnecting/);
   assert.doesNotMatch(reconnecting, /Searching the web/);
 });
+
+test("shows recorded tools when live events are unavailable without marking them as running", () => {
+  const markup = renderToStaticMarkup(createElement(ChatProgress, {
+    run: { status: "running", phase: "running" },
+    recordedTools: [{ id: "call1", name: "read_file", status: "recorded" }],
+  }));
+  assert.match(markup, /Recent tool activity/);
+  assert.match(markup, /read file — Recorded/);
+  assert.doesNotMatch(markup, /read file — Running|Reasoning activity reported/);
+});
+
+test("retains the recorded tool list after setup without showing a working state", () => {
+  const markup = renderToStaticMarkup(createElement(ChatProgress, {
+    active: false,
+    recordedTools: [{ id: "call1", name: "read_file", status: "recorded" }],
+  }));
+  assert.match(markup, /Recent tool activity/);
+  assert.doesNotMatch(markup, /role="status"|runtime-progress-spinner/);
+});

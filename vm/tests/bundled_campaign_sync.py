@@ -28,11 +28,15 @@ def verify_sync(home):
     data = {
         "id": campaign_id, "name": "Bundled campaign", "description": "Legacy fixture.",
         "orchestrator": coordinator, "agents": agents,
+        "integrations": ["github", "hacker-news"],
         "model": {"default": "fixture-model", "provider": "openai-api",
                   "base_url": "https://provider.example.test/v1", "key_env": "HERMES_MODEL_API_KEY",
                   "api_key": "${HERMES_MODEL_API_KEY}"},
-        "mcp_servers": {"composio": {"url": "https://backend.composio.dev/tool_router/trs_fixture/mcp",
-                        "headers": {"x-api-key": "${COMPOSIO_API_KEY}"}}},
+        "mcp_servers": {
+            "composio": {"url": "https://backend.composio.dev/tool_router/trs_fixture/mcp",
+                         "headers": {"x-api-key": "${COMPOSIO_API_KEY}"}},
+            "oma-custom-hacker-news": {"url": "https://mcp.example.test/mcp"},
+        },
     }
     atomic_config_replace(record, data)
     registry = home / ".oma" / "installed.json"

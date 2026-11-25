@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { AgentActivityUpdate } from "@/lib/agent-activity";
-import type { ChatMessagePage } from "@/lib/agent-chat";
+import type { AgentActivityUpdate, ChatToolCall } from "@/lib/agent-activity";
+import type { ChatTranscript } from "@/lib/agent-chat";
 
-type Snapshot = ChatMessagePage & { handle: string | null; delegations: { id: string; status: string; task_count: number }[] };
+type Snapshot = ChatTranscript & { handle: string | null; delegations: { id: string; status: string; task_count: number }[] };
 
 export function useChatSessionActivity(thread: string | undefined, campaign: string | undefined, ready: boolean) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
@@ -52,7 +52,8 @@ export function useChatSessionActivity(thread: string | undefined, campaign: str
 }
 
 type Child = Extract<AgentActivityUpdate, { phase: "delegation" }>["child"];
-type Updates = { handle: string; updates: AgentActivityUpdate[]; children: Child[] };
+type Reply = Extract<AgentActivityUpdate, { phase: "update" | "writing" }>;
+type Updates = { handle: string; updates: Reply[]; children: Child[]; tools: ChatToolCall[]; reasoning: boolean };
 
 export function useChatRunEvents(handle: string | null | undefined) {
   const [feed, setFeed] = useState<Updates>();
@@ -70,11 +71,17 @@ export function useChatRunEvents(handle: string | null | undefined) {
         lastSequence = event.seq;
       }
       setFeed((previous) => {
-        const current = previous?.handle === run ? previous : { handle: run, updates: [], children: [] };
+        const current = previous?.handle === run ? previous : { handle: run, updates: [], children: [], tools: [], reasoning: false };
         if (event.phase === "delegation") {
           const same = current.children.find(({ id }) => id === event.child.id);
           const child = { ...same, ...event.child };
           return { ...current, children: [...current.children.filter(({ id }) => id !== child.id), child].slice(-40) };
+        }
+        if (event.phase === "reasoning") return current.reasoning ? current : { ...current, reasoning: true };
+        if (event.phase === "tool") {
+          const { tool } = event;
+          const others = current.tools.filter(({ id, name }) => tool.id ? id !== tool.id : id || name !== tool.name);
+          return { ...current, tools: [...others, tool].slice(-12) };
         }
         const last = current.updates.at(-1);
         if (last?.phase === event.phase && last.message === event.message) return current;

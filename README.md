@@ -44,7 +44,11 @@ A campaign’s **Tools** tab shows the `integrations` list from its saved `campa
 
 A campaign uses the default agent’s model when its model fields are blank. Deploying or syncing the campaign applies the default profile’s saved model and credential to agents that inherit it. Open a campaign’s **Run settings** to enter an override or select **Use default agent model** to clear it. Use a provider supported by oma-agent, or `custom` for an OpenAI-compatible endpoint. Enter the campaign’s API key with the HTTPS base URL when the override needs its own credential. Composio generation uses `COMPOSIO_API_KEY`.
 
-Starting a campaign or selecting **Sync tools** creates a Composio connection from the campaign’s configured integrations. It then writes the model and generated MCP URL to `campaigns/<id>/config.yaml` in the mounted workspace and uses the private `POST /workspace/campaigns/<id>/sync` endpoint to update installed campaign profiles. For bundled campaigns created by earlier Docker images, the first sync creates the campaign board and adds missing routing to the existing profiles. Syncing a campaign with no configured integrations clears its generated Composio connection. YAML stores only key references. The model and MCP settings support per-agent overrides. Rebuild and recreate the console and VM after updating the stack.
+Starting a campaign or selecting **Sync tools** creates a Composio connection from the campaign’s managed integrations. It then writes the model and generated MCP URL to `campaigns/<id>/config.yaml` in the mounted workspace and uses the private `POST /workspace/campaigns/<id>/sync` endpoint to update installed campaign profiles. For bundled campaigns created by earlier Docker images, the first sync creates the campaign board and adds missing routing to the existing profiles. Syncing with no managed integrations clears the generated Composio connection without removing custom MCP servers. YAML stores only key references. The model and MCP settings support per-agent overrides. Rebuild and recreate the console and VM after updating the stack.
+
+For a required integration without a managed connector, open **Tools → Custom MCP**, enter an HTTPS Streamable HTTP endpoint, and select **Test and save**. The VM saves the endpoint only after it initializes an MCP session and lists at least one tool. It does not execute any tools. **Sync tools** or **Start campaign** applies the saved connection to campaign profiles; managed integrations still need their own connections.
+
+Set `OMA_CUSTOM_MCP_URLS` in the deployment environment to a comma-separated list of exact URLs that you trust the campaign agents to use, such as `https://mcp.example.com/mcp`. Leave it blank to deny custom MCP saves. Use stable, non-redirecting URLs without credentials or query strings. This form does not accept authentication credentials, local commands, or IP literals. Removing a URL from the allowlist blocks future console saves and starts using that URL; it does not revoke a connection already applied to a running profile.
 
 The campaign conversation stays available as you move between campaign sections. Use it to discuss the plan or request changes. Every message is sent to oma-agent’s default profile with the saved campaign ID.
 
@@ -93,40 +97,22 @@ Use `make dev-console` for hot reload with just the console. See the [applicatio
 
 To use Chat with an existing Hermes gateway, set `OMA_AGENT_URL` to an address reachable from the console and set `OMA_AGENT_API_KEY` to the gateway’s `API_SERVER_KEY`. On Docker Desktop, for example, use `http://host.docker.internal:8642` for a gateway on your host. For native development on the same machine, use `http://127.0.0.1:8642` in `oma/.env.local`. Keep the gateway private and recreate the console after changing its environment. The gateway needs the [Hermes Runs API](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server#post-v1runs).
 
-## Self-host on a bare-metal server
+## Install natively on Debian
 
-On an x86-64 Linux host, download `oma-vm-<tag>-linux-amd64.tar.gz` and `SHA256SUMS` from the same [OMA release](https://github.com/openmarketing-agency/openmarketing.agency/releases). Replace `vX.Y.Z` below with that release tag:
-
-```sh
-sha256sum -c SHA256SUMS
-tar -xzf oma-vm-vX.Y.Z-linux-amd64.tar.gz
-cd oma-vm-vX.Y.Z-linux-amd64
-install -m 600 .env.example .env
-# Optional: set OPENROUTER_API_KEY in .env, or configure it in Hermes after startup.
-sudo bash install.sh
-```
-
-The installer adds Docker and Compose on a fresh Ubuntu 24.04 server and starts the prebuilt console and VM. On other x86-64 Linux systems, install Docker Engine and Compose 2.24.4+ before running it. The installer uses the `oma` Compose project and named volumes. To upgrade, verify and extract the new package, bring over the private `.env`, and run its installer. Use the existing Docker context so the installation retains its volumes.
-
-The services bind to loopback by default. Use an SSH tunnel to port `3000` to create the account. For public HTTPS access to the console, set `OMA_APP_URL` to your HTTPS origin, set `OMA_COOKIE_SECURE=true` in the package's `.env`, and rerun the installer behind your reverse proxy. Keep the Hermes gateway and dashboard private.
-
-Run `sudo docker exec --user hermes oma-vm-1 omactl doctor` to check the installed VM.
-
-## Run the VM image on a VM provider
-
-The [release](https://github.com/openmarketing-agency/openmarketing.agency/releases) includes a pinned digest for the standalone `linux/amd64` agent image. Import that digest into a disposable Agent37 VM template, mount persistent storage at `/opt/data`, keep the image entrypoint, and set the default port to `8642`. Set `OPENROUTER_API_KEY` for OpenRouter, or supply `OMA_LITELLM_URL` and `OMA_LITELLM_KEY` for an existing OpenAI-compatible endpoint that serves the `oma-hermes` alias. Set `OMA_HERMES_MODEL` to override the selected model. Set a unique `OMA_HERMES_GATEWAY_SEED` when deriving bearer keys outside the VM. A profile's key is the hex HMAC-SHA-256 of its ID, or `default`, using that seed. Verify a chat turn and restart the VM before updating a live template. [Agent37 custom images](https://www.agent37.com/docs/agents-api/custom-image)
-
-To build and smoke-test the standalone image from this checkout:
+On x86-64 Debian, run the [installer](setup/install.sh) from this checkout as the user who will run OMA Agent:
 
 ```sh
-docker build -f vm/Dockerfile -t oma-vm:local .
-bash vm/tests/smoke.sh oma-vm:local
+sudo apt-get update
+sudo apt-get install ca-certificates curl git libatomic1
+bash setup/install.sh
 ```
 
-On AMD64, the VM build verifies and installs the pinned [omactl](https://github.com/openmarketing-agency/omactl) release package. On ARM64, it compiles the same pinned version and bundles its catalog. The prebuilt bare-metal release remains AMD64-only.
+For a packaged release, download `oma-setup-<tag>-debian-amd64.tar.gz` and `SHA256SUMS` from the same [OMA release](https://github.com/openmarketing-agency/openmarketing.agency/releases). Verify with `sha256sum -c SHA256SUMS`, extract the archive, and run `bash install.sh` from the extracted directory. Do not use `sudo` for the installer itself.
+
+The installer puts `oma-agent` and `omactl` in `~/.local/bin`, with OMA Agent data in `~/.local/share/oma-agent` and the versioned `omactl` catalog in `~/.local/share/omactl`. Run `oma-agent setup` to configure your model provider. The installer does not install Docker, start any services, or install the web console. `omactl` can report its version without Docker, but its app-management commands still require Docker and Compose.
 
 ## Release
 
-Push a `vX.Y.Z` tag in this repository to build and test both images, publish them to GHCR, and attach the installer and checksum to the GitHub release. Set the two GHCR packages to public after the first publish so the installer can pull them anonymously.
+Pushing a `vX.Y.Z` tag publishes the native Debian installer and checksum on GitHub. A separate job builds the AMD64 Next.js server image and publishes it as `ghcr.io/openmarketing-agency/oma-server:<tag>`. Installer publishing does not use Docker or wait for the image. Tag pushes no longer build or publish the VM image; local full-stack development still builds it from source.
 
 OMA is distributed under the [Apache License 2.0](LICENSE). Individual skills may include their own license notices.
