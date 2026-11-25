@@ -73,11 +73,13 @@ const campaignConfiguration = z.object({
   hasModelKey: z.boolean(), mode: campaignMode.optional(),
 });
 const campaignIntegration = z.object({ id: workspaceId, name: z.string(), slug: z.string().refine(validToolkitSlug).nullable() });
+const manualCampaignIntegration = z.object({ id: publicationCampaignId, name: z.string(), url: z.string() });
 const campaign = record.extend({
   playbookId: z.string(), version: z.string(), orchestrator: z.string(), agentIds: strings,
   goals: strings, plans: strings, board: z.string(),
   integrationConfigInvalid: z.boolean().optional(),
   requiredIntegrations: z.array(campaignIntegration).optional(),
+  manualIntegrations: z.array(manualCampaignIntegration).optional(),
   installationState: z.string().optional(), model: z.string().optional(),
   lifecycleState: z.string().optional(), mode: campaignMode.optional(),
   configuration: campaignConfiguration.optional(),
@@ -120,6 +122,7 @@ export type SavedPlaybook = z.infer<typeof playbook>;
 export type CampaignConfiguration = z.infer<typeof campaignConfiguration>;
 export type SavedCampaign = z.infer<typeof campaign>;
 export type RequiredIntegration = NonNullable<SavedCampaign["requiredIntegrations"]>[number];
+export type ManualCampaignIntegration = z.infer<typeof manualCampaignIntegration>;
 export type SavedAgent = z.infer<typeof agent>;
 
 export const brandUpdate = z.object({
@@ -146,10 +149,12 @@ export async function workspaceRequest(
   const socketPath = process.env.OMA_WORKSPACE_SOCKET;
   if (!socketPath) throw unavailable();
   const payload = body ? JSON.stringify(body) : undefined;
+  const timeout = path.endsWith("/deploy") ? 130_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000
+    : path.endsWith("/custom-mcp") ? 15_000 : 6_000;
   return new Promise((resolve, reject) => {
     const req = request({
       socketPath, path, method,
-      signal: AbortSignal.timeout(path.endsWith("/deploy") ? 130_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000 : 6_000),
+      signal: AbortSignal.timeout(timeout),
       headers: { ...headers, ...(payload && { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }) },
     }, (response) => {
       const chunks: Buffer[] = [];
@@ -377,6 +382,7 @@ const campaignUpdate = z.object({
 type GenerateCampaignMcp = (required: RequiredIntegration[]) => Promise<{ url: string } | { error: string }>;
 
 export type CampaignConfigurationResult = {
+  mcpToolCount?: number;
   staged?: boolean;
   configuration?: CampaignConfiguration;
   error?: string;
@@ -412,6 +418,18 @@ async function editableCampaign(id: string, expectedRevision?: string) {
     throw new WorkspaceRequestError(409, "This campaign changed. Reload it and try again.");
   }
   return { campaign, configuration: campaign.configuration };
+}
+
+/** The VM owns the live MCP check and the subsequent revision-guarded save. */
+export async function saveCampaignCustomMcp(id: string, input: unknown): Promise<CampaignConfigurationResult> {
+  const parsed = z.object({ revision, integrationId: publicationCampaignId, url: z.string().trim().min(1).max(2048) }).safeParse(input);
+  if (!workspaceId.safeParse(id).success || !parsed.success) {
+    throw new WorkspaceRequestError(422, "Reload the campaign and enter an HTTPS MCP endpoint.");
+  }
+  const { toolCount } = z.object({ toolCount: z.number().int().positive() }).parse(await workspaceRequest(
+    "/workspace/campaigns/" + id + "/custom-mcp", parsed.data,
+  ));
+  return { mcpToolCount: toolCount };
 }
 
 async function syncCampaignRecord(
@@ -553,6 +571,10 @@ async function applyCampaignConfiguration(
     (campaign.installationState === "" || campaign.installationState === "draft");
   if (campaign.integrationConfigInvalid) {
     return { error: "Use a list of unique campaign integration IDs such as discord or facebook in config.yaml." };
+  }
+  const missingManual = campaign.manualIntegrations?.filter(({ url }) => !url) ?? [];
+  if (missingManual.length) {
+    return { error: "Set up custom MCP in Tools for: " + missingManual.map(({ name }) => name).join(", ") + "." };
   }
   const mcp = await generateMcpUrl(campaign.requiredIntegrations ?? []);
   if ("error" in mcp) return { error: mcp.error };

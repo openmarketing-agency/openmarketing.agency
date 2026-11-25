@@ -339,8 +339,8 @@ function describeRunFailure(progress: z.infer<typeof progressSchema>) {
     ?? "oma-agent did not report a recognizable cause. Check the oma-agent logs for details.";
 }
 
-export async function getAgentRunProgress(userId: string, handle: unknown): Promise<AgentRunProgress> {
-  const config = await gateway();
+export async function getAgentRunProgress(userId: string, handle: unknown, scope?: ProfileScope): Promise<AgentRunProgress> {
+  const config = await gateway(scope);
   const id = readHandle(userId, config, handle);
   const parsed = progressSchema.safeParse(await readJson(await sendRequest(config, "/runs/" + id)));
   if (!parsed.success) throw new AgentChatError(502, "oma-agent didn’t return run progress.");

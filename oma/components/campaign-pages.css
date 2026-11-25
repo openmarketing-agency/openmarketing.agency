@@ -425,6 +425,8 @@
 .campaign-plan-item textarea { flex: 1 1 12rem; }
 .campaign-plan-item [data-slot="button"] { margin: 0; }
 .campaign-tools .tool-browser-heading { flex-wrap: wrap; margin-bottom: 16px; }
+.campaign-custom-mcp { margin-top: 24px; }
+.campaign-custom-mcp h2 { font-size: 1rem; font-weight: 600; }
 .campaign-tool-sync { max-width: min(100%, 28ch); }
 .campaign-agent-sync { display: grid; justify-items: start; gap: 8px; margin-top: 20px; color: var(--muted); }
 .campaign-detail :is(.campaign-header-actions, .campaign-edit-disclosure, .campaign-agent-sync, .campaign-tool-sync) [data-slot="button"] {

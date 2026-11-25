@@ -8,7 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Megaphone, Pause, Play } from "lucide-react";
 
 import { changeCampaignRunAction } from "@/app/actions/workspace";
-import { CampaignAgentSync, CampaignPlanEditor, CampaignToolSync } from "@/components/campaign-editors";
+import { CampaignAgentSync, CampaignCustomMcp, CampaignPlanEditor, CampaignToolSync } from "@/components/campaign-editors";
 import { CampaignKanban } from "@/components/campaign-kanban";
 import { CampaignProgress } from "@/components/campaign-progress";
 import { CampaignModeSettings } from "@/components/campaign-mode-settings";
@@ -106,12 +106,14 @@ export function CampaignDetail({
   const pausing = deploymentState === "Pausing…";
   const { configuration, name, description } = campaign;
   const requiredIntegrations = campaign.requiredIntegrations ?? [];
+  const manualIntegrations = campaign.manualIntegrations ?? [];
+  const needsManualSetup = manualIntegrations.some(({ url }) => !url);
   const error = campaign.integrationConfigInvalid
     ? "Ask campaign chat to fix the required tool IDs before syncing or starting."
     : undefined;
   const pendingIntegrations = requiredIntegrations.filter(({ slug }) =>
     !slug || (!snapshot.connected.includes(slug) && !metadata.some((tool) => tool.slug === slug && tool.noAuth)));
-  const blocked = Boolean(error || pendingIntegrations.length);
+  const blocked = Boolean(error || pendingIntegrations.length || needsManualSetup);
   const runLabel = running ? "Pause campaign" : installed ? "Resume campaign" : "Start campaign";
 
   function viewLink(nextView: View) {
@@ -192,8 +194,13 @@ export function CampaignDetail({
             snapshot={snapshot} metadata={metadata}
             requiredIntegrations={requiredIntegrations}
             headingAction={configuration && <CampaignToolSync campaignId={campaign.id} revision={configuration.revision}
-              disabled={pausing || runPending || Boolean(error)} />}
+              disabled={pausing || runPending || Boolean(error) || needsManualSetup} />}
             feedback={feedback} onChange={updateConnections} />
+          {configuration && manualIntegrations.length > 0 && <section className="campaign-custom-mcp" aria-label="Custom MCP integrations">
+            <h2>Custom MCP</h2>
+            {manualIntegrations.map((integration) => <CampaignCustomMcp key={integration.id} integration={integration}
+              campaignId={campaign.id} revision={configuration.revision} />)}
+          </section>}
         </div>
       )}
       {view === "settings" && (configuration ? (

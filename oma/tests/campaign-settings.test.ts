@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-  changeCampaignRunState, saveCampaignConfiguration, saveCampaignMode, saveCampaignPlan, syncCampaignTools,
+  changeCampaignRunState, saveCampaignConfiguration, saveCampaignCustomMcp, saveCampaignMode, saveCampaignPlan, syncCampaignTools,
   syncCampaignChatChanges, type RequiredIntegration,
 } from "../lib/server/agent-workspace";
 
@@ -34,6 +34,7 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   const createMcp: (tools: RequiredIntegration[]) => Promise<{ url: string }> = async () => ({ url });
   const generateMcp = t.mock.fn(createMcp);
   let integrationConfigInvalid = false;
+  let manualIntegrations: Array<{ id: string; name: string; url: string }> = [];
   let syncFailureStatus = 0;
   let deployFailureStatus = 0;
   let lifecycleState = "resumed";
@@ -53,6 +54,7 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
         campaigns: [{
           id: "seo", name: "Organic Search", description: "", playbookId: "", version: "", orchestrator: "",
           lifecycleState: currentState, installationState, agentIds: [], goals: [], plans: [], board: "", requiredIntegrations: required, integrationConfigInvalid,
+          manualIntegrations,
           configuration: { ...configuration, composioUrl: url, revision: inputRevision },
         }],
       }));
@@ -65,6 +67,11 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     const failure = request.url?.endsWith("/sync") ? syncFailureStatus : request.url?.endsWith("/deploy") ? deployFailureStatus : 0;
     if (failure) {
       response.writeHead(failure).end(JSON.stringify({ message: "fixture-model fixture-composio" }));
+    } else if (request.url?.endsWith("/custom-mcp")) {
+      assert.equal(payload.integrationId, "hacker-news");
+      assert.equal(payload.revision, inputRevision);
+      manualIntegrations = [{ id: "hacker-news", name: "Hacker News", url: payload.url }];
+      response.end(JSON.stringify({ toolCount: 3 }));
     } else if (request.url?.endsWith("/lifecycle")) {
       if (payload.state === "paused") {
         response.end(JSON.stringify({ id: "seo", state: stopping ? "pausing" : "paused",
@@ -104,6 +111,14 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   assert.equal(generateMcp.mock.callCount(), 0);
   assert.equal(requests.length, 0);
   integrationConfigInvalid = false;
+  manualIntegrations = [{ id: "hacker-news", name: "Hacker News", url: "" }];
+  assert.match((await syncCampaignTools("seo", inputRevision, generateMcp)).error ?? "", /Hacker News/);
+  assert.match((await changeCampaignRunState("seo", { revision: inputRevision, state: "resumed" }, generateMcp)).error ?? "", /Hacker News/);
+  assert.equal(generateMcp.mock.callCount(), 0);
+  assert.equal(requests.length, 0);
+  const custom = { revision: inputRevision, integrationId: "hacker-news", url: "https://mcp.example.test/mcp" };
+  assert.deepEqual(await saveCampaignCustomMcp("seo", custom), { mcpToolCount: 3 });
+  assert.deepEqual(requests.splice(0), [{ method: "PUT", path: "/workspace/campaigns/seo/custom-mcp", body: custom }]);
   const providerError = "Connect or remove the campaign’s unconnected tools.";
   assert.deepEqual(await saveCampaignConfiguration("seo", input, async () => ({ error: providerError }), true), { error: providerError });
   assert.ok((await saveCampaignConfiguration("seo", input, async () => ({ url: "https://unrelated.example.test/mcp" }))).error);

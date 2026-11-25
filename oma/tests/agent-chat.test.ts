@@ -301,7 +301,7 @@ test("streams only public assistant text for the owner and redacts a credential 
     { event: "reasoning.available", text: "internal thinking" },
     { event: "tool.started", tool: "terminal", preview: "sensitive command" },
     { event: "approval.request", description: "private approval" },
-    { event: "message.interim", text: "Checking the website. " + key },
+    { seq: 3, event: "message.interim", text: "Checking the website. " + key },
     { event: "message.delta", delta: "The setup is almost complete. " + key.slice(0, 7) },
     { event: "message.delta", delta: key.slice(7) + ". I have created the initial campaign records." },
     { event: "run.completed", output: "The workspace is ready." },
@@ -332,6 +332,7 @@ test("streams only public assistant text for the owner and redacts a credential 
   const stream = await streamAgentRunActivity(account, handle, request.signal);
   const rendered = await new Response(stream).text();
   assert.match(rendered, /Checking the website\. \[redacted\]/);
+  assert.match(rendered, /"seq":3/);
   assert.match(rendered, /The setup is almost complete\. \[redacted\]/);
   assert.match(rendered, /The workspace is ready/);
   assert.doesNotMatch(rendered, /fixture|internal thinking|sensitive command|private approval|run_progress/);
@@ -354,6 +355,24 @@ test("chat projects public subagent lifecycle and complete reply text without to
   ]);
   assert.equal(updates[2]?.message, events[3].output);
   assert.doesNotMatch(result, /invisible/);
+});
+
+test("chat shows tool status and a reasoning indicator without forwarding tool payloads or reasoning text", async () => {
+  const { projectActivityEvents } = await import("../lib/server/agent-activity-events");
+  const events = [
+    { seq: 1, event: "tool.started", tool: "web_search", tool_call_id: "call_fixture", preview: "private query" },
+    { seq: 2, event: "reasoning.available", text: "private reasoning" },
+    { seq: 3, event: "tool.completed", tool: "web_search", tool_call_id: "call_fixture", error: true, result: "private result" },
+    { seq: 4, event: "tool.started", tool: key },
+  ];
+  const source = new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")).body!;
+  const result = await new Response(projectActivityEvents(source, key, "chat")).text();
+  assert.deepEqual(result.split("\n").filter((line) => line.startsWith("data:")).map((line) => JSON.parse(line.slice(5))), [
+    { phase: "tool", seq: 1, tool: { id: "call_fixture", name: "web_search", status: "running" } },
+    { phase: "reasoning", seq: 2 },
+    { phase: "tool", seq: 3, tool: { id: "call_fixture", name: "web_search", status: "failed" } },
+  ]);
+  assert.doesNotMatch(result, /private/);
 });
 
 test("reads aggregate activity from protected detailed health with the configured profile prefix", async (t) => {

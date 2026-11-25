@@ -1,5 +1,6 @@
 import { Clock3, LoaderCircle } from "lucide-react";
 
+import type { ChatToolCall } from "@/lib/agent-activity";
 import type { ActiveAgentRun } from "@/lib/agent-chat";
 
 const activityTime = new Intl.DateTimeFormat(undefined, { timeStyle: "medium" });
@@ -25,10 +26,16 @@ const toolLabels = new Map([
   ["delegate_task", "Waiting for delegated work…"],
 ]);
 
-export function ChatProgress({ run, sending, reconnecting }: {
+const toolStatus: Record<ChatToolCall["status"], string> = { running: "Running", completed: "Completed", failed: "Failed", recorded: "Recorded" };
+
+export function ChatProgress({ active = true, run, sending, reconnecting, tools = [], recordedTools = [], reasoning }: {
+  active?: boolean;
   run?: ActiveAgentRun;
   sending?: boolean;
   reconnecting?: boolean;
+  tools?: ChatToolCall[];
+  recordedTools?: ChatToolCall[];
+  reasoning?: boolean;
 }) {
   const waiting = !reconnecting && (run?.phase === "waiting_for_answer" || run?.phase === "waiting_for_approval");
   const label = reconnecting ? "Reconnecting to oma-agent…"
@@ -37,14 +44,25 @@ export function ChatProgress({ run, sending, reconnecting }: {
     : run.phase === "running" && run.tool ? toolLabels.get(run.tool) ?? "Using a tool…"
     : phaseLabels[run.phase];
   const Icon = waiting ? Clock3 : LoaderCircle;
+  const shownTools = tools.length ? tools : recordedTools;
+  const latestTool = shownTools.findLast(({ status }) => status === "running") ?? shownTools.at(-1);
 
   return (
     <div className="runtime-progress">
-      <p className="runtime-progress-state" role="status">
+      {active && <p className="runtime-progress-state" role="status">
         <Icon size={16} aria-hidden="true" className={waiting ? undefined : "runtime-progress-spinner"} />
         {label}
-      </p>
-      {run?.updatedAt && <p className="runtime-progress-time">Last activity: <time dateTime={run.updatedAt}>{activityTime.format(new Date(run.updatedAt))}</time></p>}
+      </p>}
+      {active && reasoning && <span className="runtime-progress-time">Reasoning activity reported</span>}
+      {active && run?.updatedAt && <p className="runtime-progress-time">Last activity: <time dateTime={run.updatedAt}>{activityTime.format(new Date(run.updatedAt))}</time></p>}
+      {latestTool && <details className="runtime-tool-activity">
+        <summary>{tools.length ? "Tool activity" : "Recent tool activity"} <span>· {latestTool.name.replaceAll("_", " ")} — {toolStatus[latestTool.status]}</span></summary>
+        <ul aria-label="Recent tool calls">
+          {shownTools.slice().reverse().map(({ id, name, status }) => (
+            <li key={id ? "call:" + id : "name:" + name}><span>{name.replaceAll("_", " ")}</span><span>{toolStatus[status]}</span></li>
+          ))}
+        </ul>
+      </details>}
     </div>
   );
 }
