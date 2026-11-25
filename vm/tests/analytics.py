@@ -1,4 +1,4 @@
-"""Exercise the analytics socket with the default profile and a disposable loopback model."""
+"""Exercise analytics generation, observation reads, and collector status through a disposable workspace socket."""
 
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,6 +23,63 @@ class WorkspaceConnection(HTTPConnection):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.settimeout(self.timeout)
         self.sock.connect(self.address)
+
+
+def verify_observations(home, address):
+    from hermes_cli.oma_campaigns.analytics import save_observations
+    from hermes_cli.oma_campaigns.analytics_cron import ensure_job
+
+    prefix = "/workspace/campaigns/seo/analytics"
+
+    def request(method, suffix="", body=None):
+        connection = WorkspaceConnection(address)
+        try:
+            connection.request(method, prefix + suffix, body)
+            response = connection.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            connection.close()
+
+    directory = home / "oma/campaigns/seo"
+    directory.mkdir(parents=True)
+    assert request("GET")[0] == 404
+    config = {"id": "seo", "name": "Example", "installation_state": "installed",
+              "lifecycle_state": "resumed", "agents": ["seo__analyst"]}
+    config_path = directory / "config.yaml"
+    config_path.write_text(json.dumps(config))
+    assert request("GET") == (200, {"campaign_id": "seo", "observations": [],
+                                    "last_collected_at": None, "next_cursor": None})
+    assert request("GET", "/status")[1]["state"] == "unavailable"
+
+    base = {"source": "oma-publications", "account": "seo", "metric": "drafts_created",
+            "period_start": "2026-11-22", "period_end": "2026-11-23",
+            "dimensions": {}, "value": 2, "unit": "count"}
+    assert save_observations(home, "seo", [base, {**base, "metric": "published", "value": 1}],
+                             refresh_complete=True) == 2
+    status, first_page = request("GET", "?limit=1&source=oma-publications")
+    assert status == 200 and first_page["last_collected_at"]
+    assert first_page["observations"][0]["metric"] == "published"
+    status, page = request("GET", "?before=" + str(first_page["next_cursor"]))
+    assert status == 200 and page["observations"][0]["value"] == 2 and page["next_cursor"] is None
+    for suffix in ("?limit=101", "?source=a&source=b", "?unknown=1", "?source=", "?start=2026-11-23&end=2026-11-23"):
+        assert request("GET", suffix)[0] == 422
+
+    profile = home / "profiles/seo__analyst"
+    profile.mkdir(parents=True)
+    ensure_job(profile)
+    assert request("GET", "/status")[1]["state"] == "idle"
+    assert request("POST", "/refresh", "{}")[0] == 422
+    assert request("POST", "/refresh?limit=1")[0] == 422
+    status, queued = request("POST", "/refresh")
+    assert status == 202 and queued["state"] == "queued"
+    assert request("POST", "/refresh")[1]["run_id"] == queued["run_id"]
+    assert request("GET", "/status")[1]["last_successful_refresh_at"]
+    assert save_observations(home, "seo", [{**base, "value": 6}]) == 1
+    assert request("GET", "?metric=drafts_created")[1]["observations"][0]["value"] == 6
+
+    config_path.write_text(json.dumps({**config, "lifecycle_state": "paused"}))
+    assert request("POST", "/refresh")[0] == 409
+    assert request("GET", "?metric=drafts_created")[0] == 200
 
 
 def verify(home):
@@ -52,11 +109,13 @@ def verify(home):
         def log_message(self, *_args):
             pass
 
-    def post(address, payload):
+    def post(address, payload, *, details=False):
         connection = WorkspaceConnection(address)
+        headers = {"Content-Type": "application/json"}
+        if details:
+            headers["X-OMA-Analytics-Details"] = "1"
         try:
-            connection.request("POST", "/workspace/analytics", json.dumps(payload),
-                               {"Content-Type": "application/json"})
+            connection.request("POST", "/workspace/analytics", json.dumps(payload), headers)
             response = connection.getresponse()
             return response.status, json.loads(response.read())
         finally:
@@ -96,6 +155,15 @@ def verify(home):
                 assert post(address, campaign)[0] == 503
             assert not received
             assert post(address, campaign) == (200, result)
+            status, details = post(address, campaign, details=True)
+            assert status == 200
+            assert details == {"source": result, "userMessage": received[-1][2]["messages"][-1]["content"]}
+            layout_request = {key: value for key, value in campaign.items() if key != "snapshot"}
+            status, layout = post(address, layout_request, details=True)
+            assert status == 200 and layout["source"] == result
+            assert layout["userMessage"] == received[-1][2]["messages"][-1]["content"]
+            assert layout["userMessage"].endswith("\n\nCampaign ID: seo") and '"updatedAt"' not in layout["userMessage"]
+            verify_observations(home, address)
             for finish_reason, content, expected_error in (
                 ("length", None, "response limit"),
                 ("stop", None, "empty report"),
@@ -113,7 +181,8 @@ def verify(home):
             for thread in threads:
                 thread.join()
 
-    [(path, auth, body)] = received
+    assert len(received) == 3 and received[0] == received[1]
+    path, auth, body = received[0]
     assert path == "/v1/chat/completions" and auth == "Bearer synthetic-key-for-test-only"
     assert body["model"] == "default-profile-fixture"
     assert not body.get("tools")
