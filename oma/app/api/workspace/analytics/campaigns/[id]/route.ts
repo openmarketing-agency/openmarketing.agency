@@ -2,8 +2,7 @@
 
 import { analyticsDateRange } from "@/lib/analytics";
 import { getSessionUser } from "@/lib/dal";
-import { generateAnalytics, queryLegacyAnalytics, readAnalytics, requireAnalyticsCampaign } from "@/lib/server/analytics";
-import { queryCampaignObservations } from "@/lib/server/campaign-observations";
+import { generateAnalytics, queryAnalytics, queryLegacyAnalytics, readAnalytics, requireAnalyticsCampaign } from "@/lib/server/analytics";
 import { workspaceId, WorkspaceRequestError } from "@/lib/server/agent-workspace";
 
 type Context = RouteContext<"/api/workspace/analytics/campaigns/[id]">;
@@ -36,11 +35,11 @@ async function analytics(request: Request, { params }: Context) {
         return Response.json({ error: "Unknown dashboard data source." }, { status: 422, headers });
       }
       const result = sources[0] === "observations"
-        ? await queryCampaignObservations(id, range.data) : await queryLegacyAnalytics(id, range.data);
+        ? await queryAnalytics(key, range.data) : await queryLegacyAnalytics(id, range.data);
       return Response.json(result, { headers });
     }
     await requireAnalyticsCampaign(id);
-    const result = generate ? await generateAnalytics(key) : readAnalytics(key);
+    const result = generate ? await generateAnalytics(key, params.get("regenerate") === "1") : readAnalytics(key);
     return Response.json(result, { headers });
   } catch (error) {
     if (error instanceof WorkspaceRequestError) {

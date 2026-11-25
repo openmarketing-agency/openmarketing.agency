@@ -49,7 +49,9 @@ Mode changes save to the campaign’s `config.yaml` and sync with the saved revi
 
 ## Generate analytics
 
-Open a campaign’s **Analytics** tab and select **Generate dashboard** once. oma-agent’s default profile generates OpenUI Lang using the component schema and the live query contract. The user message supplies the campaign ID. The console validates the program and saves it with its generation details in SQLite. Later requests return the saved layout.
+Open a campaign’s **Analytics** tab and select **Generate dashboard**. oma-agent’s default profile receives the campaign ID and a sample from the last 28 UTC days, including the complete `value` JSON for every sampled record. Generation reads up to 100 recent records within a prompt size limit. The console offers live bindings for scalar measurements found in those records, including fields nested inside objects and arrays. The model uses them to build charts, KPIs, or tables. The console validates the program and saves it with its generation details in SQLite.
+
+Select **Regenerate dashboard** to rebuild a saved layout from current observations, including after new sources or fields appear. The saved dashboard stays available if regeneration fails. Update both the console and VM service to use observation samples in generation.
 
 OpenUI queries saved observations on load, when the 7- or 28-day UTC filter changes, and once per minute. **Refresh data** queues the campaign’s analyst and reloads the observations when the run settles. The collector also runs hourly for active campaigns. It upserts measurements in the campaign’s `data.sqlite3`. Filtered reads work while a campaign is paused. A partial collection can add observations while the last successful refresh time stays fixed.
 

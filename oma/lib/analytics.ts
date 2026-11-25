@@ -39,6 +39,13 @@ export type ObservationQueryResult = {
   lastCollectedAt: string | null;
   sources: { labels: string[]; counts: number[]; total: number; note: string };
   observations: Record<typeof observationColumns[number], string[]> & { note: string };
+  measurements: Record<string, {
+    labels: string[];
+    values: (number | null)[];
+    display: (string | null)[];
+    latest: number | null;
+    note: string;
+  }>;
 };
 
 export type AnalyticsCollectorStatus = {

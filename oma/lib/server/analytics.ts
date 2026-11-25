@@ -7,6 +7,7 @@ import { getDb, writeTransaction } from "../db";
 import { loadAgentWorkspace, workspaceRequest, WorkspaceRequestError } from "./agent-workspace";
 import { analyticsQueryResult, summarizeAnalytics } from "./analytics-data";
 import { dashboardSystemPrompt, validateAnalyticsProgram } from "./analytics-program";
+import { campaignObservationContext, measurementField, queryCampaignObservations, type MeasurementField } from "./campaign-observations";
 import { readCampaignProgress } from "./campaign-progress";
 
 type AnalyticsKey = { userId: string; id: string };
@@ -16,6 +17,7 @@ const savedDashboard = z.object({
   source: z.string(),
   dataSource: z.literal("observations").optional(),
   generation: z.object({ systemPrompt: z.string(), userMessage: z.string().optional() }),
+  measurementFields: z.array(measurementField).optional(),
 });
 
 export async function requireAnalyticsCampaign(id: string) {
@@ -33,30 +35,41 @@ export async function queryLegacyAnalytics(id: string, dateRange: AnalyticsDateR
   return analyticsQueryResult(summarizeAnalytics(progress), dateRange);
 }
 
-export function readAnalytics(key: AnalyticsKey): AnalyticsView {
+function readLayout(key: AnalyticsKey) {
   const db = getDb();
   const row = db.prepare(`
     SELECT layout, generated_at, lease_until FROM workspace_analytics
     WHERE user_id = ? AND scope = 'campaigns' AND target_id = ?
   `).get(key.userId, key.id);
   const generating = Number(row?.lease_until) > Date.now();
-  if (typeof row?.layout !== "string") return { report: null, generating };
+  if (typeof row?.layout !== "string") return { report: null, generating, measurementFields: [] };
 
   // Older OpenUI reports save only the source string. Pre-OpenUI layouts cannot be rendered by OpenUI.
   const layout: unknown = JSON.parse(row.layout);
-  const dashboard = typeof layout === "string" ? { source: layout } : savedDashboard.safeParse(layout).data;
-  const report = dashboard ? { ...dashboard, generatedAt: Number(row.generated_at) } : null;
+  const dashboard = typeof layout === "string" ? { source: layout, measurementFields: undefined }
+    : savedDashboard.safeParse(layout).data;
+  if (!dashboard) return { report: null, generating, measurementFields: [] };
+  const { measurementFields = [], ...report } = dashboard;
+  return { report: { ...report, generatedAt: Number(row.generated_at) }, generating, measurementFields };
+}
+
+export function readAnalytics(key: AnalyticsKey): AnalyticsView {
+  const { report, generating } = readLayout(key);
   return { report, generating };
 }
 
-export async function generateAnalytics(key: AnalyticsKey): Promise<AnalyticsView> {
+export function queryAnalytics(key: AnalyticsKey, range: AnalyticsDateRange) {
+  return queryCampaignObservations(key.id, range, readLayout(key).measurementFields);
+}
+
+export async function generateAnalytics(key: AnalyticsKey, regenerate = false): Promise<AnalyticsView> {
   const db = getDb();
   const attempt = randomUUID();
   const now = Date.now();
   const savedKey = [key.userId, "campaigns", key.id] as const;
   const existing = writeTransaction(db, () => {
     const view = readAnalytics(key);
-    if (view.report) return view;
+    if (view.report && !regenerate) return view;
     if (view.generating) throw new WorkspaceRequestError(409, "Analytics generation is already running.");
 
     db.prepare(`
@@ -68,9 +81,10 @@ export async function generateAnalytics(key: AnalyticsKey): Promise<AnalyticsVie
   if (existing) return existing;
 
   try {
-    const request = { scope: "campaigns", targetId: key.id, campaignIds: [key.id] };
+    const observationContext = await campaignObservationContext(key.id, now);
+    const request = { scope: "campaigns", targetId: key.id, campaignIds: [key.id], observationContext };
     let correction = "";
-    let dashboard: Omit<AnalyticsReport, "generatedAt"> | undefined;
+    let dashboard: (Omit<AnalyticsReport, "generatedAt"> & { measurementFields: MeasurementField[] }) | undefined;
     for (let attemptNo = 0; attemptNo < 2; attemptNo++) {
       const systemPrompt = dashboardSystemPrompt + correction;
       const reply = await workspaceRequest("/workspace/analytics", {
@@ -81,7 +95,7 @@ export async function generateAnalytics(key: AnalyticsKey): Promise<AnalyticsVie
         const output = typeof reply === "string" ? { source: reply } : generatedDashboard.safeParse(reply).data;
         if (!output) throw new Error("Return OpenUI Lang source as plain text.");
         dashboard = {
-          source: validateAnalyticsProgram(output.source),
+          ...validateAnalyticsProgram(output.source, observationContext.measurement_fields),
           dataSource: "observations",
           generation: { systemPrompt, ...("userMessage" in output && { userMessage: output.userMessage }) },
         };
@@ -92,11 +106,12 @@ export async function generateAnalytics(key: AnalyticsKey): Promise<AnalyticsVie
       }
     }
     if (!dashboard) throw new WorkspaceRequestError(502, "The default agent returned an invalid OpenUI dashboard. Try regenerating.");
-    const report: AnalyticsReport = { ...dashboard, generatedAt: Date.now() };
+    const { measurementFields, ...view } = dashboard;
+    const report: AnalyticsReport = { ...view, generatedAt: Date.now() };
     const update = db.prepare(`
       UPDATE workspace_analytics SET layout = ?, generated_at = ?, attempt = NULL, lease_until = NULL
       WHERE user_id = ? AND scope = ? AND target_id = ? AND attempt = ?
-    `).run(JSON.stringify(dashboard), report.generatedAt, ...savedKey, attempt);
+    `).run(JSON.stringify({ ...view, measurementFields }), report.generatedAt, ...savedKey, attempt);
     if (!update.changes) throw new WorkspaceRequestError(409, "Analytics generation was superseded. Reload the report.");
     return { report, generating: false };
   } finally {

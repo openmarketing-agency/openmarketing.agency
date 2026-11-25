@@ -163,6 +163,21 @@ def verify(home):
             assert status == 200 and layout["source"] == result
             assert layout["userMessage"] == received[-1][2]["messages"][-1]["content"]
             assert layout["userMessage"].endswith("\n\nCampaign ID: seo") and '"updatedAt"' not in layout["userMessage"]
+            observation_context = {
+                "campaign_id": "seo", "observations": [{
+                    "source": "search", "metric": "performance", "dimensions": {"country": "नेपाल"},
+                    "value": {"totals": {"clicks": 0}, "rows": [["/pricing", None, False]]},
+                }], "measurement_fields": [{"id": "m1111111111111111", "path": ["totals", "clicks"]}],
+            }
+            observed_request = {**layout_request, "observationContext": observation_context}
+            assert post(address, {**observed_request, "snapshot": snapshot})[0] == 422
+            assert post(address, {**observed_request, "observationContext": {**observation_context, "campaign_id": "other"}})[0] == 422
+            status, layout = post(address, observed_request, details=True)
+            assert status == 200 and layout["source"] == result
+            message = received[-1][2]["messages"][-1]
+            assert message == {"role": "user", "content": layout["userMessage"]}
+            _, sample, campaign_id = message["content"].split("\n\n")
+            assert json.loads(sample) == observation_context and campaign_id == "Campaign ID: seo"
             verify_observations(home, address)
             for finish_reason, content, expected_error in (
                 ("length", None, "response limit"),
@@ -181,7 +196,7 @@ def verify(home):
             for thread in threads:
                 thread.join()
 
-    assert len(received) == 3 and received[0] == received[1]
+    assert len(received) == 4 and received[0] == received[1]
     path, auth, body = received[0]
     assert path == "/v1/chat/completions" and auth == "Bearer synthetic-key-for-test-only"
     assert body["model"] == "default-profile-fixture"
