@@ -32,6 +32,7 @@ services:
       OMA_HERMES_CLARIFY_TIMEOUT: ${OMA_HERMES_CLARIFY_TIMEOUT:-}
       OMA_HERMES_GATEWAY_SEED: ${OMA_HERMES_GATEWAY_SEED:-}
       OMA_INIT_CATALOG: ${OMA_INIT_CATALOG:-1}
+      OMA_CUSTOM_MCP_URLS: ${OMA_CUSTOM_MCP_URLS:-}
       OMA_EXPORT_CONSOLE_GATEWAY_KEY: '1'
     healthcheck:
       test: ["CMD", "curl", "-fsS", "-m", "2", "-o", "/dev/null", "http://127.0.0.1:8642/health"]

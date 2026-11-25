@@ -125,7 +125,8 @@ with TemporaryDirectory() as temporary:
     new_campaign.write_text(base + "integrations: [wordpress]\n")
     retired_integration = records(root)["campaigns"][1]
     assert retired_integration["requiredIntegrations"] == []
-    assert retired_integration["integrationConfigInvalid"] is True
+    assert retired_integration["manualIntegrations"] == [{"id": "wordpress", "name": "wordpress", "url": ""}]
+    assert retired_integration["integrationConfigInvalid"] is False
     new_campaign.write_text(base + "integrations: [slack, slack, https://example.test, {id: discord}, 42, made-up]\n")
     saved_social = records(root)["campaigns"][1]
     assert saved_social["requiredIntegrations"] == [{"id": "slack", "name": "Slack", "slug": "slack"}]

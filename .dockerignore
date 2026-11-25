@@ -6,6 +6,7 @@
 # Docker's legacy builder ignores vm/Dockerfile.dockerignore. Keep these VM inputs allowlisted here too.
 !vm/bootstrap.py
 !vm/campaign_activity.py
+!vm/custom_mcp.py
 !vm/install_chat_delivery.py
 !vm/oma_chat_delivery.py
 !vm/register_campaign_suggestions.py
