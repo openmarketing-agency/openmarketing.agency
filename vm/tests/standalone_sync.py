@@ -276,8 +276,16 @@ with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
                 "id": "seo__orchestrator", "name": "Orchestrator", "description": "Test role.",
                 "campaign_id": "seo", "agent": {"enabled_toolsets": ["kanban"]},
             })
+            publisher = root / "agents" / "seo__publisher"
+            publisher.mkdir()
+            (publisher / "SOUL.md").write_text("Publish approved campaign content.\n", encoding="utf-8")
+            atomic_config_replace(publisher / "config.yaml", {
+                "id": "seo__publisher", "name": "Publisher", "description": "Test publishing role.",
+                "campaign_id": "seo", "agent": {"enabled_toolsets": ["kanban"]},
+            })
             campaign_config = {"id": "seo", "name": "SEO", "description": "Test campaign.",
-                               "agents": ["seo__orchestrator"], "orchestrator": "seo__orchestrator",
+                               "agents": ["seo__orchestrator", "seo__publisher"],
+                               "orchestrator": "seo__orchestrator",
                                "integrations": ["google-analytics"], "model": ""}
             atomic_config_replace(campaign, campaign_config)
             with patch.dict(os.environ, {"HOME": str(home), "HERMES_HOME": str(home),

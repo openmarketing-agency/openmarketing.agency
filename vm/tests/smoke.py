@@ -60,7 +60,11 @@ member_file = root / "profiles" / "maintenance" / "skills" / "member-smoke" / "S
 if sys.argv[1] == "fresh":
     skill = json.loads(skill_view("oma-campaigns", preprocess=False))
     content = skill.get("content", "")
-    assert all(rule in content for rule in ("## Campaign Integrations", "canonical OMA catalog IDs"))
+    assert all(rule in content for rule in (
+        "Use `integrations` for the smallest set of canonical connections",
+        "Save the IDs before asking the user to connect missing accounts",
+        "Use `integration_categories` to suggest the types of tools",
+    ))
     assert config["model"]["default"] == "oma-image-smoke"
     assert not dotenv_values(root / ".env", interpolate=False).get("OPENROUTER_API_KEY")
     member_file.parent.mkdir(parents=True)

@@ -1696,6 +1696,36 @@ def campaign_progress(root, campaign_id):
     return {"board": board, "schedule": campaign_schedule(root, campaign_id, data)}
 
 
+def campaign_agent_activity(root, campaign_id, request):
+    from campaign_activity import ActivityError, read_activity
+
+    campaign = read_saved_campaign(root, campaign_id)
+    profiles = ["default"]
+    partial = False
+    for agent_id in dict.fromkeys(filter(valid_id, strings(campaign.get("agents")))):
+        if agent_id == "default":
+            continue
+        try:
+            with open_directory(root) as workspace, open_directory("agents", workspace) as agents, \
+                    open_directory(agent_id, agents) as agent:
+                record = parse_record(read_file(agent)[0], agent_id)
+            if record.get("campaign_id") == campaign_id:
+                profiles.append(agent_id)
+            else:
+                partial = True
+        except (OSError, ValueError, WorkspaceError, YAMLError, RecursionError):
+            partial = True
+    try:
+        board, state = resolve_campaign_board(root.parent, campaign)
+        partial |= state not in ("ready", "unconfigured")
+    except WorkspaceError:
+        board, partial = None, True
+    try:
+        return read_activity(root.parent, campaign_id, profiles, board, request, partial)
+    except ActivityError as error:
+        raise WorkspaceError(error.status, str(error)) from None
+
+
 def campaign_task_activity(root, campaign_id, task_id):
     if not KANBAN_SLUG.fullmatch(task_id):
         raise WorkspaceError(404, "This task was not found on the campaign board.")
@@ -1969,11 +1999,12 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self.post_analytics()
             return
         approval = re.fullmatch(r"/workspace/campaigns/([^/]+)/publications/([^/]+)/approve", self.path)
+        activity = re.fullmatch(r"/workspace/campaigns/([^/]+)/activity", self.path)
         path = re.fullmatch(r"/workspace/(campaigns|agents)/([^/]+)/(sync|deploy|plan-chat)", self.path)
         shared_model = self.path == "/workspace/agents/model"
         selection_import = self.path == "/workspace/tool-selections/import"
         task = self.task_path.fullmatch(self.path)
-        if not (shared_model or selection_import or approval or task) and (not path or (path[1] == "agents" and path[3] != "sync")):
+        if not (shared_model or selection_import or approval or task or activity) and (not path or (path[1] == "agents" and path[3] != "sync")):
             self.reply(404, {"message": "Unknown workspace request."})
             return
         try:
@@ -1982,7 +2013,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             if task and self.headers.get_content_type() != "application/json":
                 raise WorkspaceError(415, "Task updates require a JSON request.")
             request = self.read_update(1024 if approval else 32 * 1024 if task else MAX_FILE_SIZE)
-            if task:
+            if activity:
+                result = campaign_agent_activity(self.server.root, activity[1], request)
+            elif task:
                 result = update_workspace_task(*task.groups(), request)
             elif approval:
                 with self.server.edit_lock:
