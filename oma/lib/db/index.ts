@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync; omaDatabaseVersion?: number };
 
-export const sqliteSchemaVersion = 10;
+export const sqliteSchemaVersion = 11;
 export const legacyToolSelectionsSchemaVersion = 3;
 
 export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
@@ -59,9 +59,11 @@ function initializeSchema(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
     if (version === sqliteSchemaVersion) return;
-    if (version === 5 || version === 6 || version === 7 || version === 8 || version === 9) {
+    if (version === 5 || version === 6 || version === 7 || version === 8 || version === 9 || version === 10) {
       // Existing transcript copies are left intact. Only legacy session IDs are used to reopen chats.
       createAnalyticsTable(db);
+      // Sessions are long-lived access tokens now, so refresh tokens are no longer stored.
+      db.exec("DROP TABLE IF EXISTS refresh_tokens");
       db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
       return;
     }
@@ -70,6 +72,7 @@ function initializeSchema(db: DatabaseSync): void {
         db.exec("ALTER TABLE users ADD COLUMN agent_setup_complete INTEGER NOT NULL DEFAULT 0 CHECK (agent_setup_complete IN (0, 1))");
       }
       createAnalyticsTable(db);
+      db.exec("DROP TABLE IF EXISTS refresh_tokens");
       // Keep version 3 until the workspace acknowledges the legacy tool selection import.
       if (version === 4) db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
       return;
@@ -86,15 +89,6 @@ function initializeSchema(db: DatabaseSync): void {
         agent_setup_complete INTEGER NOT NULL DEFAULT 0 CHECK (agent_setup_complete IN (0, 1)),
         onboarding_state TEXT CHECK (onboarding_state IS NULL OR json_valid(onboarding_state))
       ) STRICT;
-
-      CREATE TABLE refresh_tokens (
-        jti TEXT PRIMARY KEY NOT NULL,
-        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        expires_at INTEGER NOT NULL,
-        revoked_at INTEGER,
-        replaced_by_jti TEXT
-      ) STRICT;
-      CREATE INDEX refresh_tokens_expiry ON refresh_tokens(expires_at);
 
       CREATE TABLE mcp_integrations (
         id TEXT PRIMARY KEY NOT NULL,

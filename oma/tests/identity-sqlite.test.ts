@@ -1,4 +1,4 @@
-/** Verifies single-account registration, session rotation, and workspace data on an isolated SQLite file. */
+/** Verifies single-account registration, long-lived sessions, sign-out, and workspace data on an isolated SQLite file. */
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -36,15 +36,19 @@ test("concurrent signup creates one account and login requires its password", as
 
   const login = await request("auth/jwt/login", "POST", { username: user.email, password });
   assert.equal(login.status, 200);
-  const pair = await login.json();
-  const profile = await request("users/me", "GET", undefined, pair.access_token);
+  const session = await login.json();
+  assert.deepEqual(Object.keys(session).sort(), ["access_token", "expires_in", "token_type"]);
+  assert.equal(session.expires_in, 60 * 60 * 24 * 30);
+  const profile = await request("users/me", "GET", undefined, session.access_token);
   assert.deepEqual(await profile.json(), user);
+  assert.equal((await request("auth/jwt/refresh", "POST", { refresh_token: session.access_token })).status, 404);
 
-  const refresh = await request("auth/jwt/refresh", "POST", { refresh_token: pair.refresh_token });
-  assert.equal(refresh.status, 200);
-  const successor = await refresh.json();
-  assert.equal((await request("auth/jwt/refresh", "POST", { refresh_token: pair.refresh_token })).status, 401);
-  assert.equal((await request("auth/jwt/refresh", "POST", { refresh_token: successor.refresh_token })).status, 401);
+  // Signing out ends every session the account holds, including copies of the token.
+  const other = await (await request("auth/jwt/login", "POST", { username: user.email, password })).json();
+  assert.equal((await request("auth/jwt/logout-all", "POST", undefined, session.access_token)).status, 204);
+  assert.equal((await request("users/me", "GET", undefined, session.access_token)).status, 401);
+  assert.equal((await request("users/me", "GET", undefined, other.access_token)).status, 401);
+  const successor = await (await request("auth/jwt/login", "POST", { username: user.email, password })).json();
 
   const integration = { name: "Example MCP", url: "https://example.test/mcp" };
   const created = await request("mcp-integrations", "POST", integration, successor.access_token);

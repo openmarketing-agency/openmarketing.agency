@@ -3,17 +3,12 @@
 import { redirect } from "next/navigation";
 
 import * as api from "@/lib/backend";
-import {
-  clearTokens,
-  getAccessToken,
-  getRefreshToken,
-  setTokens,
-} from "@/lib/session";
+import { clearToken, getAccessToken, setToken } from "@/lib/session";
 
 /**
  * Authentication Server Actions.
  *
- * Registration and sign-in issue HTTP-only session cookies.
+ * Registration and sign-in issue a long-lived HTTP-only session cookie.
  */
 
 export type AuthFormState = { error: string } | undefined;
@@ -34,7 +29,7 @@ export async function loginAction(
     return { error: result.error.message };
   }
 
-  await setTokens(result.data);
+  await setToken(result.data);
   redirect(process.env.OMA_WORKSPACE_SOCKET ? "/agent-setup" : "/dashboard");
 }
 
@@ -63,29 +58,16 @@ export async function registerAction(
 
   const signedIn = await api.login(created.data.email, password);
   if (!signedIn.ok) redirect("/login");
-  await setTokens(signedIn.data);
+  await setToken(signedIn.data);
   redirect("/onboarding");
 }
 
-/** Revokes the current refresh token, then clears the local session. */
+/** Ends the account's sessions on the server, so a copied token stops working, then clears the cookie. */
 export async function logoutAction(): Promise<void> {
-  const refreshToken = await getRefreshToken();
-  if (refreshToken) {
-    // Best effort: a revoked or already-expired token still ends the local session.
-    await api.logout(refreshToken);
-  }
-
-  await clearTokens();
-  redirect("/login");
-}
-
-/** Revokes every refresh token for the account, ending all sessions. */
-export async function logoutEverywhereAction(): Promise<void> {
   const accessToken = await getAccessToken();
-  if (accessToken) {
-    await api.logoutAll(accessToken);
-  }
+  // Best effort: an expired or already-revoked token still ends the local session.
+  if (accessToken) await api.logoutAll(accessToken);
 
-  await clearTokens();
+  await clearToken();
   redirect("/login");
 }

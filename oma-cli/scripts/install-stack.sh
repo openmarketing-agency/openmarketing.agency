@@ -325,7 +325,7 @@ OMA_INTEGRATION_ENCRYPTION_KEY="$integration_key" create_container oma-console "
     -e "OMA_FRONTEND_PORT=$frontend_port" \
     -e "OMA_APP_URL=${OMA_APP_URL:-http://localhost:$frontend_port}" \
     -e "OMA_COOKIE_SECURE=${OMA_COOKIE_SECURE:-false}" \
-    -e OMA_SECRET_KEY -e OMA_REFRESH_SECRET_KEY \
+    -e OMA_SECRET_KEY \
     -e OMA_INTEGRATION_ENCRYPTION_KEY \
     -e "OMA_REGISTRATION_ENABLED=${OMA_REGISTRATION_ENABLED:-true}" \
     -e "OMA_CORS_ORIGINS=${OMA_CORS_ORIGINS:-[]}" \

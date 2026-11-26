@@ -69,9 +69,9 @@ sequenceDiagram
 
     User->>Next: Sign in at /login
     Next->>Identity: loginAction invokes shared control plane in-process
-    Identity->>DB: Look up account and persist refresh session
-    Identity-->>Next: Access and refresh tokens
-    Next-->>User: HTTP-only cookies
+    Identity->>DB: Look up account and its session version
+    Identity-->>Next: Long-lived access token
+    Next-->>User: HTTP-only cookie
     Note over Next,DB: Protected pages validate the session through requireUser
     alt Full stack and agent setup pending
         Next->>WS: GET /workspace for current settings and revision

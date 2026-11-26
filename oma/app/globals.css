@@ -2806,4 +2806,5 @@ ol.workspace-copy-list {
 }
 
 /* OpenUI auto-mounts its Inspect widget in development builds; keep it out of the console. */
-[data-openui-devtools-auto-mount] { display: none !important; }
+[data-openui-devtools-auto-mount],
+[data-openui-devtools-root] { display: none !important; }
