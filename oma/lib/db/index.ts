@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync };
+const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync; omaDatabaseVersion?: number };
 
 export const sqliteSchemaVersion = 10;
 export const legacyToolSelectionsSchemaVersion = 3;
@@ -116,7 +116,14 @@ function initializeSchema(db: DatabaseSync): void {
 }
 
 export function getDb(): DatabaseSync {
-  if (processScope.omaDatabase) return processScope.omaDatabase;
+  if (processScope.omaDatabase) {
+    // A dev server keeps its connection across hot reloads, so apply a newer schema to it as well.
+    if (processScope.omaDatabaseVersion !== sqliteSchemaVersion) {
+      initializeSchema(processScope.omaDatabase);
+      processScope.omaDatabaseVersion = sqliteSchemaVersion;
+    }
+    return processScope.omaDatabase;
+  }
 
   const directory = process.env.OMA_DATA_DIR || "data";
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -129,5 +136,6 @@ export function getDb(): DatabaseSync {
     db.close();
     throw error;
   }
+  processScope.omaDatabaseVersion = sqliteSchemaVersion;
   return processScope.omaDatabase = db;
 }
