@@ -56,11 +56,17 @@
 .task-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .tasks-page .task-detail-close { flex: none; padding-inline: 8px; }
 .task-detail-content { flex: 1; min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 0 12px 10px; }
-.task-detail-section { display: grid; gap: 10px; padding-block: 14px; }
 .task-detail-section + .task-detail-section { border-top: 1px solid var(--border); }
-.task-detail-section:first-child { padding-top: 4px; }
-.task-detail-section > h3 { display: flex; align-items: baseline; gap: 6px; font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
-.task-detail-section > h3 small { font-size: 12px; font-weight: 500; letter-spacing: 0; }
+.task-detail-section > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 2px; cursor: pointer; list-style: none; border-radius: 6px; }
+.task-detail-section > summary::-webkit-details-marker { display: none; }
+.task-detail-section > summary:hover h3 { color: var(--text); }
+.task-detail-section > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.task-detail-section > summary h3 { display: flex; align-items: baseline; gap: 6px; font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.task-detail-section > summary h3 small { font-size: 12px; font-weight: 500; letter-spacing: 0; }
+.task-detail-section > summary .task-chevron { flex: none; color: var(--muted); transition: transform .15s ease; }
+.task-detail-section[open] > summary .task-chevron { transform: rotate(90deg); }
+.task-detail-section-body { display: grid; gap: 10px; padding: 0 0 14px; }
+@media (prefers-reduced-motion: reduce) { .task-detail-section > summary .task-chevron { transition: none; } }
 .task-detail-text { font-size: 0.875rem; }
 .task-detail .tasks-warning { display: grid; gap: 4px; margin: 0; }
 .task-detail .tasks-warning .doc-prose { color: inherit; }

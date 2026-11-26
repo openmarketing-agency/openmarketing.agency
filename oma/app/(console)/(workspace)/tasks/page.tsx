@@ -143,33 +143,37 @@ async function TaskPanel({ board, id, filter, boardName }: { board: string; id: 
         {close}
       </header>
       <div className="task-detail-content" role="region" aria-label="Task details and comments" tabIndex={0}>
-        <section className="task-detail-section" aria-labelledby="task-detail-about">
-          <h3 id="task-detail-about">Details</h3>
-          {task.status === "blocked" && <div className="tasks-warning"><strong>Why it’s blocked</strong>
-            <MarkdownContent className="doc-compact" text={blocker || "No reason was recorded."} />
-          </div>}
-          {body && <MarkdownContent className="doc-compact task-detail-text" text={body} />}
-          {task.summary && task.summary !== body && task.summary !== blocker && (
-            <div className="task-detail-update"><h4>Latest update</h4><MarkdownContent className="doc-compact task-detail-text" text={task.summary} /></div>
-          )}
-          {!body && !task.summary && task.status !== "blocked" && <p className="task-feedback">No details yet.</p>}
-        </section>
-        <section className="task-detail-section" aria-labelledby="task-detail-comments">
-          <h3 id="task-detail-comments">Comments <small>{comments.length}</small></h3>
-          {comments.length ? <ol className="task-comments">
-            {comments.map((comment) => {
-              const author = comment.author ? agentDisplayName({ id: comment.author, name: comment.author }) : "Unknown author";
-              return <li key={comment.id}>
-                <div className="task-comment-heading">
-                  <span className="task-comment-avatar" aria-hidden="true">{agentInitials(author)}</span>
-                  <strong title={comment.author || undefined}>{author}</strong>
-                  {comment.at && <TaskDate at={comment.at} />}
-                </div>
-                <MarkdownContent className="doc-compact task-detail-text" text={comment.body} plain />
-              </li>;
-            })}
-          </ol> : <p className="task-feedback">No comments yet.</p>}
-        </section>
+        <details className="task-detail-section" open>
+          <summary><h3>Details</h3><ChevronRight className="task-chevron" size={16} aria-hidden="true" /></summary>
+          <div className="task-detail-section-body">
+            {task.status === "blocked" && <div className="tasks-warning"><strong>Why it’s blocked</strong>
+              <MarkdownContent className="doc-compact" text={blocker || "No reason was recorded."} />
+            </div>}
+            {body && <MarkdownContent className="doc-compact task-detail-text" text={body} />}
+            {task.summary && task.summary !== body && task.summary !== blocker && (
+              <div className="task-detail-update"><h4>Latest update</h4><MarkdownContent className="doc-compact task-detail-text" text={task.summary} /></div>
+            )}
+            {!body && !task.summary && task.status !== "blocked" && <p className="task-feedback">No details yet.</p>}
+          </div>
+        </details>
+        <details className="task-detail-section" open>
+          <summary><h3>Comments <small>{comments.length}</small></h3><ChevronRight className="task-chevron" size={16} aria-hidden="true" /></summary>
+          <div className="task-detail-section-body">
+            {comments.length ? <ol className="task-comments">
+              {comments.map((comment) => {
+                const author = comment.author ? agentDisplayName({ id: comment.author, name: comment.author }) : "Unknown author";
+                return <li key={comment.id}>
+                  <div className="task-comment-heading">
+                    <span className="task-comment-avatar" aria-hidden="true">{agentInitials(author)}</span>
+                    <strong title={comment.author || undefined}>{author}</strong>
+                    {comment.at && <TaskDate at={comment.at} />}
+                  </div>
+                  <MarkdownContent className="doc-compact task-detail-text" text={comment.body} plain />
+                </li>;
+              })}
+            </ol> : <p className="task-feedback">No comments yet.</p>}
+          </div>
+        </details>
       </div>
       <TaskActions board={board} id={id} blocked={task.status === "blocked"} />
     </>
