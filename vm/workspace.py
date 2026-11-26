@@ -30,7 +30,6 @@ import subprocess
 import sys
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from markdown_it import MarkdownIt
 
 from hermes_constants import VALID_REASONING_EFFORTS, named_profile_is_live, parse_reasoning_effort
 from hermes_yaml import YAMLError, roundtrip_yaml, safe_load
@@ -177,26 +176,6 @@ def http_url(value):
         return value if url.scheme in ("https", "http") and url.hostname and url.username is None else ""
     except ValueError:
         return ""
-
-
-# Markdown files are authored by the agent. Disable raw HTML and embedded images
-# and allow only credential-free HTTP links before rendering anything in the console.
-workspace_markdown = MarkdownIt("commonmark", {"html": False, "maxNesting": 24}).enable("table").disable("image")
-workspace_markdown.validateLink = lambda value: bool(http_url(value))
-
-
-def render_markdown(text, page_title=""):
-    if not text.strip():
-        return ""
-    env = {}
-    tokens = workspace_markdown.parse(text, env)
-    if page_title and len(tokens) >= 3 and tokens[0].tag == "h1" and tokens[1].content.strip() == page_title:
-        tokens = tokens[3:]
-    for token in tokens:
-        if token.type in ("heading_open", "heading_close"):
-            # A saved document sits below the console page and its section heading.
-            token.tag = "h" + str(min(6, 2 + int(token.tag[1:])))
-    return workspace_markdown.renderer.render(tokens, workspace_markdown.options, env)
 
 
 def discovery(label, value):
@@ -374,7 +353,7 @@ def brand_asset_entries(data):
 def brand_knowledge(data, source, directory):
     if "knowledge_base_file" not in data:
         text = string(data.get("knowledge_base"))
-        return {"knowledge": text, "knowledgeHtml": render_markdown(text)}
+        return {"knowledge": text}
     reference = data["knowledge_base_file"]
     result = {"knowledge": "", "knowledgeFile": reference if markdown_path(reference) else ""}
     try:
@@ -382,8 +361,7 @@ def brand_knowledge(data, source, directory):
     except (OSError, UnicodeError, WorkspaceError):
         return result
     return {
-        **result, "knowledge": text, "knowledgeHtml": render_markdown(text),
-        "knowledgeRevision": knowledge_revision(source, content),
+        **result, "knowledge": text, "knowledgeRevision": knowledge_revision(source, content),
     }
 
 
@@ -479,7 +457,7 @@ def project(collection, source, directory, record_id=None):
         strategy = string(data.get("strategy"))
         return {
             **record, "revision": sha256(source).hexdigest(),
-            "brandId": string(data.get("brand_id")), "strategy": strategy, "strategyHtml": render_markdown(strategy),
+            "brandId": string(data.get("brand_id")), "strategy": strategy,
         }
     if collection == "campaigns":
         return {
@@ -1954,7 +1932,7 @@ def brand_document(root, record_id, document_id):
         if document is None:
             raise WorkspaceError(404, "This brand document was not found.")
         content = read_markdown(record, document["path"])[0]
-        return {**document, "content": content, "html": render_markdown(content)}
+        return {**document, "content": content}
 
 
 def brand_asset(root, record_id, asset_id):
@@ -2014,9 +1992,8 @@ def agent_profile(root, record_id):
         raise WorkspaceError(404, "This agent profile was not found.")
     try:
         with open_directory(root) as workspace, open_directory("agents", workspace) as agents, open_directory(record_id, agents) as agent:
-            data = parse_record(read_file(agent)[0], record_id)
-            content = read_markdown(agent, "SOUL.md")[0]
-            return {"content": content, "html": render_markdown(content, string(data.get("name")))}
+            parse_record(read_file(agent)[0], record_id)
+            return {"content": read_markdown(agent, "SOUL.md")[0]}
     except (FileNotFoundError, NotADirectoryError):
         raise WorkspaceError(404, "This agent profile was not found.") from None
     except UnicodeError:
