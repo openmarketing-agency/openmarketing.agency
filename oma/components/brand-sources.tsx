@@ -108,24 +108,24 @@ export function BrandResearch({ brand, path, selected, layout }: Props) {
       )}
       {items.length > 0 && (
         <div className="research-reader">
-          <ResearchNav items={items} selectedId={selected?.document?.id} basePath={researchPath} />
+          <div className="research-toolbar">
+            <ResearchNav items={items} selectedId={selected?.document?.id} basePath={researchPath} />
+            {index >= 0 && items.length > 1 && (
+              <nav className="research-pager" aria-label="Document pages">
+                {previous
+                  ? <Link href={researchPath + "&document=" + previous.id} scroll={false} prefetch={false} aria-label={"Previous: " + previous.label}><ArrowLeft size={15} aria-hidden="true" /></Link>
+                  : <span aria-hidden="true"><ArrowLeft size={15} /></span>}
+                <span>{index + 1} of {items.length}</span>
+                {next
+                  ? <Link href={researchPath + "&document=" + next.id} scroll={false} prefetch={false} aria-label={"Next: " + next.label}><ArrowRight size={15} aria-hidden="true" /></Link>
+                  : <span aria-hidden="true"><ArrowRight size={15} /></span>}
+              </nav>
+            )}
+          </div>
           <section id="brand-document" className="research-document record-structured" aria-labelledby="document-title">
             <header className="research-document-heading">
-              <div>
-                <h2 id="document-title">{selected?.document ? labelFor(selected.document.title) : "Brand document"}</h2>
-                {selected?.document && <small className="record-knowledge-source">{selected.document.path}</small>}
-              </div>
-              {index >= 0 && items.length > 1 && (
-                <nav className="research-pager" aria-label="Document pages">
-                  {previous
-                    ? <Link href={researchPath + "&document=" + previous.id} scroll={false} prefetch={false} aria-label={"Previous: " + previous.label}><ArrowLeft size={15} aria-hidden="true" /></Link>
-                    : <span aria-hidden="true"><ArrowLeft size={15} /></span>}
-                  <span>{index + 1} of {items.length}</span>
-                  {next
-                    ? <Link href={researchPath + "&document=" + next.id} scroll={false} prefetch={false} aria-label={"Next: " + next.label}><ArrowRight size={15} aria-hidden="true" /></Link>
-                    : <span aria-hidden="true"><ArrowRight size={15} /></span>}
-                </nav>
-              )}
+              <h2 id="document-title">{selected?.document ? labelFor(selected.document.title) : "Brand document"}</h2>
+              {selected?.document && <small className="record-knowledge-source">{selected.document.path}</small>}
             </header>
             {selected?.document
               ? <ResearchDocument brandId={brand.id} document={selected.document} layout={layout} />
