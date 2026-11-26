@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Bot, CalendarClock, SlidersHorizontal } from "lucide-react";
 
 import { WorkspaceDocument } from "@/components/workspace-document";
+import { agentDisplayName } from "@/lib/agent-name";
 import { describeSchedule } from "@/lib/job-schedule";
 import type { SavedAgent, SavedCampaign } from "@/lib/server/agent-workspace";
 import { parseWorkspaceDocument } from "@/lib/workspace-document";
@@ -14,10 +15,7 @@ export function AgentProfileDetail({ agent, campaign, profile, error }: {
   profile?: { content: string };
   error?: string;
 }) {
-  const role = agent.id.split("__").at(-1) ?? agent.id;
-  const name = agent.name === agent.id
-    ? role.split(/[-_]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")
-    : agent.name;
+  const name = agentDisplayName(agent);
 
   return (
     <div className="agent-playbook-page record-detail">

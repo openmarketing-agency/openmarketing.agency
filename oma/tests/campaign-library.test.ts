@@ -105,7 +105,12 @@ test("shows campaign agents and scheduled work in the dedicated roster", () => {
   const html = renderToStaticMarkup(createElement(CampaignAgents, { workspace: data, campaign: declaredCampaign, ids }));
   assert.match(html, /href="\/workspace\/agents\/seo__researcher"/);
   assert.match(html, /Coordinator/);
-  assert.match(html, /Review traffic · Daily · UTC · 2 runs/);
+  assert.match(html, /<strong>Review traffic<\/strong><span>Daily · UTC · 2 runs<\/span>/);
+  assert.match(html, /<p>3 agents · 2 scheduled jobs<\/p>/);
+  assert.match(html, /<li class="campaign-agent-card" data-missing="true">/);
+  // The coordinator comes first, with the readable name derived from its ID.
+  assert.ok(html.indexOf("seo__orchestrator") < html.indexOf("seo__researcher<"));
+  assert.match(html, /<span class="campaign-agent-avatar" aria-hidden="true">RI<\/span>/);
   assert.match(html, /seo__missing/);
   assert.doesNotMatch(html, /href="[^"]*seo__missing|seo__writer|Google Search Console|Google Analytics/);
 });
@@ -151,4 +156,12 @@ test("shows the saved plan with an Edit plan action instead of a hidden form", (
   assert.match(html, /class="campaign-plan-toolbar"/);
   assert.match(html, /Edit plan<\/button><\/div><p>Saved plan<\/p>$/);
   assert.doesNotMatch(html, /<form|<details|textarea/);
+});
+
+test("derives readable agent names and initials from profile IDs", async () => {
+  const { agentDisplayName, agentInitials } = await import("../lib/agent-name");
+  assert.equal(agentDisplayName({ id: "seo__content_writer", name: "seo__content_writer" }), "Content Writer");
+  assert.equal(agentDisplayName({ id: "seo__writer", name: "Editorial lead" }), "Editorial lead");
+  assert.equal(agentInitials("Content Writer"), "CW");
+  assert.equal(agentInitials("Researcher"), "RE");
 });

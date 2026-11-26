@@ -3,7 +3,7 @@
 "use client";
 
 import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CircleCheck, ListOrdered, Pencil, Plus, Target, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleCheck, ListOrdered, MessageSquareText, Pencil, Plus, RefreshCw, Target, Trash2 } from "lucide-react";
 import { saveCampaignCustomMcpAction, saveCampaignPlanAction, syncCampaignToolsAction, syncCampaignAgentsAction } from "@/app/actions/workspace";
 import type { CampaignConfigurationResult, ManualCampaignIntegration, SavedCampaign } from "@/lib/server/agent-workspace";
 import { Button } from "@/components/ui/button";
@@ -247,9 +247,13 @@ export function CampaignAgentSync({ campaignId, revision }: { campaignId: string
   return (
     <form className="campaign-agent-sync" action={action}>
       <input type="hidden" name="revision" value={revision} />
-      <p>Ask campaign chat to change an agent’s instructions or settings.</p>
-      <Button variant="outline" disabled={pending}>{pending ? "Syncing agents…" : "Sync saved agent changes"}</Button>
-      <SaveMessage result={result} />
+      <MessageSquareText size={18} aria-hidden="true" />
+      <div>
+        <p><strong>Change an agent</strong> by asking campaign chat to update its instructions or settings.</p>
+        <p>Then sync, so the running agents pick up the saved profiles.</p>
+        <SaveMessage result={result} />
+      </div>
+      <Button variant="outline" disabled={pending}><RefreshCw aria-hidden="true" /> {pending ? "Syncing agents…" : "Sync saved agent changes"}</Button>
     </form>
   );
 }

@@ -150,8 +150,7 @@
 .campaign-search .search-box { width: min(100%, 20rem); min-height: 44px; margin: 0; background: var(--surface); }
 .campaign-search > span { font-size: 0.875rem; color: var(--muted); }
 
-.campaign-list,
-.campaign-agent-list {
+.campaign-list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -325,26 +324,7 @@
 
 .campaign-roster,
 .campaign-detail .campaign-settings { margin-top: 24px; }
-.campaign-roster { max-width: 57rem; }
-.campaign-agent { padding-block: 16px; border-top: 1px solid var(--border); }
-.campaign-agent:last-child { padding-bottom: 0; }
-.campaign-agent-title { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; }
-.campaign-agent-title h3 { font-size: 1.0625rem; font-weight: 650; }
-.campaign-agent-title a { display: inline-flex; align-items: center; gap: 7px; }
-.campaign-agent-title a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-.campaign-agent p { margin-top: 4px; max-width: 72ch; color: var(--muted); }
-.campaign-agent-metadata {
-  display: grid;
-  gap: 5px;
-  margin: 10px 0 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
-.campaign-agent-metadata > div { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: 6px; }
-.campaign-agent-metadata dd { margin: 0; }
-.campaign-agent-metadata dt, .campaign-agent-jobs h4 { color: var(--text); font-weight: 550; }
-.campaign-agent-jobs { margin-top: 10px; font-size: 0.8125rem; }
-.campaign-agent-jobs ul { margin-top: 4px; color: var(--muted); }
+.campaign-roster { max-width: 64rem; }
 .campaign-placeholder { color: var(--muted); }
 
 .campaign-detail > :is(.notice, .form-error) { margin-top: 20px; }
@@ -423,7 +403,28 @@
 .campaign-custom-mcp { margin-top: 24px; }
 .campaign-custom-mcp h2 { font-size: 1rem; font-weight: 600; }
 .campaign-tool-sync { max-width: min(100%, 28ch); }
-.campaign-agent-sync { display: grid; justify-items: start; gap: 8px; margin-top: 20px; color: var(--muted); }
+.campaign-agent-sync {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 14px;
+  max-width: 64rem;
+  margin-top: 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.campaign-agent-sync > svg { color: var(--accent); }
+.campaign-agent-sync p { margin: 0; }
+.campaign-agent-sync strong { color: var(--text); font-weight: 600; }
+.campaign-agent-sync .workspace-save-status, .campaign-agent-sync .form-error { margin-top: 4px; }
+@container (max-width: 36rem) {
+  .campaign-agent-sync { grid-template-columns: auto minmax(0, 1fr); }
+  .campaign-agent-sync > [data-slot="button"] { grid-column: 1 / -1; justify-self: start; }
+}
 .campaign-detail :is(.campaign-header-actions, .campaign-edit-disclosure, .campaign-agent-sync, .campaign-tool-sync) [data-slot="button"] {
   max-width: 100%;
   white-space: normal;
@@ -765,3 +766,70 @@
 /* Agent-written Markdown in task details and transcripts */
 .campaign-progress-text.doc-prose { white-space: normal; }
 .campaign-activity-markdown { max-height: 32rem; overflow: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
+
+/* Campaign agents */
+.campaign-roster-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin-bottom: 16px; }
+.campaign-roster .campaign-roster-heading h2 { margin: 0; }
+.campaign-roster-heading p { margin: 0; color: var(--muted); font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.campaign-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.campaign-agent-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.campaign-agent-card:has(h3 a:hover) { border-color: var(--palette-cyan); box-shadow: var(--panel-shadow); }
+.campaign-agent-card[data-coordinator] { grid-column: 1 / -1; border-color: var(--palette-cyan); background: linear-gradient(var(--active), var(--surface) 70%); }
+.campaign-agent-card[data-missing] { border-style: dashed; background: var(--ground); }
+.campaign-agent-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.campaign-agent-avatar {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--active);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.campaign-agent-card[data-coordinator] .campaign-agent-avatar { background: var(--accent); color: var(--surface); }
+.campaign-agent-card[data-missing] .campaign-agent-avatar { background: var(--raised); color: var(--muted); }
+.campaign-agent-title { display: grid; min-width: 0; }
+.campaign-agent-title h3 { margin: 0; font-size: 1.02rem; font-weight: 650; line-height: 1.3; }
+.campaign-agent-title a { display: inline-flex; align-items: center; gap: 6px; }
+.campaign-agent-title a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.campaign-agent-title a svg { flex: none; color: var(--accent); }
+.campaign-agent-title code { overflow: hidden; color: var(--muted); font-family: var(--font-mono), monospace; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.campaign-coordinator { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.campaign-agent-description { max-width: 72ch; margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.55; }
+.campaign-agent-description a { color: var(--accent); text-decoration: underline; }
+
+.campaign-agent-facts { display: grid; gap: 8px; margin: 0; font-size: 0.8125rem; }
+.campaign-agent-facts > div { display: grid; grid-template-columns: 5.2rem minmax(0, 1fr); align-items: start; gap: 8px; }
+.campaign-agent-facts dt { display: inline-flex; align-items: center; gap: 6px; padding-top: 2px; color: var(--muted); font-weight: 550; }
+.campaign-agent-facts dd { min-width: 0; margin: 0; }
+.campaign-agent-facts code { font-family: var(--font-mono), monospace; font-size: 0.78rem; overflow-wrap: anywhere; }
+.campaign-agent-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.campaign-agent-chips li { padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--raised); font-size: 0.75rem; line-height: 1.6; }
+
+.campaign-agent-jobs { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 0.8125rem; }
+.campaign-agent-jobs h4 { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 0.75rem; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; }
+.campaign-agent-jobs ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.campaign-agent-jobs li { display: grid; gap: 1px; padding: 7px 10px; border-radius: 7px; background: var(--raised); }
+.campaign-agent-jobs strong { font-weight: 600; }
+.campaign-agent-jobs span { color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .campaign-agent-card { transition: none; } }
