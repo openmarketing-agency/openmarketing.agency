@@ -6,9 +6,8 @@ import { controlPlane } from "@/lib/server/control-plane";
 
 export type ApiUser = { id: string; email: string };
 
-export type TokenPair = {
+export type SessionToken = {
   access_token: string;
-  refresh_token: string;
   token_type: string;
   expires_in: number;
 };
@@ -35,7 +34,6 @@ const MESSAGES: Record<string, string> = {
   LOGIN_BAD_CREDENTIALS: "Incorrect email or password.",
   REGISTRATION_CLOSED: "This installation already has an account. Sign in to continue.",
   REGISTER_INVALID_PASSWORD: "That password is not allowed.",
-  INVALID_REFRESH_TOKEN: "Your session has expired. Please sign in again.",
 };
 
 function describeError(
@@ -121,8 +119,8 @@ function bearer(accessToken: string): HeadersInit {
 export function login(
   email: string,
   password: string,
-): Promise<Result<TokenPair>> {
-  return request<TokenPair>("/api/v1/auth/jwt/login", {
+): Promise<Result<SessionToken>> {
+  return request<SessionToken>("/api/v1/auth/jwt/login", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ username: email, password }),
@@ -142,28 +140,7 @@ export function register(
   });
 }
 
-/** Trades a refresh token for a new pair; the presented token is rotated server-side. */
-export function refreshTokens(
-  refreshToken: string,
-): Promise<Result<TokenPair>> {
-  return request<TokenPair>("/api/v1/auth/jwt/refresh", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-    fallbackMessage: "Your session has expired. Please sign in again.",
-  });
-}
-
-export function logout(refreshToken: string): Promise<Result<void>> {
-  return request<void>("/api/v1/auth/jwt/logout", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-    fallbackMessage: "Could not reach the API to revoke the session.",
-  });
-}
-
-/** Revokes every refresh token for the caller. */
+/** Ends every session for the caller's account. */
 export function logoutAll(accessToken: string): Promise<Result<void>> {
   return request<void>("/api/v1/auth/jwt/logout-all", {
     method: "POST",

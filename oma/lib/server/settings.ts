@@ -11,10 +11,8 @@ export interface Settings {
   appName: string;
   docsEnabled: boolean;
   secretKey: string;
-  refreshSecretKey: string;
   integrationEncryptionKey: string | null;
   accessTokenLifetimeSeconds: number;
-  refreshTokenLifetimeSeconds: number;
   registrationEnabled: boolean;
   corsOrigins: string[];
 }
@@ -85,12 +83,6 @@ export function loadSettings(env: Env = process.env): Settings {
     throw new SettingsError("OMA_SECRET_KEY must not be empty");
   }
 
-  // An empty value (a common form of an unset variable in Compose/Kubernetes)
-  // means "derive the refresh secret from the main one", not "sign with ''".
-  const refreshSecretRaw = raw(env, "refresh_secret_key");
-  const refreshSecretKey =
-    refreshSecretRaw === undefined || !refreshSecretRaw.trim() ? secretKey : refreshSecretRaw;
-
   const integrationKeyRaw = raw(env, "integration_encryption_key");
   let integrationEncryptionKey: string | null = null;
   if (integrationKeyRaw !== undefined && integrationKeyRaw.trim() !== "") {
@@ -105,7 +97,6 @@ export function loadSettings(env: Env = process.env): Settings {
     // HS256 wants at least 32 bytes of key material (RFC 7518 §3.2).
     const pairs: Array<[string, string]> = [
       ["OMA_SECRET_KEY", secretKey],
-      ["OMA_REFRESH_SECRET_KEY", refreshSecretKey],
     ];
     for (const [name, value] of pairs) {
       if (value === DEV_SECRET) {
@@ -127,10 +118,8 @@ export function loadSettings(env: Env = process.env): Settings {
     appName: str(env, "app_name", "Open Marketing Agency"),
     docsEnabled: bool(env, "docs_enabled", true),
     secretKey,
-    refreshSecretKey,
     integrationEncryptionKey,
-    accessTokenLifetimeSeconds: int(env, "access_token_lifetime_seconds", 60 * 15),
-    refreshTokenLifetimeSeconds: int(env, "refresh_token_lifetime_seconds", 60 * 60 * 24 * 30),
+    accessTokenLifetimeSeconds: int(env, "access_token_lifetime_seconds", 60 * 60 * 24 * 30),
     registrationEnabled: bool(env, "registration_enabled", true),
     corsOrigins: stringList(env, "cors_origins", []),
   };

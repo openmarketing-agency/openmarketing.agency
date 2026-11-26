@@ -59,9 +59,6 @@ export async function updateOwnProfile(user: User, { email, password }: UserUpda
     `).get(email?.trim().toLowerCase() ?? current.email, hash ?? current.hashed_password,
       current.session_version + (hash === undefined ? 0 : 1), user.id) as User | undefined;
     if (!updated) throw unauthorized();
-    if (hash !== undefined) {
-      db.prepare("DELETE FROM refresh_tokens WHERE user_id = ?").run(user.id);
-    }
     return updated;
   });
 }

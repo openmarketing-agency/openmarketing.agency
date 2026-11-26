@@ -2,13 +2,8 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import type { TokenPair } from "@/lib/backend";
-import {
-  ACCESS_COOKIE,
-  REFRESH_COOKIE,
-  accessCookieOptions,
-  refreshCookieOptions,
-} from "@/lib/cookies";
+import type { SessionToken } from "@/lib/backend";
+import { ACCESS_COOKIE, LEGACY_REFRESH_COOKIE, accessCookieOptions } from "@/lib/cookies";
 
 /**
  * Session cookie handling.
@@ -17,22 +12,18 @@ import {
  * is why this is imported by Server Actions and `proxy.ts` and never by a page.
  */
 
-export async function setTokens(tokens: TokenPair): Promise<void> {
+export async function setToken(token: SessionToken): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.set(ACCESS_COOKIE, tokens.access_token, accessCookieOptions(tokens.expires_in));
-  cookieStore.set(REFRESH_COOKIE, tokens.refresh_token, refreshCookieOptions());
+  cookieStore.set(ACCESS_COOKIE, token.access_token, accessCookieOptions(token.expires_in));
+  cookieStore.delete(LEGACY_REFRESH_COOKIE);
 }
 
-export async function clearTokens(): Promise<void> {
+export async function clearToken(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(ACCESS_COOKIE);
-  cookieStore.delete(REFRESH_COOKIE);
+  cookieStore.delete(LEGACY_REFRESH_COOKIE);
 }
 
 export async function getAccessToken(): Promise<string | null> {
   return (await cookies()).get(ACCESS_COOKIE)?.value ?? null;
-}
-
-export async function getRefreshToken(): Promise<string | null> {
-  return (await cookies()).get(REFRESH_COOKIE)?.value ?? null;
 }

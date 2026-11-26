@@ -53,7 +53,7 @@ function setupEnvironment(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (containerStates().has(containers.console)) {
     const saved: string[] = JSON.parse(run("docker", ["container", "inspect", "--format", "{{json .Config.Env}}", containers.console], true));
-    const keys = new Set(["OMA_BIND_ADDRESS", "OMA_FRONTEND_PORT", "OMA_APP_URL", "OMA_COOKIE_SECURE", "OMA_SECRET_KEY", "OMA_REFRESH_SECRET_KEY",
+    const keys = new Set(["OMA_BIND_ADDRESS", "OMA_FRONTEND_PORT", "OMA_APP_URL", "OMA_COOKIE_SECURE", "OMA_SECRET_KEY",
       "OMA_INTEGRATION_ENCRYPTION_KEY", "OMA_REGISTRATION_ENABLED", "OMA_CORS_ORIGINS", "OMA_DOCS_ENABLED", "COMPOSIO_API_KEY"]);
     for (const entry of saved) {
       const index = entry.indexOf("=");

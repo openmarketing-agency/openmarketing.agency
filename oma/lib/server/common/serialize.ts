@@ -24,24 +24,14 @@ export function userRead(user: User) {
   return { id: user.id, email: user.email };
 }
 
-export interface TokenPairBody {
+export interface TokenBody {
   access_token: string;
-  refresh_token: string;
   token_type: string;
   expires_in: number;
 }
 
-export function tokenPairBody(
-  accessToken: string,
-  refreshToken: string,
-  expiresIn: number,
-): TokenPairBody {
-  return {
-    access_token: accessToken,
-    refresh_token: refreshToken,
-    token_type: "bearer",
-    expires_in: expiresIn,
-  };
+export function tokenBody(accessToken: string, expiresIn: number): TokenBody {
+  return { access_token: accessToken, token_type: "bearer", expires_in: expiresIn };
 }
 
 export interface McpIntegrationReadBody {

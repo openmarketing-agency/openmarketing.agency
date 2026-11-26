@@ -4,9 +4,9 @@ import { notFound } from "../common/api-error";
 import { userRead } from "../common/serialize";
 import { empty, json, readJson, readText } from "../http";
 import { loadSettings } from "../settings";
-import { parseLoginForm, parseRefreshRequest } from "./auth-input";
+import { parseLoginForm } from "./auth-input";
 import { requireUser } from "./authenticate";
-import { login, logout, revokeAllSessions, rotateRefreshToken } from "./sessions";
+import { login, revokeAllSessions } from "./sessions";
 import { parseUserCreate, parseUserUpdate } from "./user-input";
 import { registerUser, updateOwnProfile } from "./users";
 
@@ -30,18 +30,9 @@ async function auth(request: Request, path: string): Promise<Response> {
       const { username, password } = parseLoginForm(await loginBody(request));
       return json(await login(username, password));
     }
-    case "jwt/refresh": {
-      const { refresh_token } = parseRefreshRequest(await readJson(request));
-      return json(await rotateRefreshToken(refresh_token));
-    }
-    case "jwt/logout": {
-      const { refresh_token } = parseRefreshRequest(await readJson(request));
-      await logout(refresh_token);
-      return empty();
-    }
     case "jwt/logout-all": {
       const user = requireUser(request);
-      await revokeAllSessions(user.id);
+      revokeAllSessions(user.id);
       return empty();
     }
     default:
