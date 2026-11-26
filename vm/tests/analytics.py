@@ -81,6 +81,10 @@ def verify_observations(home, address):
     assert request("POST", "/refresh")[0] == 409
     assert request("GET", "?metric=drafts_created")[0] == 200
 
+    config_path.write_text(json.dumps({**config, "mode": "control"}))
+    assert request("POST", "/refresh") == (409, {"message": "Analytics refresh is disabled in control mode."})
+    assert request("GET", "?metric=drafts_created")[0] == 200
+
 
 def verify_document_layout(address, workspace):
     def post(payload):
