@@ -9,7 +9,7 @@ import {
 import { toString } from "mdast-util-to-string";
 
 import {
-  colorCode, documentFact, listLayout, parseMarkdown, phaseLabel, safeLink,
+  colorCode, documentFact, extractPalette, listLayout, paletteColor, parseMarkdown, phaseLabel, safeLink, type Palette as ColorPalette,
   type DocumentGroup, type DocumentSection, type WorkspaceDocument as ParsedDocument,
 } from "@/lib/workspace-document";
 
@@ -70,6 +70,26 @@ function phrase(node: PhrasingContent): ReactNode {
   }
 }
 
+function PaletteGrid({ palette }: { palette: ColorPalette }) {
+  return (
+    <div className="doc-palette">
+      {palette.label && <p className="doc-palette-label">{palette.label}</p>}
+      <ul className="doc-palette-grid">
+        {palette.colors.map(({ name, hex, note }, index) => (
+          <li key={index}>
+            <span className="doc-palette-tile" style={{ background: hex }} aria-hidden="true" />
+            <span className="doc-palette-text">
+              {name && <span className="doc-palette-name">{name}</span>}
+              <code>{hex}</code>
+              {note && <span className="doc-palette-note">{note}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function blocks(nodes: RootContent[], depth = 0): ReactNode {
   return nodes.map((node, index) => <Fragment key={index}>{block(node, depth)}</Fragment>);
 }
@@ -77,7 +97,10 @@ function blocks(nodes: RootContent[], depth = 0): ReactNode {
 function block(node: RootContent, depth: number): ReactNode {
   if (depth > maxDepth) return <p>{toString(node)}</p>;
   switch (node.type) {
-    case "paragraph": return <p>{inline(node.children)}</p>;
+    case "paragraph": {
+      const palette = extractPalette(toString(node));
+      return palette ? <PaletteGrid palette={palette} /> : <p>{inline(node.children)}</p>;
+    }
     case "heading": {
       const Tag = ("h" + Math.min(6, Math.max(3, node.depth + 1))) as "h3" | "h4" | "h5" | "h6";
       return <Tag className="doc-subheading">{inline(node.children)}</Tag>;
@@ -96,6 +119,8 @@ function block(node: RootContent, depth: number): ReactNode {
 
 function itemContent(item: ListItem, depth: number) {
   const [first, ...rest] = item.children;
+  const palette = first?.type === "paragraph" ? extractPalette(toString(first)) : undefined;
+  if (palette) return <><PaletteGrid palette={palette} />{blocks(rest, depth + 1)}</>;
   // Tight list items hold a single paragraph; render it inline so markers line up with the text.
   return first?.type === "paragraph"
     ? <>{inline(first.children)}{blocks(rest, depth + 1)}</>
@@ -105,6 +130,7 @@ function itemContent(item: ListItem, depth: number) {
 function DocumentList({ list, depth }: { list: List; depth: number }) {
   const layout = listLayout(list);
   const items = list.children;
+  if (layout === "palette") return <PaletteGrid palette={{ colors: items.map((item) => paletteColor(toString(item))!) }} />;
   if (layout === "stats" || layout === "facts") {
     const facts = items.map((item) => documentFact(item)!);
     return layout === "stats"

@@ -68,8 +68,8 @@
 /* Lists */
 .doc-points, .doc-steps, .doc-tasks, .doc-chips, .doc-guidance ul { margin: 0; padding: 0; list-style: none; }
 .doc-points, .doc-steps, .doc-tasks { display: grid; gap: 8px; }
-.doc-points li { position: relative; max-width: 70ch; padding-left: 20px; }
-.doc-points li::before {
+.doc-points > li { position: relative; max-width: 70ch; padding-left: 20px; }
+.doc-points > li::before {
   content: "";
   position: absolute;
   top: 0.62em;
@@ -80,11 +80,11 @@
   background: var(--accent);
   opacity: 0.7;
 }
-.doc-points li > :is(ul, ol), .doc-steps li :is(ul, ol), .doc-tasks li :is(ul, ol) { margin-top: 8px; }
+.doc-points > li > :is(ul, ol), .doc-steps > li :is(ul, ol), .doc-tasks > li :is(ul, ol) { margin-top: 8px; }
 
 .doc-steps { counter-reset: doc-step; }
-.doc-steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; counter-increment: doc-step; }
-.doc-steps li::before {
+.doc-steps > li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; counter-increment: doc-step; }
+.doc-steps > li::before {
   content: counter(doc-step);
   display: grid;
   place-items: center;
@@ -98,12 +98,12 @@
   font: 550 0.75rem/1 var(--font-mono), monospace;
 }
 
-.doc-tasks li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 9px; }
+.doc-tasks > li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 9px; }
 .doc-tasks svg { margin-top: 0.3em; color: var(--muted); }
-.doc-tasks li[data-checked] svg { color: var(--positive); }
+.doc-tasks > li[data-checked] svg { color: var(--positive); }
 
 .doc-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.doc-chips li { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--raised); font-size: 0.875rem; font-weight: 550; }
+.doc-chips > li { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--raised); font-size: 0.875rem; font-weight: 550; }
 
 .doc-facts {
   display: grid;
@@ -146,8 +146,42 @@
 }
 .doc-table td { min-width: 7rem; padding: 9px 12px; border-top: 1px solid var(--border); vertical-align: top; }
 
-.doc-swatch { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono), monospace; font-size: 0.85em; white-space: nowrap; }
-.doc-swatch i { flex: none; width: 1.35em; height: 1.35em; border: 1px solid var(--border); border-radius: 5px; }
+/* An inline color code: a small pill that sits on the text baseline without stretching the line. */
+.doc-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px 0 3px;
+  border-radius: 999px;
+  background: var(--raised);
+  font-family: var(--font-mono), monospace;
+  font-size: 0.8em;
+  line-height: 1.5;
+  vertical-align: 0.05em;
+  white-space: nowrap;
+}
+.doc-swatch i { flex: none; width: 0.95em; height: 0.95em; border-radius: 50%; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 18%, transparent); }
+
+/* A run of named colors */
+.doc-palette { display: grid; gap: 10px; min-width: 0; margin-block: 2px; }
+.doc-palette-label { color: var(--text); font-weight: 600; }
+.doc-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 8.5rem), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.doc-palette-grid li { display: grid; align-content: start; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.doc-palette-tile { height: 64px; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--text) 10%, transparent); }
+.doc-palette-text { display: grid; gap: 1px; padding: 8px 10px 9px; line-height: 1.35; }
+.doc-palette-name { overflow: hidden; font-size: 0.85rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.doc-palette-name::first-letter { text-transform: uppercase; }
+.doc-palette-text code { padding: 0; background: none; color: var(--muted); font-family: var(--font-mono), monospace; font-size: 0.75rem; letter-spacing: 0.02em; }
+.doc-palette-note { color: var(--muted); font-size: 0.75rem; }
+.doc-points > li:has(> .doc-palette) { padding-top: 0; }
+.doc-chat .doc-palette-grid li { background: var(--surface); }
 
 /* Do and don't */
 .doc-guidance { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 12px; }
@@ -224,7 +258,7 @@
 .doc-chat .doc-callout { padding-block: 10px; font-weight: 500; }
 /* Agent chat bubbles already use the raised fill, so inner parts sit on the surface color. */
 .doc-chat { margin-top: 4px; }
-.doc-chat :is(.doc-chips li, .doc-callout, .doc-code, .doc-stats div, .doc-table th, code),
+.doc-chat :is(.doc-chips > li, .doc-callout, .doc-code, .doc-stats div, .doc-table th, code),
 .doc-chat .doc-table, .doc-chat .doc-facts div { background: var(--surface); }
 .doc-chat .doc-facts { background: var(--border); }
 

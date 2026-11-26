@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { MarkdownContent, WorkspaceDocument, WorkspaceDocumentContents } from "../components/workspace-document";
-import { listLayout, markdownText, parseWorkspaceDocument, phaseLabel } from "../lib/workspace-document";
+import { extractPalette, listLayout, markdownText, parseWorkspaceDocument, phaseLabel } from "../lib/workspace-document";
 
 const brand = `# Fernway Coffee
 
@@ -170,4 +170,37 @@ test("renders short Markdown as prose without section cards", () => {
 test("reduces Markdown to one readable line for previews", () => {
   assert.equal(markdownText("## Done\n\nPosted **3** drafts:\n\n- [Blog](https://example.com)\n- Email  \nnewsletter"), "Done Posted 3 drafts: Blog Email newsletter");
   assert.equal(markdownText("![chart](https://example.com/a.png) ready"), "chart ready");
+});
+
+test("reads a run of named colors as a palette and leaves prose alone", () => {
+  const palette = extractPalette("Palette (observed from storefront CSS): ink #171717, accent lime #c6ef53, sage #B5C6B0 and oat #E6D6B9.");
+  assert.deepEqual(palette, {
+    label: "Palette (observed from storefront CSS)",
+    colors: [
+      { name: "ink", hex: "#171717" }, { name: "accent lime", hex: "#C6EF53" },
+      { name: "sage", hex: "#B5C6B0" }, { name: "oat", hex: "#E6D6B9" },
+    ],
+  });
+  assert.deepEqual(extractPalette("Forest: #2F4A3A (packaging, headers); Ember #D98E4A, Paper #F3EEE4")?.colors[0],
+    { name: "Forest", hex: "#2F4A3A", note: "packaging, headers" });
+  assert.equal(extractPalette("We tried #111111 then #222222 and finally #333333 because it looked better"), undefined);
+  assert.equal(extractPalette("Ink #171717 and paper #FAF8F2"), undefined, "two colors stay inline");
+});
+
+test("renders palettes as color cards and single codes as inline swatches", () => {
+  const markup = render(`## Visual identity
+
+- Palette: ink #171717, lime #C6EF53, rose #EAD6D1.
+- CTA uses #C6EF53 on dark text.
+
+## Colors
+
+- **Forest:** #2F4A3A
+- **Ember:** #D98E4A
+`);
+  assert.match(markup, /<p class="doc-palette-label">Palette<\/p>/);
+  assert.match(markup, /<span class="doc-palette-tile" style="background:#C6EF53" aria-hidden="true"><\/span><span class="doc-palette-text"><span class="doc-palette-name">lime<\/span><code>#C6EF53<\/code>/);
+  assert.match(markup, /CTA uses <span class="doc-swatch"><i style="background:#C6EF53"/);
+  assert.match(markup, /<span class="doc-palette-name">Forest<\/span><code>#2F4A3A<\/code>/);
+  assert.doesNotMatch(markup, /doc-facts/);
 });

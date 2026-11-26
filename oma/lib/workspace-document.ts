@@ -30,7 +30,9 @@ export type WorkspaceDocument = {
 };
 
 export type DocumentFact = { label: string; value: PhrasingContent[]; text: string };
-export type ListLayout = "steps" | "tasks" | "stats" | "facts" | "chips" | "points";
+export type ListLayout = "steps" | "tasks" | "palette" | "stats" | "facts" | "chips" | "points";
+export type PaletteColor = { name: string; hex: string; note?: string };
+export type Palette = { label?: string; colors: PaletteColor[] };
 
 const doHeading = /^(?:do|dos|do's|do this)$/i;
 const dontHeading = /^(?:don't|dont|don'ts|donts|do not|avoid)$/i;
@@ -140,6 +142,7 @@ export function listLayout(list: List): ListLayout {
   const items = list.children;
   if (items.some(({ checked }) => typeof checked === "boolean")) return "tasks";
   if (list.ordered) return "steps";
+  if (items.length >= 2 && items.every((item) => paletteColor(plain(item)))) return "palette";
   const facts = items.map(documentFact);
   if (facts.every(Boolean)) {
     return items.length >= 2 && facts.every((fact) => fact!.text.length <= 16 && /\d/.test(fact!.text)) ? "stats" : "facts";
@@ -170,6 +173,55 @@ export function safeLink(value: string) {
 }
 
 export const colorCode = /(?<![\w&])#[0-9a-fA-F]{6}\b/g;
+const singleColor = new RegExp(colorCode.source);
+const edgePunctuation = /^[\s,;:.=–—-]+|[\s,;:.=–—-]+$/g;
+
+/** Splits on commas and semicolons that are not inside parentheses. */
+function splitList(text: string) {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (char === "(") depth++;
+    else if (char === ")") depth = Math.max(0, depth - 1);
+    else if ((char === "," || char === ";") && depth === 0) { parts.push(text.slice(start, index)); start = index + 1; }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+/** Reads "Forest #2F4A3A (packaging)" or "Forest: #2F4A3A" as one named color. */
+export function paletteColor(text: string): PaletteColor | undefined {
+  const matches = text.match(colorCode);
+  if (matches?.length !== 1 || text.length > 120) return;
+  const match = text.match(singleColor)!;
+  const name = text.slice(0, match.index).replace(/^(?:and|or|&)\s+/i, "").replace(edgePunctuation, "");
+  const note = text.slice(match.index! + match[0].length).replace(/^\s*\((.*)\)\s*\.?$/, "$1").replace(edgePunctuation, "");
+  return { name, hex: match[0].toUpperCase(), ...(note ? { note } : {}) };
+}
+
+/** Finds a run of three or more named colors, such as "Palette: ink #171717, lime #C6EF53, rose #EAD6D1". */
+export function extractPalette(text: string): Palette | undefined {
+  const count = text.match(colorCode)?.length ?? 0;
+  if (count < 3 || count > 32) return;
+  const first = text.search(singleColor);
+  const colon = text.lastIndexOf(":", first);
+  // A colon before the first color introduces the palette, unless it belongs to the first color's name.
+  const intro = colon > 0 && splitList(text.slice(0, colon)).length === 1 && text.slice(colon + 1, first).trim() !== "" ? colon : -1;
+  const label = intro > 0 ? text.slice(0, intro).trim() : undefined;
+  const colors: PaletteColor[] = [];
+  for (const part of splitList(intro > 0 ? text.slice(intro + 1) : text)) {
+    if (!part.replace(edgePunctuation, "")) continue;
+    const pieces = (part.match(colorCode)?.length ?? 0) > 1 ? part.split(/\s+(?:and|&)\s+/i) : [part];
+    for (const piece of pieces) {
+      const color = paletteColor(piece);
+      if (!color) return;
+      colors.push(color);
+    }
+  }
+  return { label, colors };
+}
 
 type TextNode = { type: string; value?: unknown; alt?: unknown; children?: TextNode[] };
 const blockContainers = new Set(["root", "list", "listItem", "blockquote", "table", "tableRow", "footnoteDefinition"]);
