@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { MarkdownContent, WorkspaceDocument, WorkspaceDocumentContents } from "../components/workspace-document";
-import { listLayout, parseWorkspaceDocument, phaseLabel } from "../lib/workspace-document";
+import { listLayout, markdownText, parseWorkspaceDocument, phaseLabel } from "../lib/workspace-document";
 
 const brand = `# Fernway Coffee
 
@@ -165,4 +165,9 @@ test("renders short Markdown as prose without section cards", () => {
   assert.match(markup, /<strong>3<\/strong>/);
   assert.match(markup, /class="doc-stats"/);
   assert.match(markup, /&lt;b&gt;raw&lt;\/b&gt;/);
+});
+
+test("reduces Markdown to one readable line for previews", () => {
+  assert.equal(markdownText("## Done\n\nPosted **3** drafts:\n\n- [Blog](https://example.com)\n- Email  \nnewsletter"), "Done Posted 3 drafts: Blog Email newsletter");
+  assert.equal(markdownText("![chart](https://example.com/a.png) ready"), "chart ready");
 });

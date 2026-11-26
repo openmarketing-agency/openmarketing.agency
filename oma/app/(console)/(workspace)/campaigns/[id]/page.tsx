@@ -10,6 +10,7 @@ import { connectionFeedback } from "@/lib/connection-attempt";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, readCampaignKanbanStatus, workspaceId } from "@/lib/server/agent-workspace";
 import "@/components/campaign-pages.css";
+import "@/components/workspace-document.css";
 
 type Props = {
   params: Promise<{ id: string }>;

@@ -227,3 +227,9 @@
 .doc-chat :is(.doc-chips li, .doc-callout, .doc-code, .doc-stats div, .doc-table th, code),
 .doc-chat .doc-table, .doc-chat .doc-facts div { background: var(--surface); }
 .doc-chat .doc-facts { background: var(--border); }
+
+/* Compact prose for task details, transcripts and list items */
+.doc-prose.doc-compact { gap: 8px; font-size: 0.9rem; line-height: 1.6; }
+.doc-compact p { white-space: pre-line; }
+.doc-compact .doc-subheading { font-size: 0.95rem; }
+.doc-compact .doc-stats dd { font-size: 1.15rem; }

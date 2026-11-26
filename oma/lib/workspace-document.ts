@@ -170,3 +170,18 @@ export function safeLink(value: string) {
 }
 
 export const colorCode = /(?<![\w&])#[0-9a-fA-F]{6}\b/g;
+
+type TextNode = { type: string; value?: unknown; alt?: unknown; children?: TextNode[] };
+const blockContainers = new Set(["root", "list", "listItem", "blockquote", "table", "tableRow", "footnoteDefinition"]);
+
+function nodeText(node: TextNode): string {
+  if (node.type === "break") return " ";
+  if (node.type === "image" || node.type === "imageReference") return typeof node.alt === "string" ? node.alt : "";
+  if (typeof node.value === "string") return node.value;
+  return (node.children ?? []).map(nodeText).join(blockContainers.has(node.type) ? " " : "");
+}
+
+/** Reduces Markdown to one line of readable text, for previews that cannot hold formatting. */
+export function markdownText(markdown: string) {
+  return nodeText(parseMarkdown(markdown) as TextNode).replace(/\s+/g, " ").trim();
+}

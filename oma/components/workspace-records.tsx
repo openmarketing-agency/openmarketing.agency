@@ -1,10 +1,11 @@
 /** Displays linked brands, playbooks, and agent records from the mounted workspace. */
 
 import Link from "next/link";
-import { ArrowRight, BookOpen, Tag } from "lucide-react";
+import { ArrowRight, BookOpen, CircleCheck, ListOrdered, Tag, Target } from "lucide-react";
 
 import type { AgentWorkspace, SavedCampaign } from "@/lib/server/agent-workspace";
 import { describeSchedule } from "@/lib/job-schedule";
+import { MarkdownInline } from "@/components/workspace-document";
 
 export function WorkspaceIndex({ workspace }: { workspace: AgentWorkspace }) {
   return (
@@ -55,17 +56,21 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
   return (
     <div className="campaign-overview">
       {hasPlan && (
-        <div className="campaign-reading">
+        <div className="campaign-reading campaign-plan-reading">
           {campaign.goals.length > 0 && (
-            <section>
-              <h2>Goals</h2>
-              <ul className="workspace-copy-list">{campaign.goals.map((goal, index) => <li key={index}>{goal}</li>)}</ul>
+            <section aria-labelledby="campaign-goals-heading">
+              <h2 id="campaign-goals-heading"><Target size={17} aria-hidden="true" /> Goals</h2>
+              <ul className="campaign-goal-list">{campaign.goals.map((goal, index) => (
+                <li key={index}><CircleCheck size={16} aria-hidden="true" /><span><MarkdownInline text={goal} /></span></li>
+              ))}</ul>
             </section>
           )}
           {campaign.plans.length > 0 && (
-            <section>
-              <h2>Plans</h2>
-              <ol className="workspace-copy-list">{campaign.plans.map((plan, index) => <li key={index}>{plan}</li>)}</ol>
+            <section aria-labelledby="campaign-steps-heading">
+              <h2 id="campaign-steps-heading"><ListOrdered size={17} aria-hidden="true" /> Plan steps</h2>
+              <ol className="campaign-step-list">{campaign.plans.map((plan, index) => (
+                <li key={index}><span><MarkdownInline text={plan} /></span></li>
+              ))}</ol>
             </section>
           )}
         </div>

@@ -258,3 +258,10 @@ export function WorkspaceDocumentContents({ document }: { document: ParsedDocume
 export function MarkdownContent({ text, id, className }: { text: string; id?: string; className?: string }) {
   return <div id={id} className={"doc-prose" + (className ? " " + className : "")}>{blocks(parseMarkdown(text).children)}</div>;
 }
+
+/** Renders one short Markdown item, such as a goal, keeping inline formatting without paragraph spacing. */
+export function MarkdownInline({ text }: { text: string }) {
+  const nodes = parseMarkdown(text).children;
+  if (nodes.length === 1 && nodes[0].type === "paragraph") return <>{inline(nodes[0].children)}</>;
+  return <MarkdownContent text={text} className="doc-compact" />;
+}
