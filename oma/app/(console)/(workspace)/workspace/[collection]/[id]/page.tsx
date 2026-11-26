@@ -59,8 +59,10 @@ async function RecordDetail({ params, searchParams }: Props) {
   const playbook = record && "strategy" in record ? record : undefined;
   const editingKnowledge = query.edit === "knowledge" && Boolean(brand?.knowledgeRevision);
   const editing = query.edit === "1" || editingKnowledge;
-  const documentId = typeof query.document === "string" ? query.document : undefined;
-  const view = documentId !== undefined ? "research" : brandViews.find(({ id }) => id === query.view)?.id ?? "overview";
+  const requestedDocument = typeof query.document === "string" ? query.document : undefined;
+  const view = requestedDocument !== undefined ? "research" : brandViews.find(({ id }) => id === query.view)?.id ?? "overview";
+  // The research reader opens its first document, so reading never starts with an extra click.
+  const documentId = requestedDocument ?? (view === "research" ? brand?.documents?.[0]?.id : undefined);
   const sectionPath = brand ? brandViewPath(path, view) : path;
   const selectedDocument = brand && !editing && documentId !== undefined ? await loadBrandDocument(id, documentId) : undefined;
   const knowledgeDocument = brand && view === "overview" ? parseWorkspaceDocument(brand.knowledge) : undefined;

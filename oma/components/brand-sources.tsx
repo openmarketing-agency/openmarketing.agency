@@ -1,9 +1,10 @@
 /** Displays saved brand channels, public research signals, and referenced workspace documents. */
 
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, ArrowUpRight, FileText } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUpRight } from "lucide-react";
 
 import { DesignedDocument } from "@/components/designed-document";
+import { ResearchNav } from "@/components/research-nav";
 import { WorkspaceDocument } from "@/components/workspace-document";
 import type { DocumentLayoutState } from "@/lib/server/document-layout";
 import type { SavedBrand, SavedBrandDocument } from "@/lib/server/agent-workspace";
@@ -93,42 +94,44 @@ export function BrandResearch({ brand, path, selected, layout }: Props) {
       ? <Link href={documentHref(document.id)} title={file} prefetch={false}>{label}</Link>
       : <small>{file}</small>;
   };
+  const items = (brand.documents ?? []).map(({ id, title, path: file }) => ({ id, label: labelFor(title), file }));
+  const index = items.findIndex(({ id }) => id === selected?.document?.id);
+  const previous = index > 0 ? items[index - 1] : undefined;
+  const next = index >= 0 ? items[index + 1] : undefined;
   return (
     <div className="record-groups" id="brand-research">
-      {selected ? (
-        <section id="brand-document" className="record-structured" aria-labelledby="document-title">
-          <Link href={researchPath} className="back-link"><ArrowLeft size={14} aria-hidden="true" /> All documents</Link>
-          <div className="record-section-heading">
-            <h2 id="document-title">{selected.document ? labelFor(selected.document.title) : "Brand document"}</h2>
-            {selected.document && <small className="record-knowledge-source">{selected.document.path}</small>}
-          </div>
-          {selected.document
-            ? <ResearchDocument brandId={brand.id} document={selected.document} layout={layout} />
-            : <p className="form-error" role="alert">{selected.error}</p>}
-        </section>
-      ) : hasDocuments && (
-        <section className="record-group workspace-sources">
-          <div className="record-section-heading">
-            <h2>Documents</h2>
-            {brand.designSource && <ExternalLink url={brand.designSource} label="Design system source" />}
-          </div>
-          {brand.internalDocumentation && (
-            <p>Internal documentation: {labelFor(brand.internalDocumentation.mode)} · {reference(brand.internalDocumentation.index, "Read index")}</p>
-          )}
-          {!!brand.documents?.length && (
-            <ul className="workspace-document-list">
-              {brand.documents.map(({ id, title, path: file }) => (
-                <li key={file}>
-                  <Link href={documentHref(id)} prefetch={false}>
-                    <FileText size={17} aria-hidden="true" />
-                    <span>{labelFor(title)}<small>{file}</small></span>
-                    <ArrowRight size={15} aria-hidden="true" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+      {(brand.designSource || brand.internalDocumentation) && (
+        <p className="research-meta">
+          {brand.designSource && <ExternalLink url={brand.designSource} label="Design system source" />}
+          {brand.internalDocumentation && <>Internal documentation: {labelFor(brand.internalDocumentation.mode)} · {reference(brand.internalDocumentation.index, "Read index")}</>}
+        </p>
+      )}
+      {items.length > 0 && (
+        <div className="research-reader">
+          <ResearchNav items={items} selectedId={selected?.document?.id} basePath={researchPath} />
+          <section id="brand-document" className="research-document record-structured" aria-labelledby="document-title">
+            <header className="research-document-heading">
+              <div>
+                <h2 id="document-title">{selected?.document ? labelFor(selected.document.title) : "Brand document"}</h2>
+                {selected?.document && <small className="record-knowledge-source">{selected.document.path}</small>}
+              </div>
+              {index >= 0 && items.length > 1 && (
+                <nav className="research-pager" aria-label="Document pages">
+                  {previous
+                    ? <Link href={researchPath + "&document=" + previous.id} scroll={false} prefetch={false} aria-label={"Previous: " + previous.label}><ArrowLeft size={15} aria-hidden="true" /></Link>
+                    : <span aria-hidden="true"><ArrowLeft size={15} /></span>}
+                  <span>{index + 1} of {items.length}</span>
+                  {next
+                    ? <Link href={researchPath + "&document=" + next.id} scroll={false} prefetch={false} aria-label={"Next: " + next.label}><ArrowRight size={15} aria-hidden="true" /></Link>
+                    : <span aria-hidden="true"><ArrowRight size={15} /></span>}
+                </nav>
+              )}
+            </header>
+            {selected?.document
+              ? <ResearchDocument brandId={brand.id} document={selected.document} layout={layout} />
+              : <p className="form-error" role="alert">{selected?.error ?? "Choose a document to read."}</p>}
+          </section>
+        </div>
       )}
       {!!brand.repositories?.length && (
         <section className="record-group workspace-sources">
@@ -179,7 +182,7 @@ export function BrandResearch({ brand, path, selected, layout }: Props) {
           </dl>
         </section>
       )}
-      {!selected && !hasDocuments && !brand.repositories?.length && !brand.competitors?.length && !brand.signals?.length && (
+      {!hasDocuments && !brand.repositories?.length && !brand.competitors?.length && !brand.signals?.length && (
         <p className="record-empty">No brand research saved yet.</p>
       )}
     </div>
