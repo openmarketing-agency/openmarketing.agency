@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { documentLibrary, swatch } from "../lib/document-library";
-import { documentLayoutPrompt, validateDocumentLayout } from "../lib/server/document-layout";
+import { brandExample, documentLayoutPrompt, playbookExample, validateDocumentLayout } from "../lib/server/document-layout";
 
 const markdown = "# Fernway\n\nPrimary #2F5D50 and cream #F4EDE1.\n\n## Voice\n\nWarm and precise.";
 const program = [
@@ -66,4 +66,13 @@ test("repairs small model slips instead of discarding the whole page", async () 
   assert.equal(validateDocumentLayout(missing, markdown), program);
   const orphan = program + "\nextra = Card([CardHeader(\"Unused\")])";
   assert.throws(() => validateDocumentLayout(orphan, markdown), /Connect extra to root/);
+});
+
+test("teaches the model with a brand and a playbook example that pass validation themselves", () => {
+  for (const example of [brandExample, playbookExample]) {
+    assert.equal(validateDocumentLayout(example, example), example);
+    assert.ok(documentLayoutPrompt.includes(example.split("\n")[1]));
+  }
+  assert.match(documentLayoutPrompt, /large-heavy/);
+  assert.match(documentLayoutPrompt, /OverviewCardBlock of 3–4 key facts/);
 });
