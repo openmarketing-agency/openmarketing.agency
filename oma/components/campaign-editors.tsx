@@ -3,7 +3,7 @@
 "use client";
 
 import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CircleCheck, ListOrdered, MessageSquareText, Pencil, Plus, RefreshCw, Target, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { saveCampaignCustomMcpAction, saveCampaignPlanAction, syncCampaignToolsAction, syncCampaignAgentsAction } from "@/app/actions/workspace";
 import type { CampaignConfigurationResult, ManualCampaignIntegration, SavedCampaign } from "@/lib/server/agent-workspace";
 import { Button } from "@/components/ui/button";
@@ -33,8 +33,8 @@ function fit(element: HTMLTextAreaElement | null) {
   element.style.height = element.scrollHeight + "px";
 }
 
-function PlanList({ name, label, item, hint, ordered, icon, rows, onChange, nextId }: {
-  name: string; label: string; item: string; hint: string; ordered: boolean; icon: ReactNode;
+function PlanList({ name, label, item, hint, ordered, rows, onChange, nextId }: {
+  name: string; label: string; item: string; hint: string; ordered: boolean;
   rows: PlanRow[]; onChange: (rows: PlanRow[]) => void; nextId: () => number;
 }) {
   const fields = useRef(new Map<number, HTMLTextAreaElement>());
@@ -76,7 +76,6 @@ function PlanList({ name, label, item, hint, ordered, icon, rows, onChange, next
   return (
     <fieldset className="campaign-plan-list" data-ordered={ordered || undefined}>
       <legend className="campaign-plan-legend">
-        <span className="campaign-plan-legend-icon" aria-hidden="true">{icon}</span>
         {label}
         <span className="campaign-plan-count">{rows.length} of {maxPlanItems}</span>
       </legend>
@@ -85,7 +84,7 @@ function PlanList({ name, label, item, hint, ordered, icon, rows, onChange, next
         : <ol className="campaign-plan-rows">
           {rows.map(({ id, text }, index) => (
             <li key={id} className="campaign-plan-row">
-              <span className="campaign-plan-marker" aria-hidden="true">{ordered ? index + 1 : <CircleCheck size={16} />}</span>
+              <span className="campaign-plan-marker" aria-hidden="true">{ordered ? index + 1 : null}</span>
               <textarea name={name} value={text} rows={1} maxLength={2000} aria-label={item + " " + (index + 1)} aria-describedby={hintId}
                 placeholder={ordered ? "Describe this step" : "Describe the outcome"}
                 ref={(element) => {
@@ -160,9 +159,9 @@ function PlanForm({ campaign, revision, action, pending, error, onCancel }: {
               placeholder="What this campaign is for, in a sentence or two" />
           </label>
         </section>
-        <PlanList name="goals" label="Goals" item="Goal" ordered={false} icon={<Target size={16} />} rows={goals} onChange={setGoals}
+        <PlanList name="goals" label="Goals" item="Goal" ordered={false} rows={goals} onChange={setGoals}
           nextId={nextId} hint="Press Enter for a new goal and Shift+Enter for a line break. Alt+↑ or Alt+↓ reorders." />
-        <PlanList name="plans" label="Plan steps" item="Step" ordered icon={<ListOrdered size={16} />} rows={plans} onChange={setPlans}
+        <PlanList name="plans" label="Plan steps" item="Step" ordered rows={plans} onChange={setPlans}
           nextId={nextId} hint="Press Enter for a new step and Shift+Enter for a line break. Alt+↑ or Alt+↓ reorders." />
       </fieldset>
       <div className="campaign-plan-actions">
@@ -197,7 +196,7 @@ export function CampaignPlanEditor({ campaign, revision, children }: { campaign:
     <div className="campaign-plan-toolbar">
       {notice ? <p className="workspace-save-status" role="status">{notice}</p> : <span />}
       <Button type="button" variant="outline" onClick={() => { setNotice(undefined); setEditing(true); }}>
-        <Pencil aria-hidden="true" /> Edit plan
+        Edit plan
       </Button>
     </div>
     {children}
@@ -247,13 +246,12 @@ export function CampaignAgentSync({ campaignId, revision }: { campaignId: string
   return (
     <form className="campaign-agent-sync" action={action}>
       <input type="hidden" name="revision" value={revision} />
-      <MessageSquareText size={18} aria-hidden="true" />
       <div>
         <p><strong>Change an agent</strong> by asking campaign chat to update its instructions or settings.</p>
         <p>Then sync, so the running agents pick up the saved profiles.</p>
         <SaveMessage result={result} />
       </div>
-      <Button variant="outline" disabled={pending}><RefreshCw aria-hidden="true" /> {pending ? "Syncing agents…" : "Sync saved agent changes"}</Button>
+      <Button variant="outline" disabled={pending}>{pending ? "Syncing agents…" : "Sync saved agent changes"}</Button>
     </form>
   );
 }

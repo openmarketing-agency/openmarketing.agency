@@ -4,15 +4,14 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { Hand, ShieldCheck, TriangleAlert, Zap, type LucideIcon } from "lucide-react";
 import { saveCampaignModeAction } from "@/app/actions/workspace";
 import type { CampaignConfiguration, CampaignMode } from "@/lib/server/agent-workspace";
 import { Button } from "@/components/ui/button";
 
-const options: Record<CampaignMode, { label: string; description: string; icon: LucideIcon }> = {
-  approve: { label: "Approve", icon: ShieldCheck, description: "Agents draft publications and you review each one before it is queued." },
-  control: { label: "Control", icon: Hand, description: "Only publications you explicitly approve run. Scheduled work is paused." },
-  yolo: { label: "Yolo", icon: Zap, description: "Automation runs and new publication drafts are approved automatically." },
+const options: Record<CampaignMode, { label: string; description: string }> = {
+  approve: { label: "Approve", description: "Agents draft publications and you review each one before it is queued." },
+  control: { label: "Control", description: "Only publications you explicitly approve run. Scheduled work is paused." },
+  yolo: { label: "Yolo", description: "Automation runs and new publication drafts are approved automatically." },
 };
 
 export function CampaignModeSettings({ campaignId, configuration, installed }: {
@@ -35,22 +34,19 @@ export function CampaignModeSettings({ campaignId, configuration, installed }: {
         <input type="hidden" name="revision" value={configuration.revision} />
         <fieldset className="campaign-mode-options" disabled={pending}>
           <legend className="sr-only">Mode</legend>
-          {(Object.entries(options) as [CampaignMode, typeof options[CampaignMode]][]).map(([value, option]) => {
-            const Icon = option.icon;
-            return (
-              <label key={value} className="campaign-mode-option" data-mode={value}>
-                <input type="radio" name="mode" value={value} checked={mode === value} onChange={() => setMode(value)} />
-                <span className="campaign-mode-icon" aria-hidden="true"><Icon size={18} /></span>
-                <span className="campaign-mode-text">
-                  <span className="campaign-mode-title">{option.label}{value === saved && <span className="campaign-mode-current">Current</span>}</span>
-                  <span>{option.description}</span>
-                </span>
-              </label>
-            );
-          })}
+          {(Object.entries(options) as [CampaignMode, typeof options[CampaignMode]][]).map(([value, option]) => (
+            <label key={value} className="campaign-mode-option" data-mode={value}>
+              <input type="radio" name="mode" value={value} checked={mode === value} onChange={() => setMode(value)} />
+              <span className="campaign-mode-radio" aria-hidden="true" />
+              <span className="campaign-mode-text">
+                <span className="campaign-mode-title">{option.label}{value === saved && <span className="campaign-mode-current">Current</span>}</span>
+                <span>{option.description}</span>
+              </span>
+            </label>
+          ))}
         </fieldset>
         {mode === "yolo" && changed && (
-          <p className="campaign-mode-warning"><TriangleAlert size={15} aria-hidden="true" /> New drafts will publish without anyone reviewing them.</p>
+          <p className="campaign-mode-warning">New drafts will publish without anyone reviewing them.</p>
         )}
         <div className="campaign-settings-actions">
           <p className="campaign-settings-state" role="status">

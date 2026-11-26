@@ -1,11 +1,8 @@
 /** Renders agent-authored Markdown: workspace documents as section cards, and short text such as chat replies as prose. */
 
 import type { List, ListItem, PhrasingContent, RootContent, Table } from "mdast";
-import { createElement, Fragment, type ReactNode } from "react";
-import {
-  BookOpen, CalendarDays, ChartColumn, Check, ListChecks, Megaphone, MessageSquareText, Palette,
-  ShieldCheck, Sparkles, Square, SquareCheck, Target, Users, X, type LucideIcon,
-} from "lucide-react";
+import { Fragment, type ReactNode } from "react";
+import { Square, SquareCheck } from "lucide-react";
 import { toString } from "mdast-util-to-string";
 
 import {
@@ -15,27 +12,6 @@ import {
 
 const maxDepth = 24;
 const colorSplit = new RegExp("(" + colorCode.source + ")");
-
-const sectionIcons: [RegExp, LucideIcon][] = [
-  [/audience|customer|persona|segment|who we/i, Users],
-  [/voice|tone|copy|messag|language/i, MessageSquareText],
-  [/visual|colou?r|logo|typograph|design|imagery/i, Palette],
-  [/channel|distribution|media/i, Megaphone],
-  [/metric|kpi|measure|success|result|report/i, ChartColumn],
-  [/timeline|schedule|calendar|plan|phase|roadmap/i, CalendarDays],
-  [/guardrail|compliance|legal|risk|rule|policy/i, ShieldCheck],
-  [/objective|goal|offer|target/i, Target],
-  [/overview|about|position|story|mission|summary|value/i, Sparkles],
-  [/step|tactic|execution|checklist|process/i, ListChecks],
-];
-
-export function sectionIcon(title: string) {
-  return sectionIcons.find(([pattern]) => pattern.test(title))?.[1] ?? BookOpen;
-}
-
-function SectionIcon({ title, size }: { title: string; size: number }) {
-  return createElement(sectionIcon(title), { size, "aria-hidden": true });
-}
 
 function text(value: string): ReactNode {
   const parts = value.split(colorSplit);
@@ -178,13 +154,12 @@ function DocumentTable({ table }: { table: Table }) {
 }
 
 function GuidanceColumn({ group, kind }: { group: DocumentGroup; kind: "do" | "dont" }) {
-  const Icon = kind === "do" ? Check : X;
   return (
     <div className={"doc-guidance-" + kind}>
-      <h3><Icon size={15} aria-hidden="true" />{inline(group.heading.children)}</h3>
+      <h3>{inline(group.heading.children)}</h3>
       {group.nodes.map((node, index) => node.type === "list"
         ? <ul key={index}>{node.children.map((item, itemIndex) => (
-          <li key={itemIndex}><Icon size={14} aria-hidden="true" /><div>{itemContent(item, 1)}</div></li>
+          <li key={itemIndex}>{itemContent(item, 1)}</li>
         ))}</ul>
         : <Fragment key={index}>{block(node, 1)}</Fragment>)}
     </div>
@@ -195,10 +170,7 @@ function Section({ section }: { section: DocumentSection }) {
   const headingId = section.id + "-heading";
   return (
     <section className="doc-card" id={section.id} aria-labelledby={headingId}>
-      <header className="doc-card-heading">
-        <span aria-hidden="true"><SectionIcon title={section.title} size={17} /></span>
-        <h3 id={headingId}>{inline(section.heading.children)}</h3>
-      </header>
+      <h3 className="doc-card-title" id={headingId}>{inline(section.heading.children)}</h3>
       <div className="doc-card-body">
         {blocks(section.lead)}
         {section.guidance && (
@@ -255,7 +227,7 @@ export function WorkspaceDocument({ document, name, empty, contents = false }: {
       {contents && document.sections.length >= 3 && (
         <nav className="doc-inline-contents" aria-label="Document sections">
           <ul>{document.sections.map(({ id, title }) => (
-            <li key={id}><a href={"#" + id}><SectionIcon title={title} size={14} />{title}</a></li>
+            <li key={id}><a href={"#" + id}>{title}</a></li>
           ))}</ul>
         </nav>
       )}
@@ -273,7 +245,7 @@ export function WorkspaceDocumentContents({ document }: { document: ParsedDocume
       <h2>On this page</h2>
       <ul>
         {document.sections.map(({ id, title }) => (
-          <li key={id}><a href={"#" + id}><SectionIcon title={title} size={15} />{title}</a></li>
+          <li key={id}><a href={"#" + id}>{title}</a></li>
         ))}
       </ul>
     </nav>

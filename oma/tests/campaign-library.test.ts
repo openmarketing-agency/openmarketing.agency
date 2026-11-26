@@ -123,8 +123,8 @@ test("keeps campaign goals and plans with their linked brand and playbook in the
     playbooks: [{ id: "retail-plan", name: "Retail strategy", description: "", revision: "", brandId: "retail", strategy: "" }],
   };
   const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace: data, campaign: saved }));
-  assert.match(html, /<\/svg> Goals<\/h2><ul class="campaign-goal-list"><li><svg[^]*?<span>Grow organic sales<\/span><\/li>/);
-  assert.match(html, /<\/svg> Plan steps<\/h2><ol class="campaign-step-list"><li><span>Review search traffic<\/span><\/li>/);
+  assert.match(html, /<h2 id="campaign-goals-heading">Goals<\/h2><ul class="campaign-goal-list"><li>Grow organic sales<\/li>/);
+  assert.match(html, /<h2 id="campaign-steps-heading">Plan steps<\/h2><ol class="campaign-step-list"><li><span>Review search traffic<\/span><\/li>/);
   assert.match(html, /href="\/workspace\/brands\/retail"/);
   assert.match(html, /href="\/workspace\/playbooks\/retail-plan"/);
 });
@@ -132,7 +132,7 @@ test("keeps campaign goals and plans with their linked brand and playbook in the
 test("renders Markdown inside campaign goals and plan steps", () => {
   const saved = { ...campaign, goals: ["Reach **500** subscribers"], plans: ["Read [the brief](https://example.com/brief)", "<b>raw</b>"] };
   const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace, campaign: saved }));
-  assert.match(html, /<span>Reach <strong>500<\/strong> subscribers<\/span>/);
+  assert.match(html, /<li>Reach <strong>500<\/strong> subscribers<\/li>/);
   assert.match(html, /<a href="https:\/\/example.com\/brief" target="_blank" rel="noopener noreferrer nofollow">the brief<\/a>/);
   assert.match(html, /&lt;b&gt;raw&lt;\/b&gt;/);
 });

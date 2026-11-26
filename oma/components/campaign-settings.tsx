@@ -3,7 +3,6 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
-import { Cpu, KeyRound } from "lucide-react";
 import { deployCampaignAction, saveCampaignSettingsAction } from "@/app/actions/workspace";
 import type { CampaignConfiguration } from "@/lib/server/agent-workspace";
 import { Button } from "@/components/ui/button";
@@ -42,7 +41,6 @@ export function CampaignSettings({
         <p>The language model this campaign’s agents run on.</p>
       </header>
       <div className="campaign-model-summary">
-        <span className="campaign-mode-icon" aria-hidden="true"><Cpu size={18} /></span>
         <div>
           <strong>{override ? saved.modelId || "Custom model" : "Default agent model"}</strong>
           <span>{override
@@ -77,7 +75,7 @@ export function CampaignSettings({
             <Input name="baseUrl" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)}
               placeholder="https://provider.example.com/v1" maxLength={2048} />
           </label>
-          <label><span className="campaign-label-icon"><KeyRound size={14} aria-hidden="true" /> Model API key</span>
+          <label>Model API key
             <Input name="modelKey" type="password" ref={modelKey} autoComplete="new-password" maxLength={4096}
               aria-describedby="model-api-key-hint" />
           </label>

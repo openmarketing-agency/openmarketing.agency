@@ -4,7 +4,7 @@
 
 import { useId, useState } from "react";
 import Link from "next/link";
-import { Activity, CalendarClock, ChevronDown, CircleCheck, Clock, Inbox, RefreshCw, Search, TriangleAlert, type LucideIcon } from "lucide-react";
+import { ChevronDown, RefreshCw, Search } from "lucide-react";
 import { CampaignAgentActivity } from "./campaign-agent-activity";
 import { useCampaignFeed } from "./use-campaign-feed";
 import { CampaignKanban } from "./campaign-kanban";
@@ -13,7 +13,6 @@ import type { CampaignProgressSnapshot, CampaignTask, CampaignTaskActivity } fro
 import { Button } from "@/components/ui/button";
 import { MarkdownContent } from "@/components/workspace-document";
 import { markdownText } from "@/lib/workspace-document";
-import { agentInitials } from "@/lib/agent-name";
 import { describeSchedule } from "@/lib/job-schedule";
 import { relativeTime } from "@/lib/relative-time";
 import { Input } from "@/components/ui/input";
@@ -64,11 +63,11 @@ function ago(value: number | string | null) {
   return date && <time dateTime={date.toISOString()} title={dateFormat.format(date)}>{relativeTime(date)}</time>;
 }
 
-const summaryTiles: { id: Exclude<Group, "all">; label: string; icon: LucideIcon }[] = [
-  { id: "attention", label: "Needs attention", icon: TriangleAlert },
-  { id: "running", label: "In progress", icon: Activity },
-  { id: "queued", label: "Queued", icon: Clock },
-  { id: "done", label: "Done", icon: CircleCheck },
+const summaryTiles: { id: Exclude<Group, "all">; label: string }[] = [
+  { id: "attention", label: "Needs attention" },
+  { id: "running", label: "In progress" },
+  { id: "queued", label: "Queued" },
+  { id: "done", label: "Done" },
 ];
 
 const boardMessages = {
@@ -177,16 +176,15 @@ export function CampaignProgress({ campaign, agents, kanban }: {
       {snapshot && <>
         {snapshot.board.state !== "ready" ? <p className="campaign-progress-empty">{boardMessages[snapshot.board.state]}</p>
           : tasks.length === 0 ? <div className="campaign-progress-empty-state">
-            <Inbox size={22} aria-hidden="true" />
             <p><strong>No tasks yet.</strong> Tasks appear here as the campaign’s agents add them to Kanban.</p>
           </div>
           : <>
             <div className="campaign-progress-summary" role="group" aria-label="Filter tasks by status">
-              {summaryTiles.map(({ id: group, label: name, icon: Icon }) => (
+              {summaryTiles.map(({ id: group, label: name }) => (
                 <button key={group} type="button" data-group={group} aria-pressed={filter === group}
                   disabled={totals[group] === 0 && filter !== group}
                   onClick={() => choose(filter === group ? "all" : group)}>
-                  <span className="campaign-progress-summary-label"><Icon size={15} aria-hidden="true" />{name}</span>
+                  <span className="campaign-progress-summary-label">{name}</span>
                   <span className="campaign-progress-summary-count">{totals[group]}</span>
                 </button>
               ))}
@@ -214,9 +212,7 @@ export function CampaignProgress({ campaign, agents, kanban }: {
                     <span className="campaign-progress-state" data-state={task.status}>{label(task.status)}</span>
                     <ChevronDown className="campaign-progress-chevron" size={16} aria-hidden="true" />
                     <span className="campaign-progress-task-meta">
-                      <span className="campaign-task-assignee">
-                        {assignee && <i aria-hidden="true">{agentInitials(assignee)}</i>}{assignee || "Unassigned"}
-                      </span>
+                      <span className="campaign-task-assignee">{assignee || "Unassigned"}</span>
                       <span>{taskInfo(task)}</span>
                     </span>
                   </button>
@@ -236,7 +232,7 @@ export function CampaignProgress({ campaign, agents, kanban }: {
         <div className="campaign-progress-panels">
           <section className="campaign-progress-panel" aria-labelledby={id + "-schedule"}>
             <header>
-              <h3 id={id + "-schedule"}><CalendarClock size={16} aria-hidden="true" /> Scheduled jobs</h3>
+              <h3 id={id + "-schedule"}>Scheduled jobs</h3>
               {nextJob && <span className="campaign-progress-next">Next {ago(nextJob.job.nextRun)}</span>}
             </header>
             {snapshot.schedule.state === "partial" && <p>Some schedule details are unavailable. Check the Agents tab for saved schedules.</p>}

@@ -1,7 +1,7 @@
 /** Displays linked brands, playbooks, and agent records from the mounted workspace. */
 
 import Link from "next/link";
-import { ArrowRight, BookOpen, CalendarClock, CircleCheck, Cpu, ListOrdered, Network, Sparkles, Tag, Target, Wrench } from "lucide-react";
+import { ArrowRight, BookOpen, Tag } from "lucide-react";
 
 import type { AgentWorkspace, SavedCampaign } from "@/lib/server/agent-workspace";
 import { describeSchedule } from "@/lib/job-schedule";
@@ -60,15 +60,15 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
         <div className="campaign-reading campaign-plan-reading">
           {campaign.goals.length > 0 && (
             <section aria-labelledby="campaign-goals-heading">
-              <h2 id="campaign-goals-heading"><Target size={17} aria-hidden="true" /> Goals</h2>
+              <h2 id="campaign-goals-heading">Goals</h2>
               <ul className="campaign-goal-list">{campaign.goals.map((goal, index) => (
-                <li key={index}><CircleCheck size={16} aria-hidden="true" /><span><MarkdownInline text={goal} /></span></li>
+                <li key={index}><MarkdownInline text={goal} /></li>
               ))}</ul>
             </section>
           )}
           {campaign.plans.length > 0 && (
             <section aria-labelledby="campaign-steps-heading">
-              <h2 id="campaign-steps-heading"><ListOrdered size={17} aria-hidden="true" /> Plan steps</h2>
+              <h2 id="campaign-steps-heading">Plan steps</h2>
               <ol className="campaign-step-list">{campaign.plans.map((plan, index) => (
                 <li key={index}><span><MarkdownInline text={plan} /></span></li>
               ))}</ol>
@@ -120,21 +120,21 @@ function CampaignAgentCard({ id, agent, coordinator }: { id: string; agent?: Cam
             : name}</h3>
           <code>{id}</code>
         </div>
-        {coordinator && <span className="campaign-coordinator"><Network size={13} aria-hidden="true" /> Coordinator</span>}
+        {coordinator && <span className="campaign-coordinator">Coordinator</span>}
       </div>
       {agent?.description
         ? <div className="campaign-agent-description"><MarkdownInline text={agent.description} /></div>
         : !agent && <p className="campaign-agent-description">No profile is saved for this agent yet.</p>}
       {(agent?.model || skills.length > 0 || toolsets.length > 0) && (
         <dl className="campaign-agent-facts">
-          {agent?.model && <div><dt><Cpu size={14} aria-hidden="true" /> Model</dt><dd><code>{agent.model}</code></dd></div>}
-          {skills.length > 0 && <div><dt><Sparkles size={14} aria-hidden="true" /> Skills</dt><dd><AgentChips items={skills} /></dd></div>}
-          {toolsets.length > 0 && <div><dt><Wrench size={14} aria-hidden="true" /> Tools</dt><dd><AgentChips items={toolsets} /></dd></div>}
+          {agent?.model && <div><dt>Model</dt><dd><code>{agent.model}</code></dd></div>}
+          {skills.length > 0 && <div><dt>Skills</dt><dd><AgentChips items={skills} /></dd></div>}
+          {toolsets.length > 0 && <div><dt>Tools</dt><dd><AgentChips items={toolsets} /></dd></div>}
         </dl>
       )}
       {!!agent?.jobs.length && (
         <div className="campaign-agent-jobs">
-          <h4><CalendarClock size={14} aria-hidden="true" /> Scheduled work</h4>
+          <h4>Scheduled work</h4>
           <ul>
             {agent.jobs.map(({ name: job, schedule, timezone, repeat }, index) => (
               <li key={index} title={schedule || undefined}>
