@@ -1,6 +1,7 @@
 /** Verifies that campaign views and tool scopes use the saved agent workspace records. */
 
 import assert from "node:assert/strict";
+import Module, { createRequire } from "node:module";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -117,8 +118,37 @@ test("keeps campaign goals and plans with their linked brand and playbook in the
     playbooks: [{ id: "retail-plan", name: "Retail strategy", description: "", revision: "", brandId: "retail", strategy: "" }],
   };
   const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace: data, campaign: saved }));
-  assert.match(html, /<h2>Goals<\/h2><ul[^>]*><li>Grow organic sales<\/li>/);
-  assert.match(html, /<h2>Plans<\/h2><ol[^>]*><li>Review search traffic<\/li>/);
+  assert.match(html, /<\/svg> Goals<\/h2><ul class="campaign-goal-list"><li><svg[^]*?<span>Grow organic sales<\/span><\/li>/);
+  assert.match(html, /<\/svg> Plan steps<\/h2><ol class="campaign-step-list"><li><span>Review search traffic<\/span><\/li>/);
   assert.match(html, /href="\/workspace\/brands\/retail"/);
   assert.match(html, /href="\/workspace\/playbooks\/retail-plan"/);
+});
+
+test("renders Markdown inside campaign goals and plan steps", () => {
+  const saved = { ...campaign, goals: ["Reach **500** subscribers"], plans: ["Read [the brief](https://example.com/brief)", "<b>raw</b>"] };
+  const html = renderToStaticMarkup(createElement(CampaignOverview, { workspace, campaign: saved }));
+  assert.match(html, /<span>Reach <strong>500<\/strong> subscribers<\/span>/);
+  assert.match(html, /<a href="https:\/\/example.com\/brief" target="_blank" rel="noopener noreferrer nofollow">the brief<\/a>/);
+  assert.match(html, /&lt;b&gt;raw&lt;\/b&gt;/);
+});
+
+test("shows the saved plan with an Edit plan action instead of a hidden form", (t) => {
+  const require = createRequire(import.meta.url);
+  const actionsPath = require.resolve("../app/actions/workspace.ts");
+  const editorsPath = require.resolve("../components/campaign-editors.tsx");
+  const original = require.cache[actionsPath];
+  const actions = new Module(actionsPath);
+  actions.exports = { saveCampaignPlanAction: async () => ({}) };
+  actions.loaded = true;
+  require.cache[actionsPath] = actions;
+  t.after(() => {
+    if (original) require.cache[actionsPath] = original;
+    else delete require.cache[actionsPath];
+    delete require.cache[editorsPath];
+  });
+  const { CampaignPlanEditor } = require(editorsPath) as typeof import("../components/campaign-editors");
+  const html = renderToStaticMarkup(createElement(CampaignPlanEditor, { campaign, revision: "r1" }, createElement("p", null, "Saved plan")));
+  assert.match(html, /class="campaign-plan-toolbar"/);
+  assert.match(html, /Edit plan<\/button><\/div><p>Saved plan<\/p>$/);
+  assert.doesNotMatch(html, /<form|<details|textarea/);
 });

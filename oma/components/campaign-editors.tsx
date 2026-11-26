@@ -2,7 +2,8 @@
 
 "use client";
 
-import { useActionState, useRef, useState, type ToggleEvent } from "react";
+import { useActionState, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, CircleCheck, ListOrdered, Pencil, Plus, Target, Trash2 } from "lucide-react";
 import { saveCampaignCustomMcpAction, saveCampaignPlanAction, syncCampaignToolsAction, syncCampaignAgentsAction } from "@/app/actions/workspace";
 import type { CampaignConfigurationResult, ManualCampaignIntegration, SavedCampaign } from "@/lib/server/agent-workspace";
 import { Button } from "@/components/ui/button";
@@ -17,55 +18,190 @@ function SaveMessage({ result }: { result: CampaignConfigurationResult }) {
   return null;
 }
 
-function PlanItems({ name, label, item, initial }: { name: string; label: string; item: string; initial: string[] }) {
-  const nextId = useRef(initial.length);
-  const [rows, setRows] = useState(initial.map((text, id) => ({ id, text })));
+type PlanRow = { id: number; text: string };
+const maxPlanItems = 32;
+const cleanItems = (rows: PlanRow[]) => rows.map(({ text }) => text.trim()).filter(Boolean);
+const sameItems = (rows: PlanRow[], saved: string[]) => {
+  const items = cleanItems(rows);
+  return items.length === saved.length && items.every((text, index) => text === saved[index]);
+};
+
+/** Fits a textarea to its content so short items stay one line and long ones never scroll. */
+function fit(element: HTMLTextAreaElement | null) {
+  if (!element) return;
+  element.style.height = "auto";
+  element.style.height = element.scrollHeight + "px";
+}
+
+function PlanList({ name, label, item, hint, ordered, icon, rows, onChange, nextId }: {
+  name: string; label: string; item: string; hint: string; ordered: boolean; icon: ReactNode;
+  rows: PlanRow[]; onChange: (rows: PlanRow[]) => void; nextId: () => number;
+}) {
+  const fields = useRef(new Map<number, HTMLTextAreaElement>());
+  const focus = useRef<{ id: number; end?: boolean }>(undefined);
+  const hintId = useId();
+  const noun = item.toLowerCase();
+  const full = rows.length >= maxPlanItems;
+
+  useEffect(() => {
+    if (!focus.current) return;
+    const field = fields.current.get(focus.current.id);
+    if (field) {
+      field.focus();
+      if (focus.current.end) field.setSelectionRange(field.value.length, field.value.length);
+    }
+    focus.current = undefined;
+  });
+
+  const add = (after = rows.length - 1) => {
+    if (full) return;
+    const id = nextId();
+    focus.current = { id };
+    onChange([...rows.slice(0, after + 1), { id, text: "" }, ...rows.slice(after + 1)]);
+  };
+  const remove = (index: number) => {
+    const neighbour = rows[index - 1] ?? rows[index + 1];
+    if (neighbour) focus.current = { id: neighbour.id, end: true };
+    onChange(rows.filter((_, position) => position !== index));
+  };
+  const move = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= rows.length) return;
+    const next = [...rows];
+    [next[index], next[target]] = [next[target], next[index]];
+    focus.current = { id: rows[index].id };
+    onChange(next);
+  };
+
   return (
-    <fieldset className="campaign-plan-items">
-      <legend>{label}</legend>
-      {rows.map(({ id, text }, index) => (
-        <div key={id} className="campaign-plan-item">
-          <Textarea name={name} value={text} rows={2} maxLength={2000} aria-label={item + " " + (index + 1)}
-            onChange={(event) => setRows((current) => current.map((row) => row.id === id ? { id, text: event.target.value } : row))} />
-          <Button type="button" variant="ghost" aria-label={"Remove " + item.toLowerCase() + " " + (index + 1)}
-            onClick={() => setRows((current) => current.filter((row) => row.id !== id))}>Remove</Button>
-        </div>
-      ))}
-      <Button type="button" variant="outline" disabled={rows.length === 32} onClick={() => {
-        const id = nextId.current++;
-        setRows((current) => [...current, { id, text: "" }]);
-      }}>Add {item.toLowerCase()}</Button>
+    <fieldset className="campaign-plan-list" data-ordered={ordered || undefined}>
+      <legend className="campaign-plan-legend">
+        <span className="campaign-plan-legend-icon" aria-hidden="true">{icon}</span>
+        {label}
+        <span className="campaign-plan-count">{rows.length} of {maxPlanItems}</span>
+      </legend>
+      {rows.length === 0
+        ? <p className="campaign-plan-empty">No {noun}s yet.</p>
+        : <ol className="campaign-plan-rows">
+          {rows.map(({ id, text }, index) => (
+            <li key={id} className="campaign-plan-row">
+              <span className="campaign-plan-marker" aria-hidden="true">{ordered ? index + 1 : <CircleCheck size={16} />}</span>
+              <textarea name={name} value={text} rows={1} maxLength={2000} aria-label={item + " " + (index + 1)} aria-describedby={hintId}
+                placeholder={ordered ? "Describe this step" : "Describe the outcome"}
+                ref={(element) => {
+                  if (element) { fields.current.set(id, element); fit(element); } else fields.current.delete(id);
+                }}
+                onChange={(event) => onChange(rows.map((row) => row.id === id ? { id, text: event.target.value } : row))}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
+                  if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); add(index); }
+                  else if (event.key === "Backspace" && !text && rows.length > 0) { event.preventDefault(); remove(index); }
+                  else if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+                    event.preventDefault(); move(index, event.key === "ArrowUp" ? -1 : 1);
+                  }
+                }} />
+              <span className="campaign-plan-row-actions">
+                <Button type="button" variant="ghost" size="icon-sm" disabled={index === 0}
+                  aria-label={`Move ${noun} ${index + 1} up`} title="Move up" onClick={() => move(index, -1)}><ArrowUp /></Button>
+                <Button type="button" variant="ghost" size="icon-sm" disabled={index === rows.length - 1}
+                  aria-label={`Move ${noun} ${index + 1} down`} title="Move down" onClick={() => move(index, 1)}><ArrowDown /></Button>
+                <Button type="button" variant="ghost" size="icon-sm" className="campaign-plan-remove"
+                  aria-label={`Remove ${noun} ${index + 1}`} title="Remove" onClick={() => remove(index)}><Trash2 /></Button>
+              </span>
+            </li>
+          ))}
+        </ol>}
+      <div className="campaign-plan-list-footer">
+        <Button type="button" variant="outline" size="sm" disabled={full} onClick={() => add()}><Plus /> Add {noun}</Button>
+        <p id={hintId} className="campaign-plan-hint">{full ? `You can save up to ${maxPlanItems} ${noun}s.` : hint}</p>
+      </div>
     </fieldset>
   );
 }
 
-export function CampaignPlanEditor({ campaign, revision }: { campaign: SavedCampaign; revision: string }) {
-  const [result, action, pending] = useActionState(saveCampaignPlanAction.bind(null, campaign.id), {});
+function PlanForm({ campaign, revision, action, pending, error, onCancel }: {
+  campaign: SavedCampaign; revision: string; action: (form: FormData) => void; pending: boolean; error?: string; onCancel: () => void;
+}) {
+  // Row IDs only need to be unique within a list; saved items take the first IDs and new rows count up after them.
+  const counter = useRef(maxPlanItems);
+  const nextId = () => counter.current++;
+  const toRows = (items: string[]) => items.map((text, id) => ({ id, text }));
+  // Keep the revision the editor opened with, so a concurrent change is reported instead of overwritten.
+  const [baseRevision] = useState(revision);
   const [name, setName] = useState(campaign.name);
   const [description, setDescription] = useState(campaign.description);
-  const [draftRevision, setDraftRevision] = useState(revision);
-  function openPlan(event: ToggleEvent<HTMLDetailsElement>) {
-    if (!event.currentTarget.open || pending) return;
-    setDraftRevision(revision);
-    setName(campaign.name);
-    setDescription(campaign.description);
-  }
+  const [goals, setGoals] = useState(() => toRows(campaign.goals));
+  const [plans, setPlans] = useState(() => toRows(campaign.plans));
+  const dirty = name !== campaign.name || description !== campaign.description
+    || !sameItems(goals, campaign.goals) || !sameItems(plans, campaign.plans);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   return (
-    <details className="campaign-edit-disclosure" onToggle={openPlan}>
-      <summary>Edit plan</summary>
-      <form action={action} className="workspace-editor">
-        <input type="hidden" name="revision" value={result.configuration?.revision === revision ? revision : draftRevision} />
-        <fieldset disabled={pending}>
-          <label>Campaign name<Input name="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required /></label>
-          <label>Description<Textarea name="description" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={4000} rows={3} /></label>
-          <PlanItems key={"goals-" + draftRevision} name="goals" label="Goals" item="Goal" initial={campaign.goals} />
-          <PlanItems key={"plans-" + draftRevision} name="plans" label="Plan steps" item="Step" initial={campaign.plans} />
-        </fieldset>
-        <SaveMessage result={result} />
-        <Button disabled={pending}>{pending ? "Saving plan…" : "Save plan"}</Button>
-      </form>
-    </details>
+    <form action={action} className="campaign-plan-form" aria-labelledby="campaign-plan-form-heading"
+      onKeyDown={(event) => { if (event.key === "Escape" && !dirty && !pending) onCancel(); }}>
+      <input type="hidden" name="revision" value={baseRevision} />
+      <header className="campaign-plan-form-heading">
+        <h2 id="campaign-plan-form-heading">Edit plan</h2>
+        <p>Goals describe the outcomes agents work toward. Steps are the order they follow. Both support Markdown such as **bold** and links.</p>
+      </header>
+      <fieldset disabled={pending} className="campaign-plan-fields">
+        <section className="campaign-plan-details" aria-label="Campaign details">
+          <label>Campaign name
+            <Input name="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required />
+          </label>
+          <label>Description
+            <Textarea name="description" value={description} onChange={(event) => setDescription(event.target.value)} maxLength={4000} rows={3}
+              placeholder="What this campaign is for, in a sentence or two" />
+          </label>
+        </section>
+        <PlanList name="goals" label="Goals" item="Goal" ordered={false} icon={<Target size={16} />} rows={goals} onChange={setGoals}
+          nextId={nextId} hint="Press Enter for a new goal and Shift+Enter for a line break. Alt+↑ or Alt+↓ reorders." />
+        <PlanList name="plans" label="Plan steps" item="Step" ordered icon={<ListOrdered size={16} />} rows={plans} onChange={setPlans}
+          nextId={nextId} hint="Press Enter for a new step and Shift+Enter for a line break. Alt+↑ or Alt+↓ reorders." />
+      </fieldset>
+      <div className="campaign-plan-actions">
+        <p className="campaign-plan-state" role="status">
+          {error ? <span className="form-error" role="alert">{error}</span> : pending ? "Saving…" : dirty ? "Unsaved changes" : "No changes yet"}
+        </p>
+        <Button type="button" variant="ghost" disabled={pending} onClick={onCancel}>{dirty ? "Discard changes" : "Cancel"}</Button>
+        <Button disabled={pending || !dirty}>{pending ? "Saving plan…" : "Save plan"}</Button>
+      </div>
+    </form>
   );
+}
+
+/** Shows the saved plan with an Edit plan action, and swaps it for the editor in place. */
+export function CampaignPlanEditor({ campaign, revision, children }: { campaign: SavedCampaign; revision: string; children?: ReactNode }) {
+  const [editing, setEditing] = useState(false);
+  const [notice, setNotice] = useState<string>();
+  const [result, action, pending] = useActionState(async (previous: CampaignConfigurationResult, form: FormData) => {
+    const next = await saveCampaignPlanAction(campaign.id, previous, form);
+    if (!next.error) {
+      setEditing(false);
+      setNotice(next.staged ? "Plan saved. Agents get it on first start." : "Plan saved and synced to the agents.");
+    }
+    return next;
+  }, {});
+
+  if (editing) {
+    return <PlanForm campaign={campaign} revision={revision} action={action} pending={pending}
+      error={result.error} onCancel={() => setEditing(false)} />;
+  }
+  return <>
+    <div className="campaign-plan-toolbar">
+      {notice ? <p className="workspace-save-status" role="status">{notice}</p> : <span />}
+      <Button type="button" variant="outline" onClick={() => { setNotice(undefined); setEditing(true); }}>
+        <Pencil aria-hidden="true" /> Edit plan
+      </Button>
+    </div>
+    {children}
+  </>;
 }
 
 export function CampaignToolSync({ campaignId, revision, disabled }: {
