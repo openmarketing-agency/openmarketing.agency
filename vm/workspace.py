@@ -936,7 +936,7 @@ def generate_document_layout(root, request):
     source = raw.strip()
     if len(source) > 24_000:
         raise WorkspaceError(502, "The default agent returned a page that exceeds the layout limit.")
-    return {"source": source}
+    return {"source": source, "userMessage": user_message}
 
 
 def generate_analytics(root, request):

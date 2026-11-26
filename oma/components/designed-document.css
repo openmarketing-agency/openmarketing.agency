@@ -110,3 +110,26 @@
 .openui-document .openui-overview-card { background: var(--surface); }
 /* Let document tables wrap long notes instead of hiding them past the card edge. */
 .openui-document .openui-table-cell { min-width: 7rem; white-space: normal; vertical-align: top; }
+
+/* Generation details mirror the analytics dashboard's prompt and source inspector. */
+.document-generation { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.document-generation summary { padding: 10px 14px; cursor: pointer; font-size: 0.875rem; font-weight: 600; }
+.document-generation summary:hover { background: var(--raised); }
+.document-generation :is(summary, pre):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.document-generation-body { padding: 0 14px 14px; font-size: 0.875rem; line-height: 1.5; }
+.document-generation-body > p { max-width: 70ch; margin-bottom: 12px; color: var(--muted); }
+.document-generation-body > details { border-top: 1px solid var(--border); }
+.document-generation-body > details summary { padding-inline: 6px; }
+.document-generation-body > details p { padding: 0 6px 10px; color: var(--muted); }
+.document-generation-body pre {
+  max-height: 20rem;
+  margin-bottom: 10px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--raised);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

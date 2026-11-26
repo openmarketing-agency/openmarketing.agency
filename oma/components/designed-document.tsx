@@ -47,6 +47,33 @@ export function DesignedDocument({ target, layout, generating, children }: {
             onError={(errors) => setFailed(errors.some(({ severity }) => severity !== "warning"))} />
         </div>
         : children}
+      {layout && <DocumentGenerationDetails layout={layout} />}
     </div>
+  );
+}
+
+/** Shows the saved prompts and OpenUI source behind a designed page, as the analytics dashboard does. */
+function DocumentGenerationDetails({ layout }: { layout: DocumentLayout }) {
+  return (
+    <details className="document-generation">
+      <summary>Generation details</summary>
+      <div className="document-generation-body">
+        <p>oma-agent’s default profile designs the page once from the saved Markdown. The console saves the OpenUI source and shows it until the document changes or you redesign.</p>
+        {layout.generation ? <>
+          <GenerationText label="System prompt" text={layout.generation.systemPrompt} />
+          <GenerationText label="User message" text={layout.generation.userMessage}>The user message is unavailable for this oma-agent version.</GenerationText>
+        </> : <p>Prompts were unavailable when this page was designed. Redesign to capture them.</p>}
+        <GenerationText label="Agent-generated OpenUI source" text={layout.source} />
+      </div>
+    </details>
+  );
+}
+
+function GenerationText({ label, text, children }: { label: string; text?: string; children?: string }) {
+  return (
+    <details>
+      <summary>{label}</summary>
+      {text ? <pre tabIndex={0} role="region" aria-label={label}><code>{text}</code></pre> : <p>{children}</p>}
+    </details>
   );
 }

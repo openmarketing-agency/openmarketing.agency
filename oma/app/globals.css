@@ -2804,3 +2804,6 @@ ol.workspace-copy-list {
 @media (max-width: 600px) {
   .workspace-connections-page .tool-browser { padding: 14px; }
 }
+
+/* OpenUI auto-mounts its Inspect widget in development builds; keep it out of the console. */
+[data-openui-devtools-auto-mount] { display: none !important; }

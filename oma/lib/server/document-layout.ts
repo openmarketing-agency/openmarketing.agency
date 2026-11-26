@@ -10,7 +10,7 @@ import spec from "./document-library.spec.json";
 import { dropUndefinedReferences, structureProblem } from "./openui-repair";
 
 export type DocumentKind = "brand" | "playbook" | "research";
-export type DocumentLayout = { source: string; generatedAt: number };
+export type DocumentLayout = { source: string; generatedAt: number; generation?: { systemPrompt: string; userMessage?: string } };
 export type DocumentLayoutState = { layout?: DocumentLayout; generating: boolean };
 
 const library = spec as LibrarySpec;
@@ -119,19 +119,24 @@ export function validateDocumentLayout(value: string, markdown: string) {
 }
 
 function readRow(userId: string, hash: string) {
-  return getDb().prepare("SELECT source, generated_at, lease_until FROM document_layouts WHERE user_id = ? AND content_hash = ?")
-    .get(userId, hash) as { source: string | null; generated_at: number | null; lease_until: number | null } | undefined;
+  return getDb().prepare("SELECT source, system_prompt, user_message, generated_at, lease_until FROM document_layouts WHERE user_id = ? AND content_hash = ?")
+    .get(userId, hash) as {
+      source: string | null; system_prompt: string | null; user_message: string | null; generated_at: number | null; lease_until: number | null;
+    } | undefined;
 }
 
 export function readDocumentLayout(userId: string, markdown: string): DocumentLayoutState {
   const row = readRow(userId, documentHash(markdown));
   return {
-    layout: row?.source && row.generated_at ? { source: row.source, generatedAt: row.generated_at } : undefined,
+    layout: row?.source && row.generated_at ? {
+      source: row.source, generatedAt: row.generated_at,
+      generation: row.system_prompt ? { systemPrompt: row.system_prompt, userMessage: row.user_message ?? undefined } : undefined,
+    } : undefined,
     generating: Boolean(row?.lease_until && row.lease_until > Date.now()),
   };
 }
 
-const generated = z.object({ source: z.string() });
+const generated = z.object({ source: z.string(), userMessage: z.string().optional() });
 
 export async function generateDocumentLayout(userId: string, markdown: string): Promise<DocumentLayout> {
   if (!markdown.trim()) throw new WorkspaceRequestError(422, "Save some content before designing this page.");
@@ -150,9 +155,10 @@ export async function generateDocumentLayout(userId: string, markdown: string): 
   try {
     let correction = "";
     for (let attemptNo = 0; attemptNo < 2; attemptNo++) {
+      const systemPrompt = documentLayoutPrompt + correction;
       let reply: unknown;
       try {
-        reply = await workspaceRequest("/workspace/documents/layout", { document: markdown, prompt: documentLayoutPrompt + correction }, "POST");
+        reply = await workspaceRequest("/workspace/documents/layout", { document: markdown, prompt: systemPrompt }, "POST");
       } catch (error) {
         if (error instanceof WorkspaceRequestError && error.status === 404 && error.message === "Unknown workspace request.") {
           throw new WorkspaceRequestError(503, "Update oma-agent to design pages with OpenUI.");
@@ -165,11 +171,11 @@ export async function generateDocumentLayout(userId: string, markdown: string): 
         const source = validateDocumentLayout(output.source, markdown);
         const generatedAt = Date.now();
         const update = db.prepare(`
-          UPDATE document_layouts SET source = ?, generated_at = ?, attempt = NULL, lease_until = NULL
+          UPDATE document_layouts SET source = ?, system_prompt = ?, user_message = ?, generated_at = ?, attempt = NULL, lease_until = NULL
           WHERE user_id = ? AND content_hash = ? AND attempt = ?
-        `).run(source, generatedAt, userId, hash, attempt);
+        `).run(source, systemPrompt, output.userMessage ?? null, generatedAt, userId, hash, attempt);
         if (!update.changes) throw new WorkspaceRequestError(409, "Page design was superseded. Reload the page.");
-        return { source, generatedAt };
+        return { source, generatedAt, generation: { systemPrompt, userMessage: output.userMessage } };
       } catch (error) {
         if (error instanceof WorkspaceRequestError) throw error;
         correction = "\n\nCorrect the following validation issue in a new complete program: " + (error instanceof Error ? error.message : "Follow the example.");

@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync };
 
-export const sqliteSchemaVersion = 9;
+export const sqliteSchemaVersion = 10;
 export const legacyToolSelectionsSchemaVersion = 3;
 
 export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
@@ -39,19 +39,27 @@ function createAnalyticsTable(db: DatabaseSync): void {
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
       source TEXT,
+      system_prompt TEXT,
+      user_message TEXT,
       generated_at INTEGER,
       attempt TEXT,
       lease_until INTEGER,
       PRIMARY KEY (user_id, content_hash)
     ) STRICT;
   `);
+  // Version 9 created document_layouts before generation details were saved.
+  for (const column of ["system_prompt", "user_message"]) {
+    if (!db.prepare("SELECT 1 FROM pragma_table_info('document_layouts') WHERE name = ?").get(column)) {
+      db.exec(`ALTER TABLE document_layouts ADD COLUMN ${column} TEXT`);
+    }
+  }
 }
 
 function initializeSchema(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
     if (version === sqliteSchemaVersion) return;
-    if (version === 5 || version === 6 || version === 7 || version === 8) {
+    if (version === 5 || version === 6 || version === 7 || version === 8 || version === 9) {
       // Existing transcript copies are left intact. Only legacy session IDs are used to reopen chats.
       createAnalyticsTable(db);
       db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);

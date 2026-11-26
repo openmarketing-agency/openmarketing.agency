@@ -4,13 +4,13 @@ import { Suspense, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, BookOpen, Megaphone, Pencil, Tag } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Pencil, Tag } from "lucide-react";
 
 import { BrandAssets } from "@/components/brand-assets";
 import { BrandChannels, BrandResearch } from "@/components/brand-sources";
 import { DesignedDocument } from "@/components/designed-document";
 import { Loading } from "@/components/ui";
-import { WorkspaceDocument, WorkspaceDocumentContents } from "@/components/workspace-document";
+import { WorkspaceDocument } from "@/components/workspace-document";
 import { WorkspaceRecordEditor } from "@/components/workspace-record-editor";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, loadBrandDocument, workspaceId, type SavedBrand } from "@/lib/server/agent-workspace";
@@ -122,9 +122,8 @@ async function RecordDetail({ params, searchParams }: Props) {
                 </nav>
               )}
               {brand && knowledgeDocument && (
-                <RecordColumns contents={knowledgeLayout?.layout ? undefined : knowledgeDocument} related={relatedPlaybooks.length > 0 && (
-                  <RecordLinks heading="Playbooks" icon={<BookOpen size={16} aria-hidden="true" />}
-                    items={relatedPlaybooks} base="/workspace/playbooks/" />
+                <RecordColumns related={relatedPlaybooks.length > 0 && (
+                  <RecordLinks heading="Playbooks" items={relatedPlaybooks} base="/workspace/playbooks/" />
                 )}>
                   <BrandKnowledge brand={brand} path={path} document={knowledgeDocument} layout={knowledgeLayout} />
                 </RecordColumns>
@@ -133,12 +132,10 @@ async function RecordDetail({ params, searchParams }: Props) {
               {brand && view === "research" && <BrandResearch brand={brand} path={path} selected={selectedDocument} layout={researchLayout} />}
               {brand && view === "assets" && <BrandAssets brand={brand} />}
               {playbook && strategyDocument && (
-                <RecordColumns contents={strategyLayout?.layout ? undefined : strategyDocument} related={(relatedBrand || relatedCampaigns.length > 0) && (
+                <RecordColumns related={(relatedBrand || relatedCampaigns.length > 0) && (
                   <>
-                    {relatedBrand && <RecordLinks heading="Brand" icon={<Tag size={16} aria-hidden="true" />}
-                      items={[relatedBrand]} base="/workspace/brands/" />}
-                    {relatedCampaigns.length > 0 && <RecordLinks heading="Campaigns" icon={<Megaphone size={16} aria-hidden="true" />}
-                      items={relatedCampaigns} base="/campaigns/" />}
+                    {relatedBrand && <RecordLinks heading="Brand" items={[relatedBrand]} base="/workspace/brands/" />}
+                    {relatedCampaigns.length > 0 && <RecordLinks heading="Campaigns" items={relatedCampaigns} base="/campaigns/" />}
                   </>
                 )}>
                   <section className="record-structured" aria-labelledby="strategy-heading">
@@ -164,36 +161,22 @@ async function RecordDetail({ params, searchParams }: Props) {
   );
 }
 
-function RecordColumns({ children, related, contents }: { children: ReactNode; related: ReactNode; contents?: ParsedDocument }) {
-  const toc = contents && contents.sections.length >= 2;
+/** Gives the document the full page width, with related records as a compact row of links above it. */
+function RecordColumns({ children, related }: { children: ReactNode; related: ReactNode }) {
   return (
-    <div className="record-columns">
+    <div className="record-single">
+      {related && <nav className="record-related-row" aria-label="Related workspace records">{related}</nav>}
       {children}
-      {(related || toc) && (
-        <aside className="record-related" aria-label="Related workspace records">
-          {contents && <WorkspaceDocumentContents document={contents} />}
-          {related}
-        </aside>
-      )}
     </div>
   );
 }
 
-function RecordLinks({ heading, icon, items, base }: {
-  heading: string;
-  icon: ReactNode;
-  items: { id: string; name: string }[];
-  base: string;
-}) {
+function RecordLinks({ heading, items, base }: { heading: string; items: { id: string; name: string }[]; base: string }) {
   return (
-    <section className="record-links">
-      <h2>{icon}{heading}</h2>
-      <ul>
-        {items.map(({ id, name }) => (
-          <li key={id}><Link href={base + id}>{name}<ArrowRight size={15} aria-hidden="true" /></Link></li>
-        ))}
-      </ul>
-    </section>
+    <p className="record-related-links">
+      <span>{heading}</span>
+      {items.map(({ id, name }) => <Link key={id} href={base + id}>{name}<ArrowRight size={14} aria-hidden="true" /></Link>)}
+    </p>
   );
 }
 

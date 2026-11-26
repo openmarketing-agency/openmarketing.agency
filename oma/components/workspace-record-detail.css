@@ -369,3 +369,22 @@
 @media (max-width: 960px) {
   .agent-profile-jump { display: flex; }
 }
+
+/* Brand and playbook documents use the full width; related records sit in one compact row above them. */
+.record-single { display: grid; gap: 16px; min-width: 0; margin-top: 20px; }
+.record-related-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 22px; }
+.record-related-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0; font-size: 13px; }
+.record-related-links > span { color: var(--muted); font-weight: 550; }
+.record-related-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 550;
+}
+.record-related-links a:hover { border-color: var(--accent); color: var(--accent); }
+.record-related-links a svg { color: var(--accent); }

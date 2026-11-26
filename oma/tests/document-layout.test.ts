@@ -76,3 +76,24 @@ test("teaches the model with a brand and a playbook example that pass validation
   assert.match(documentLayoutPrompt, /large-heavy/);
   assert.match(documentLayoutPrompt, /OverviewCardBlock of 3–4 key facts/);
 });
+
+test("shows the saved system prompt, user message, and OpenUI source under a designed page", async (t) => {
+  const { createRequire, default: Module } = await import("node:module");
+  const require = createRequire(import.meta.url);
+  const actionPath = require.resolve("../app/actions/document-layout.ts");
+  const componentPath = require.resolve("../components/designed-document.tsx");
+  const action = new Module(actionPath);
+  action.exports = { designDocumentAction: async () => ({}) };
+  action.loaded = true;
+  require.cache[actionPath] = action;
+  t.after(() => { delete require.cache[actionPath]; delete require.cache[componentPath]; });
+  const { DesignedDocument } = require(componentPath) as typeof import("../components/designed-document");
+  const html = renderToStaticMarkup(createElement(DesignedDocument, {
+    target: { kind: "brand", id: "fernway" },
+    layout: { source: program, generatedAt: 1, generation: { systemPrompt: "SYSTEM PROMPT", userMessage: "Make this Markdown visually better" } },
+  }, createElement("p", null, "standard")));
+  assert.match(html, /<summary>Generation details<\/summary>/);
+  assert.match(html, /<code>SYSTEM PROMPT<\/code>/);
+  assert.match(html, /<code>Make this Markdown visually better<\/code>/);
+  assert.match(html, /aria-label="Agent-generated OpenUI source"><code>root = Stack/);
+});
