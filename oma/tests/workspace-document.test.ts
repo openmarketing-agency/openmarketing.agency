@@ -6,7 +6,7 @@ import type { List } from "mdast";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { WorkspaceDocument, WorkspaceDocumentContents } from "../components/workspace-document";
+import { MarkdownContent, WorkspaceDocument, WorkspaceDocumentContents } from "../components/workspace-document";
 import { listLayout, parseWorkspaceDocument, phaseLabel } from "../lib/workspace-document";
 
 const brand = `# Fernway Coffee
@@ -145,4 +145,24 @@ test("lists contents only when there are at least two sections", () => {
   const toc = (text: string) => renderToStaticMarkup(createElement(WorkspaceDocumentContents, { document: parseWorkspaceDocument(text) }));
   assert.equal(toc("## Only\nOne"), "");
   assert.match(toc(brand), /href="#doc-voice-and-tone"/);
+});
+
+test("lists sections above documents shown without a side column", () => {
+  const markup = renderToStaticMarkup(createElement(WorkspaceDocument, {
+    document: parseWorkspaceDocument("## Pricing\nA\n\n## Reviews\nB\n\n## Gaps\nC"), empty: "", contents: true,
+  }));
+  assert.match(markup, /<nav class="doc-inline-contents" aria-label="Document sections">/);
+  assert.match(markup, /href="#doc-gaps"/);
+});
+
+test("renders short Markdown as prose without section cards", () => {
+  const markup = renderToStaticMarkup(createElement(MarkdownContent, {
+    text: "## Summary\n\nPosted **3** drafts:\n\n- **Reach:** 1,200\n- **Clicks:** 48\n\n<b>raw</b>", className: "doc-chat",
+  }));
+  assert.match(markup, /^<div class="doc-prose doc-chat">/);
+  assert.doesNotMatch(markup, /doc-card/);
+  assert.match(markup, /<h3 class="doc-subheading">Summary<\/h3>/);
+  assert.match(markup, /<strong>3<\/strong>/);
+  assert.match(markup, /class="doc-stats"/);
+  assert.match(markup, /&lt;b&gt;raw&lt;\/b&gt;/);
 });

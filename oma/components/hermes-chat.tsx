@@ -15,6 +15,7 @@ import { ChatProgress } from "./chat-progress";
 import { useChatRunEvents, useChatSessionActivity } from "./chat-session-activity";
 import { HermesPrompt } from "./hermes-prompt";
 import "./hermes-chat.css";
+import "./workspace-document.css";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -345,7 +346,7 @@ export function HermesChat({
           )}
           {messages.map(({ id, role, text }) => (
             <div key={id} className={"runtime-message" + (role === "user" ? " from-user" : role === "notification" ? " from-notification" : "")}>
-              <strong>{role === "user" ? "You" : role === "notification" ? "Hermes notification" : "oma-agent"}</strong><ChatMessageText text={text} />
+              <strong>{role === "user" ? "You" : role === "notification" ? "Hermes notification" : "oma-agent"}</strong><ChatMessageText text={text} markdown={role !== "user"} />
             </div>
           ))}
           {pending && messages.findLast(({ role }) => role === "user")?.text !== pending.text &&
@@ -354,7 +355,7 @@ export function HermesChat({
             <div key={id} className="runtime-message from-user"><strong>You</strong><ChatMessageText text={text} /></div>
           ))}
           {live?.updates.map(({ message, phase, seq }, index) => message && !messages.some(({ text }) => text === message) &&
-            <div key={phase === "writing" ? "writing" : seq ?? index} className="runtime-message"><strong>oma-agent</strong><ChatMessageText text={message} /></div>)}
+            <div key={phase === "writing" ? "writing" : seq ?? index} className="runtime-message"><strong>oma-agent</strong><ChatMessageText text={message} markdown /></div>)}
           {live?.children.map(({ id, status, label }) => <div key={id} className="runtime-message from-notification">
             <strong>Subagent {status}</strong>{label && <p>{label}</p>}
           </div>)}

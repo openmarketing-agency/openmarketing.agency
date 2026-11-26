@@ -1,4 +1,4 @@
-/** Splits agent-authored brand and playbook Markdown into sections and picks a layout for each part. */
+/** Parses agent-authored workspace Markdown, splits documents into sections, and picks a layout for each part. */
 
 import type { Blockquote, Definition, Heading, LinkReference, List, ListItem, Paragraph, PhrasingContent, Root, RootContent } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
@@ -89,9 +89,15 @@ function resolveReferenceLinks(root: Root) {
   }
 }
 
-export function parseWorkspaceDocument(markdown: string): WorkspaceDocument {
+/** Parses GitHub-flavored Markdown and resolves reference-style links. */
+export function parseMarkdown(markdown: string): Root {
   const root = fromMarkdown(markdown, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
   resolveReferenceLinks(root);
+  return root;
+}
+
+export function parseWorkspaceDocument(markdown: string): WorkspaceDocument {
+  const root = parseMarkdown(markdown);
   const used = new Map<string, number>();
   const intro: RootContent[] = [];
   const sections: DocumentSection[] = [];

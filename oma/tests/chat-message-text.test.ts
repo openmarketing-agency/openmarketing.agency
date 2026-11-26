@@ -19,3 +19,10 @@ test("long or multiline chat messages start with a bounded preview", () => {
     assert.doesNotMatch(markup, /Hidden ending/);
   }
 });
+
+test("agent replies render Markdown while people's messages stay plain", () => {
+  const agent = renderToStaticMarkup(createElement(ChatMessageText, { text: "Done: **3 drafts** ready", markdown: true }));
+  assert.match(agent, /class="doc-prose doc-chat"/);
+  assert.match(agent, /<strong>3 drafts<\/strong>/);
+  assert.equal(render("Use **bold**"), "<p>Use **bold**</p>");
+});

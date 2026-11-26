@@ -105,7 +105,7 @@
   border: 1px solid var(--border);
   background: var(--surface);
 }
-.runtime-message strong { font-size: 12px; }
+.runtime-message > strong { font-size: 12px; }
 .runtime-message p {
   color: var(--text);
   white-space: pre-wrap;

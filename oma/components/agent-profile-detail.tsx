@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { ArrowLeft, Bot, CalendarClock, SlidersHorizontal } from "lucide-react";
 
-import { WorkspaceText } from "@/components/workspace-text";
+import { WorkspaceDocument } from "@/components/workspace-document";
 import { describeSchedule } from "@/lib/job-schedule";
 import type { SavedAgent, SavedCampaign } from "@/lib/server/agent-workspace";
+import { parseWorkspaceDocument } from "@/lib/workspace-document";
 
 export function AgentProfileDetail({ agent, campaign, profile, error }: {
   agent: SavedAgent;
   campaign?: Pick<SavedCampaign, "id" | "name">;
-  profile?: { content: string; html?: string };
+  profile?: { content: string };
   error?: string;
 }) {
   const role = agent.id.split("__").at(-1) ?? agent.id;
@@ -37,11 +38,11 @@ export function AgentProfileDetail({ agent, campaign, profile, error }: {
         <a href="#agent-schedule">Scheduled work</a>
       </nav>
       <div className="record-columns">
-        <section className="record-reading" aria-labelledby="agent-profile-heading">
-          <h2 id="agent-profile-heading">Agent profile</h2>
+        <section className="record-structured" aria-labelledby="agent-profile-heading">
+          <div className="record-section-heading"><h2 id="agent-profile-heading">Agent profile</h2></div>
           {error
             ? <p className="form-error" role="alert">{error}</p>
-            : <WorkspaceText text={profile?.content ?? ""} html={profile?.html} empty="No profile document saved yet." />}
+            : <WorkspaceDocument document={parseWorkspaceDocument(profile?.content ?? "")} name={name} empty="No profile document saved yet." />}
         </section>
         <aside className="record-related agent-profile-related" aria-label="Agent configuration and schedule">
           <section id="agent-configuration" aria-labelledby="agent-configuration-heading" tabIndex={-1}>

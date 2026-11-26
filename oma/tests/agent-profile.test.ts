@@ -23,7 +23,7 @@ test("keeps canonical identifiers accessible and links back to the campaign rost
   const html = renderToStaticMarkup(createElement(AgentProfileDetail, {
     agent,
     campaign: { id: "seo", name: "Organic Search" },
-    profile: { content: "Review for clarity.", html: "<p>Review for clarity.</p>" },
+    profile: { content: "Review for clarity." },
   }));
   assert.match(html, /<h1>Humanizer<\/h1>/);
   assert.match(html, /href="\/campaigns\/seo\?view=agents"/);
