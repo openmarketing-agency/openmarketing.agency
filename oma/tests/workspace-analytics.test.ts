@@ -154,6 +154,7 @@ test("generation saves the layout once and reads revised observations from the s
   let userMessage = "";
   const rawValue = (clicks?: number) => ({ totals: { clicks, impressions: 250 }, rows: [{ "page/path": "/pricing", clicks: 2 }], active: false, rate: null });
   let recordedValue: ReturnType<typeof rawValue> | null = rawValue(12);
+  let otherValue: ReturnType<typeof rawValue> | null = null;
   let invalid = 1;
   const started = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
@@ -176,14 +177,15 @@ test("generation saves the layout once and reads revised observations from the s
     } else if (request.url?.match(/^\/workspace\/campaigns\/(seo|other)\/analytics\?/)) {
       const filters = new URL(request.url, "http://localhost").searchParams;
       const id = request.url.split("/")[3];
+      const value = id === "seo" ? recordedValue : otherValue;
       assert.ok(["2026-11-18T00:00:00.000Z", "2026-10-28T00:00:00.000Z"].includes(filters.get("start") ?? ""));
       assert.equal(filters.get("end"), "2026-11-25T00:00:00.000Z");
       assert.equal(filters.get("limit"), "100");
       response.end(JSON.stringify({
         campaign_id: id,
-        observations: recordedValue && id === "seo" ? [{
+        observations: value ? [{
           id: 1, source: "google-search-console", metric: "search_performance", account: "sc-domain:example.test",
-          value: recordedValue, unit: "count", dimensions: { country: "NP" },
+          value, unit: "count", dimensions: { country: "NP" },
           period_start: "2026-11-23T00:00:00.000000+00:00", period_end: "2026-11-24T00:00:00.000000+00:00",
           collected_at: "2026-11-24T10:00:00.000000+00:00",
         }] : [],
@@ -304,6 +306,12 @@ test("generation saves the layout once and reads revised observations from the s
   assert.equal(empty.measurements[measurementId].latest, null);
 
   const otherKey = { ...key, id: "other" };
+  // An empty sample is refused before the agent is asked, so no generic layout is saved.
+  await assert.rejects(generateAnalytics(otherKey), { status: 409, message: /No observations have been collected/ });
+  assert.deepEqual(readAnalytics(otherKey), { report: null, generating: false });
+  assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 2);
+
+  otherValue = rawValue(5);
   invalid = 2;
   await assert.rejects(generateAnalytics(otherKey), { status: 502, message: /invalid OpenUI dashboard/ });
   assert.deepEqual(readAnalytics(otherKey), { report: null, generating: false });
@@ -318,10 +326,15 @@ test("generation saves the layout once and reads revised observations from the s
   assert.deepEqual(await generateAnalytics(otherKey), legacy);
   assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 4);
 
+  // Regenerating without records keeps the saved dashboard instead of replacing it with the example.
+  await assert.rejects(generateAnalytics(key, true), { status: 409 });
+  assert.deepEqual(readAnalytics(key), saved);
+  assert.equal(paths.filter((path) => path === "/workspace/analytics").length, 4);
+
+  recordedValue = rawValue(18);
   invalid = 2;
   await assert.rejects(generateAnalytics(key, true), { status: 502 });
   assert.deepEqual(readAnalytics(key), saved);
-  recordedValue = rawValue(18);
   const regenerated = await generateAnalytics(key, true);
   assert.notDeepEqual(regenerated.report?.generation, saved.report?.generation);
   assert.equal((await queryAnalytics(key, "7d")).measurements[measurementId].latest, 18);

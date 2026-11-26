@@ -51,7 +51,7 @@ Mode changes save to the campaign’s `config.yaml` and sync with the saved revi
 
 ## Generate analytics
 
-Open a campaign’s **Analytics** tab and select **Generate dashboard**. oma-agent’s default profile receives the campaign ID and a sample from the last 28 UTC days, including the complete `value` JSON for every sampled record. Generation reads up to 100 recent records within a prompt size limit. The console offers live bindings for scalar measurements found in those records, including fields nested inside objects and arrays. The model uses them to build charts, KPIs, or tables. The console validates the program and saves it with its generation details in SQLite.
+Open a campaign’s **Analytics** tab and select **Generate dashboard**. oma-agent’s default profile receives the campaign ID and a sample from the last 28 UTC days, including the complete `value` JSON for every sampled record. Generation reads up to 100 recent records within a prompt size limit. It needs at least one saved observation in that window; without one, the console refuses to generate or regenerate and keeps any saved dashboard. The console offers live bindings for scalar measurements found in those records, including fields nested inside objects and arrays. The model uses them to build charts, KPIs, or tables. The console validates the program and saves it with its generation details in SQLite.
 
 Select **Regenerate dashboard** to rebuild a saved layout from current observations, including after new sources or fields appear. The saved dashboard stays available if regeneration fails. Update both the console and VM service to use observation samples in generation.
 
