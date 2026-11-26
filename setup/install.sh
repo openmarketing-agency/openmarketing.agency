@@ -26,7 +26,7 @@ done
 # omactl publishes an x86-64 archive; OMA Agent publishes a native source installer.
 omactl_tag=v0.1.0
 omactl_sha=24bbb2443de35879b8952f9db8cb61e2f59b5d4e2bc33bba5eb6f10d71f03f40
-agent_commit=e00ba68a6951e5840c545d536eebd4a90e9a9c4d # v0.1.28
+agent_commit=052722cedd10563c671670f88acc018a5ecd7dab # v0.1.29
 agent_installer_sha=8cc2786bf717f1038b5b49f5457ab454a654bb542bca1d339f8520f3f875fe42
 agent_repo=https://github.com/openmarketing-agency/oma-agent.git
 bin_dir="$HOME/.local/bin"
@@ -42,7 +42,7 @@ fetch_verified() {
         || fail "SHA-256 checksum mismatch for $file."
 }
 
-log "Downloading and verifying omactl $omactl_tag and OMA Agent v0.1.28"
+log "Downloading and verifying omactl $omactl_tag and OMA Agent v0.1.29"
 fetch_verified "https://github.com/openmarketing-agency/omactl/releases/download/$omactl_tag/omactl-linux-x64.tar.gz" omactl.tar.gz "$omactl_sha"
 fetch_verified "https://raw.githubusercontent.com/openmarketing-agency/oma-agent/$agent_commit/scripts/install.sh" agent-install.sh "$agent_installer_sha"
 tar -xzf "$tmp/omactl.tar.gz" --no-same-owner -C "$tmp"
