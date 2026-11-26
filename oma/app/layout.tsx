@@ -37,12 +37,18 @@ export const metadata: Metadata = {
   description:
     "Turn your marketing tools into connected AI workflows with OMA campaigns.",
 };
+/** OpenUI mounts its Inspect widget in development unless this flag is already set when its package loads. */
+const disableOpenUIDevtools = 'globalThis[Symbol.for("openui.devtools.autoMount")]=true;';
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
       className={`${sans.variable} ${mono.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: disableOpenUIDevtools }} />
+      </head>
       <body>
         <a className="skip-link" href="#main-content">
           Skip to content
