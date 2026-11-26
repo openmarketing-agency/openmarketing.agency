@@ -19,7 +19,7 @@ import { validateAnalyticsProgram } from "../lib/server/analytics-program";
 import { generateAnalytics, queryAnalytics, queryLegacyAnalytics, readAnalytics, requireAnalyticsCampaign } from "../lib/server/analytics";
 import { analyticsQueryResult, summarizeAnalytics } from "../lib/server/analytics-data";
 import type { MeasurementField } from "../lib/server/campaign-observations";
-import { observationDashboard } from "../lib/observation-dashboard";
+import { observationDashboard, observationQueryStatement } from "../lib/observation-dashboard";
 import type { CampaignProgressSnapshot } from "../lib/server/campaign-progress";
 
 const revision = "a".repeat(64);
@@ -64,7 +64,10 @@ test("the OpenUI renderer and server share a spec and accept only live read-only
   assert.deepEqual(JSON.parse(JSON.stringify(analyticsLibrary.toSpec())), spec);
   assert.deepEqual(validateAnalyticsProgram(observationDashboard), { source: observationDashboard, measurementFields: [] });
   assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("campaign_observations", "unavailable_tool")));
-  assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("{dateRange: $dateRange}", '{dateRange: $dateRange, campaignId: "other"}')));
+  // The live query has one valid form, so extra arguments are replaced instead of reaching the tool.
+  const scoped = validateAnalyticsProgram(observationDashboard.replace("{dateRange: $dateRange}", '{dateRange: $dateRange, campaignId: "other"}'));
+  assert.ok(scoped.source.includes(observationQueryStatement) && !scoped.source.includes("other"));
+  assert.ok(validateAnalyticsProgram(observationDashboard.replace(", {}, 60)", ', {"sources": {"total": 0}}, 30)')).source.includes(observationQueryStatement));
   assert.throws(() => validateAnalyticsProgram(observationDashboard.replace("activity.sources.counts", "[10, 30]")), /bind the chart labels and values/i);
   assert.throws(() => validateAnalyticsProgram(observationDashboard + '\nchange = Mutation("write", {})'));
   assert.throws(() => validateAnalyticsProgram(observationDashboard.replace('Column("Source", activity.observations.source, "primary")',

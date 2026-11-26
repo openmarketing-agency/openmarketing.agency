@@ -4,9 +4,9 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync };
+const processScope = globalThis as typeof globalThis & { omaDatabase?: DatabaseSync; omaDatabaseVersion?: number };
 
-export const sqliteSchemaVersion = 8;
+export const sqliteSchemaVersion = 10;
 export const legacyToolSelectionsSchemaVersion = 3;
 
 export function writeTransaction<T>(db: DatabaseSync, write: () => T): T {
@@ -34,14 +34,32 @@ function createAnalyticsTable(db: DatabaseSync): void {
       lease_until INTEGER,
       PRIMARY KEY (user_id, scope, target_id)
     ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS document_layouts (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+      source TEXT,
+      system_prompt TEXT,
+      user_message TEXT,
+      generated_at INTEGER,
+      attempt TEXT,
+      lease_until INTEGER,
+      PRIMARY KEY (user_id, content_hash)
+    ) STRICT;
   `);
+  // Version 9 created document_layouts before generation details were saved.
+  for (const column of ["system_prompt", "user_message"]) {
+    if (!db.prepare("SELECT 1 FROM pragma_table_info('document_layouts') WHERE name = ?").get(column)) {
+      db.exec(`ALTER TABLE document_layouts ADD COLUMN ${column} TEXT`);
+    }
+  }
 }
 
 function initializeSchema(db: DatabaseSync): void {
   writeTransaction(db, () => {
     const version = db.prepare("PRAGMA user_version").get()?.user_version;
     if (version === sqliteSchemaVersion) return;
-    if (version === 5 || version === 6 || version === 7) {
+    if (version === 5 || version === 6 || version === 7 || version === 8 || version === 9) {
       // Existing transcript copies are left intact. Only legacy session IDs are used to reopen chats.
       createAnalyticsTable(db);
       db.exec(`PRAGMA user_version = ${sqliteSchemaVersion}`);
@@ -98,7 +116,14 @@ function initializeSchema(db: DatabaseSync): void {
 }
 
 export function getDb(): DatabaseSync {
-  if (processScope.omaDatabase) return processScope.omaDatabase;
+  if (processScope.omaDatabase) {
+    // A dev server keeps its connection across hot reloads, so apply a newer schema to it as well.
+    if (processScope.omaDatabaseVersion !== sqliteSchemaVersion) {
+      initializeSchema(processScope.omaDatabase);
+      processScope.omaDatabaseVersion = sqliteSchemaVersion;
+    }
+    return processScope.omaDatabase;
+  }
 
   const directory = process.env.OMA_DATA_DIR || "data";
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -111,5 +136,6 @@ export function getDb(): DatabaseSync {
     db.close();
     throw error;
   }
+  processScope.omaDatabaseVersion = sqliteSchemaVersion;
   return processScope.omaDatabase = db;
 }

@@ -889,6 +889,82 @@ def campaign_analytics(root, campaign_id, action="", query=""):
         raise WorkspaceError(422, "Check the analytics filters or campaign configuration.") from error
 
 
+def default_agent_completion(root, system, user_message, *, max_tokens, timeout, unavailable, truncated, empty):
+    from agent.auxiliary_client import call_llm
+    from agent.runtime_scope import bind_profile_scope
+    from hermes_cli.oma_campaigns.install import default_home
+
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_message},
+    ]
+    try:
+        home = default_home()
+        if home != root.parent.resolve():
+            raise WorkspaceError(503, unavailable)
+        with bind_profile_scope(home):
+            # A short layout may otherwise exhaust its entire output budget on hidden reasoning.
+            result = call_llm(messages=messages, tools=[], max_tokens=max_tokens, timeout=timeout,
+                              reasoning_config={"enabled": False})
+    except WorkspaceError:
+        raise
+    except Exception:
+        raise WorkspaceError(502, "The default agent’s model request failed. Check its provider settings and try again.") from None
+
+    choice = result.choices[0] if result.choices else None
+    if getattr(choice, "finish_reason", None) == "length":
+        raise WorkspaceError(502, truncated)
+    raw = getattr(getattr(choice, "message", None), "content", None)
+    if not isinstance(raw, str) or not raw.strip():
+        raise WorkspaceError(502, empty)
+    return raw
+
+
+def document_layout_messages(request):
+    if (not isinstance(request, dict) or request.keys() != {"prompt", "message"}
+            or not isinstance(request["prompt"], str) or not 0 < len(request["prompt"]) <= 32_768
+            or not isinstance(request["message"], str) or not 0 < len(request["message"]) <= 50_000):
+        raise WorkspaceError(422, "Check the document layout request.")
+    return [{"role": "system", "content": request["prompt"]}, {"role": "user", "content": request["message"]}]
+
+
+def stream_document_layout(root, messages):
+    """Yield the default profile's OpenUI page as the model writes it."""
+    from agent.auxiliary_client import call_llm
+    from agent.runtime_scope import bind_profile_scope
+    from hermes_cli.oma_campaigns.install import default_home
+
+    home = default_home()
+    if home != root.parent.resolve():
+        raise WorkspaceError(503, "Page design needs oma-agent’s default profile.")
+    try:
+        with bind_profile_scope(home):
+            result = call_llm(messages=messages, tools=[], max_tokens=8000, timeout=90.0,
+                              reasoning_config={"enabled": False}, stream=True)
+            # Some provider shims ignore stream=True and return the completed response.
+            if hasattr(result, "choices"):
+                choice = result.choices[0] if result.choices else None
+                if getattr(choice, "finish_reason", None) == "length":
+                    raise WorkspaceError(502, "The default agent reached its response limit before finishing the page. Try again.")
+                text = getattr(getattr(choice, "message", None), "content", None)
+                if isinstance(text, str) and text:
+                    yield text
+                return
+            for chunk in result:
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                text = getattr(getattr(choices[0], "delta", None), "content", None)
+                if isinstance(text, str) and text:
+                    yield text
+                if getattr(choices[0], "finish_reason", None) == "length":
+                    raise WorkspaceError(502, "The default agent reached its response limit before finishing the page. Try again.")
+    except WorkspaceError:
+        raise
+    except Exception:
+        raise WorkspaceError(502, "The default agent’s model request failed. Check its provider settings and try again.") from None
+
+
 def generate_analytics(root, request):
     sections = {"tasks", "timeline", "schedules", "publications"}
     required = {"scope", "targetId", "campaignIds", "prompt"}
@@ -923,33 +999,10 @@ def generate_analytics(root, request):
         user_message = "Generate the campaign analytics dashboard using the documented live query."
     user_message += "\n\nCampaign ID: " + target_id
 
-    from agent.auxiliary_client import call_llm
-    from agent.runtime_scope import bind_profile_scope
-    from hermes_cli.oma_campaigns.install import default_home
-
-    messages = [
-        {"role": "system", "content": request["prompt"]},
-        {"role": "user", "content": user_message},
-    ]
-    try:
-        home = default_home()
-        if home != root.parent.resolve():
-            raise WorkspaceError(503, "Analytics needs oma-agent’s default profile.")
-        with bind_profile_scope(home):
-            # A short layout may otherwise exhaust its entire output budget on hidden reasoning.
-            result = call_llm(messages=messages, tools=[], max_tokens=5000, timeout=45.0,
-                              reasoning_config={"enabled": False})
-    except WorkspaceError:
-        raise
-    except Exception:
-        raise WorkspaceError(502, "The default agent’s model request failed. Check its provider settings and try again.") from None
-
-    choice = result.choices[0] if result.choices else None
-    if getattr(choice, "finish_reason", None) == "length":
-        raise WorkspaceError(502, "The default agent reached its response limit before finishing the report. Try regenerating.")
-    raw = getattr(getattr(choice, "message", None), "content", None)
-    if not isinstance(raw, str) or not raw.strip():
-        raise WorkspaceError(502, "The default agent returned an empty report. Try regenerating.")
+    raw = default_agent_completion(root, request["prompt"], user_message, max_tokens=5000, timeout=45.0,
+                                   unavailable="Analytics needs oma-agent’s default profile.",
+                                   truncated="The default agent reached its response limit before finishing the report. Try regenerating.",
+                                   empty="The default agent returned an empty report. Try regenerating.")
 
     source = raw.strip()
     if len(source) > 16_000:
@@ -2110,9 +2163,59 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             # Older consoles expect a bare string from this socket endpoint.
             self.reply(200, result if self.headers.get("X-OMA-Analytics-Details") == "1" else result["source"])
 
+    def post_document_layout(self):
+        """Stream newline-delimited JSON events: delta text as the model writes, then done or error."""
+        try:
+            if self.headers.get_content_type() != "application/json":
+                raise WorkspaceError(415, "Page design requires a JSON request.")
+            messages = document_layout_messages(self.read_update(131_072))
+            if not self.server.layout_lock.acquire(blocking=False):
+                raise WorkspaceError(429, "oma-agent is designing another page. Try again in a moment.")
+        except (ValueError, RecursionError):
+            self.reply(400, {"message": "Invalid workspace request."})
+            return
+        except WorkspaceError as error:
+            self.reply(error.status, {"message": str(error)})
+            return
+        except OSError:
+            self.reply(503, {"message": "Could not read the agent workspace."})
+            return
+
+        def send(event):
+            self.wfile.write(json.dumps(event).encode() + b"\n")
+            self.wfile.flush()
+
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.close_connection = True
+            size = 0
+            for text in stream_document_layout(self.server.root, messages):
+                size += len(text)
+                if size > 24_000:
+                    raise WorkspaceError(502, "The default agent returned a page that exceeds the layout limit.")
+                send({"type": "delta", "text": text})
+            if not size:
+                raise WorkspaceError(502, "The default agent returned an empty page. Try again.")
+            send({"type": "done"})
+        except WorkspaceError as error:
+            try:
+                send({"type": "error", "status": error.status, "message": str(error)})
+            except OSError:
+                pass
+        except OSError:
+            pass
+        finally:
+            self.server.layout_lock.release()
+
     def do_POST(self):
         if self.path == "/workspace/analytics":
             self.post_analytics()
+            return
+        if self.path == "/workspace/documents/layout":
+            self.post_document_layout()
             return
         refresh = re.fullmatch(r"/workspace/campaigns/([^/?]+)/analytics/refresh(?:\?(.*))?", self.path)
         if refresh:
@@ -2281,6 +2384,7 @@ if __name__ == "__main__":
         server.edit_lock = Lock()
         server.plan_chat_lock = Lock()
         server.analytics_lock = Lock()
+        server.layout_lock = Lock()
         server.root = Path(os.environ["HERMES_HOME"]) / "oma"
         socket_path.chmod(0o660)
         pending = pending_campaign_pauses(server.root)

@@ -1,0 +1,135 @@
+/* Styles the OpenUI page toolbar, the scoped OpenUI canvas, and the brand color swatches. */
+
+.designed-document { display: grid; gap: 14px; min-width: 0; }
+.designed-document-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--raised);
+}
+.designed-document-bar p { flex: 1 1 14rem; color: var(--muted); font-size: 13px; }
+.designed-document-bar form { margin-left: auto; }
+.designed-document-toggle { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); }
+.designed-document-toggle button { padding: 4px 10px; border-radius: 5px; color: var(--muted); font-size: 12.5px; font-weight: 550; }
+.designed-document-toggle button[aria-pressed="true"] { background: var(--active); color: var(--text); }
+.designed-document-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.designed-document-note { color: var(--muted); font-size: 13px; }
+
+/* OpenUI's design tokens follow the console's colors, so designed pages match both themes from the first paint. */
+.openui-document {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  --openui-background: var(--surface);
+  --openui-foreground: var(--surface);
+  --openui-popover-background: var(--surface);
+  --openui-sunk: var(--raised);
+  --openui-sunk-light: var(--raised);
+  --openui-sunk-deep: var(--active);
+  --openui-elevated: var(--surface);
+  --openui-elevated-light: var(--surface);
+  --openui-highlight: var(--active);
+  --openui-highlight-subtle: var(--raised);
+  --openui-border-default: var(--border);
+  --openui-border-interactive: var(--control);
+  --openui-border-accent: var(--accent);
+  --openui-text-neutral-primary: var(--text);
+  --openui-text-neutral-secondary: var(--muted);
+  --openui-text-neutral-tertiary: var(--muted);
+  --openui-text-neutral-link: var(--accent);
+  --openui-text-accent-primary: var(--accent);
+  --openui-text-brand: var(--accent);
+  --openui-interactive-accent-default: var(--accent);
+  --openui-text-success-primary: var(--positive);
+  --openui-success-background: var(--positive-soft);
+  --openui-text-alert-primary: var(--warning);
+  --openui-alert-background: var(--warning-soft);
+  --openui-text-danger-primary: var(--negative);
+  --openui-danger-background: var(--negative-soft);
+  --openui-text-info-primary: var(--accent);
+  --openui-info-background: var(--active);
+  --openui-font-body: inherit;
+  --openui-font-heading: inherit;
+  --openui-font-label: inherit;
+  --openui-font-numbers: inherit;
+  --openui-radius-s: 6px;
+  --openui-radius-m: var(--radius);
+  --openui-radius-l: var(--radius);
+  --openui-radius-xl: 12px;
+  --openui-shadow-s: none;
+  --openui-shadow-m: none;
+  --openui-shadow-l: var(--panel-shadow);
+}
+
+.openui-doc-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.openui-doc-swatches li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.openui-doc-swatches li > span {
+  height: 64px;
+  margin-bottom: 6px;
+  border-radius: calc(var(--radius) - 2px);
+  background: repeating-linear-gradient(45deg, var(--raised) 0 6px, var(--surface) 6px 12px);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / .08);
+}
+.openui-doc-swatches strong { font-size: 13px; font-weight: 600; }
+.openui-doc-swatches code { color: var(--muted); font-family: var(--font-mono), monospace; font-size: 12px; }
+.openui-doc-swatches small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+/* OpenUI's default card variant is bare outside its chat shell, so give designed sections a quiet panel. */
+.openui-document .openui-card-card {
+  padding: clamp(16px, 2.5vw, 22px);
+  border-color: var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* OpenUI's text tokens name Inter, so keep designed pages in the console's own typeface. */
+.openui-document *:not(code, pre, kbd) { font-family: var(--font); }
+
+/* Give the hero statement and at-a-glance numbers real visual weight. */
+.openui-document { --openui-text-body-lg-heavy: 650 clamp(1.3rem, 2.4vw, 1.6rem)/1.3 sans-serif; }
+.openui-document .openui-overview-card__slot--top .openui-text-block__primary * { color: var(--muted); font-size: 12.5px; font-weight: 500; letter-spacing: .01em; }
+.openui-document .openui-metric-indicator__main-value { font-size: clamp(1.25rem, 2.2vw, 1.5rem); font-weight: 650; line-height: 1.2; }
+.openui-document .openui-overview-card { background: var(--surface); }
+/* Let document tables wrap long notes instead of hiding them past the card edge. */
+.openui-document .openui-table-cell { min-width: 7rem; white-space: normal; vertical-align: top; }
+
+/* Generation details mirror the analytics dashboard's prompt and source inspector. */
+.document-generation { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.document-generation summary { padding: 10px 14px; cursor: pointer; font-size: 0.875rem; font-weight: 600; }
+.document-generation summary:hover { background: var(--raised); }
+.document-generation :is(summary, pre):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.document-generation-body { padding: 0 14px 14px; font-size: 0.875rem; line-height: 1.5; }
+.document-generation-body > p { max-width: 70ch; margin-bottom: 12px; color: var(--muted); }
+.document-generation-body > details { border-top: 1px solid var(--border); }
+.document-generation-body > details summary { padding-inline: 6px; }
+.document-generation-body > details p { padding: 0 6px 10px; color: var(--muted); }
+.document-generation-body pre {
+  max-height: 20rem;
+  margin-bottom: 10px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--raised);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
