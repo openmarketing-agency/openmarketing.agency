@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
+import { MarkdownContent } from "@/components/workspace-document";
 
 const categories = {
   chat: "Campaign chat", agent: "Agent sessions and logs", worker: "Kanban workers", cron: "Scheduled jobs", delegated: "Delegated agents",
@@ -44,8 +45,8 @@ function Pager({ offset, next, step, onPage, singular }: {
   </div>;
 }
 
-function TextPages({ path, fields, refresh, empty, label }: {
-  path: string; fields: Record<string, string | number>; refresh: number; empty: string; label: string;
+function TextPages({ path, fields, refresh, empty, label, markdown = false }: {
+  path: string; fields: Record<string, string | number>; refresh: number; empty: string; label: string; markdown?: boolean;
 }) {
   const [offset, setOffset] = useState(0);
   const result = useCampaignFeed<CampaignActivityText>(pathWith(path, { ...fields, offset }), refresh, offset === 0);
@@ -53,7 +54,9 @@ function TextPages({ path, fields, refresh, empty, label }: {
     {!result && <p role="status">Loading {label.toLowerCase()}…</p>}
     {result?.error && <p className="form-error" role="status">{result.error}</p>}
     {result?.data && <>
-      {result.data.text ? <pre className="campaign-activity-log" tabIndex={0} aria-label={label}>{result.data.text}</pre> : <p>{empty}</p>}
+      {!result.data.text ? <p>{empty}</p>
+        : markdown ? <MarkdownContent className="doc-compact campaign-activity-markdown" text={result.data.text} />
+        : <pre className="campaign-activity-log" tabIndex={0} aria-label={label}>{result.data.text}</pre>}
       <Pager offset={offset} next={result.data.nextOffset} step={24000} onPage={setOffset} singular={label} />
     </>}
   </>;
@@ -74,7 +77,9 @@ function Transcript({ path, fields, refresh }: {
           <div className="campaign-progress-row">
             <strong>{labels[message.role]}{message.tool ? ` · ${message.tool}` : ""}</strong>{time(message.at)}
           </div>
-          {message.text && <p className="campaign-progress-text">{message.text}</p>}
+          {message.text && (message.role === "tool"
+            ? <p className="campaign-progress-text">{message.text}</p>
+            : <MarkdownContent className="doc-compact campaign-progress-text" text={message.text} />)}
           {message.calls.map((call, index) => <details key={index} className="campaign-activity-call">
             <summary>Tool call <code>{call.name}</code></summary>
             {call.arguments && <pre className="campaign-activity-log" tabIndex={0} aria-label={`${call.name} arguments`}>{call.arguments}</pre>}
@@ -85,7 +90,7 @@ function Transcript({ path, fields, refresh }: {
               {expanded === message.id ? "Hide full message" : "Read full message"}
             </Button>
             {expanded === message.id && <TextPages path={path} fields={{ ...fields, view: "message", message: message.id }}
-              refresh={refresh} empty="This message has no saved text." label="Message" />}
+              refresh={refresh} empty="This message has no saved text." label="Message" markdown={message.role !== "tool"} />}
           </>}
         </li>)}
       </ol> : <p>No messages have been recorded for this session yet.</p>}

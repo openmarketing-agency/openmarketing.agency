@@ -4,12 +4,14 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { CampaignDetail } from "@/components/campaign-detail";
 import { campaignAgentIds, CampaignAgents, CampaignOverview } from "@/components/workspace-records";
+import { agentDisplayName } from "@/lib/agent-name";
 import { Loading } from "@/components/ui";
 import { loadCampaignTools } from "@/lib/tool-workspace";
 import { connectionFeedback } from "@/lib/connection-attempt";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, readCampaignKanbanStatus, workspaceId } from "@/lib/server/agent-workspace";
 import "@/components/campaign-pages.css";
+import "@/components/workspace-document.css";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -51,7 +53,7 @@ async function Detail({ params, searchParams }: Props) {
       kanban={kanban}
       overview={<CampaignOverview workspace={records} campaign={saved} />}
       agents={<CampaignAgents workspace={records} campaign={saved} ids={agents} />}
-      agentNames={Object.fromEntries(agents.map((id) => [id, records.agents.find((agent) => agent.id === id)?.name ?? id]))}
+      agentNames={Object.fromEntries(agents.map((id) => [id, agentDisplayName(records.agents.find((agent) => agent.id === id) ?? { id, name: id })]))}
       {...workspace}
       feedback={connectionFeedback(query.connection_result)}
     />

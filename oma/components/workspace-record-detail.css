@@ -140,23 +140,6 @@
 
 .record-section-heading [data-slot="button"] { min-height: 36px; }
 
-.record-reading :is(.workspace-markdown, .workspace-record-copy) {
-  max-width: 72ch;
-  font-size: 0.969rem;
-  line-height: 1.7;
-}
-
-.record-reading .workspace-record-copy { white-space: pre-wrap; }
-
-.record-reading .workspace-markdown > * + * { margin-top: 14px; }
-.record-detail .record-reading .workspace-markdown :is(h1, h2, h3, h4, h5, h6) {
-  margin: 24px 0 6px;
-  font-weight: 650;
-}
-.record-detail .record-reading .workspace-markdown :is(h1, h2, h3, h4, h5, h6):first-child { margin-top: 0; }
-.record-reading .workspace-markdown hr { margin-block: 22px; border-color: var(--border); }
-.record-reading .workspace-markdown li::marker { color: var(--accent); }
-
 .record-related {
   padding: 16px;
   background: var(--raised);
@@ -247,7 +230,7 @@
 .record-detail .workspace-document-list a svg { flex: none; margin: 0; color: var(--accent); }
 .record-detail .workspace-document-list a:hover span { text-decoration: underline; text-underline-offset: 3px; }
 
-.record-detail .record-document .back-link { margin-bottom: 12px; }
+.record-detail .record-structured .back-link { margin-bottom: 0; }
 
 .record-asset-grid,
 .record-palette {

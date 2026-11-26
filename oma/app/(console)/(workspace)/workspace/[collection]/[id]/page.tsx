@@ -133,7 +133,7 @@ async function RecordDetail({ params, searchParams }: Props) {
                       items={relatedCampaigns} base="/campaigns/" />}
                   </>
                 )}>
-                  <section className="record-document" aria-labelledby="strategy-heading">
+                  <section className="record-structured" aria-labelledby="strategy-heading">
                     <div className="record-section-heading"><h2 id="strategy-heading">Strategy</h2></div>
                     <WorkspaceDocument document={strategyDocument} name={playbook.name} empty="No strategy saved yet." />
                   </section>
@@ -189,7 +189,7 @@ function RecordLinks({ heading, icon, items, base }: {
 
 function BrandKnowledge({ brand, path, document }: { brand: SavedBrand; path: string; document: ParsedDocument }) {
   return (
-    <section className="record-document" id="brand-knowledge" aria-labelledby="knowledge-heading">
+    <section className="record-structured" id="brand-knowledge" aria-labelledby="knowledge-heading">
       <div className="record-section-heading">
         <h2 id="knowledge-heading">Brand knowledge</h2>
         {brand.knowledgeRevision && (

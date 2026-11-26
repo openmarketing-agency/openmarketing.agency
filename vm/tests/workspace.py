@@ -176,15 +176,16 @@ with TemporaryDirectory() as temporary:
 
     active = records(root)["brands"][0]
     assert active["knowledge"] == knowledge.read_text()
-    assert "<table>" in active["knowledgeHtml"] and "<h3>" in active["knowledgeHtml"]
-    assert all(value not in active["knowledgeHtml"] for value in ("<script>", "<img", "href=\"javascript:"))
+    # The console renders Markdown itself, so the workspace returns only the source text.
+    assert "knowledgeHtml" not in active
     assert active["channels"] == [{
         "label": "Website", "status": "verified", "url": "https://example.test",
         "feedUrl": "https://example.test/feed", "signupUrl": "",
     }]
     docs = {doc["path"]: doc["id"] for doc in active["documents"]}
     assert set(docs) == {"design/DESIGN.md", "research/market.md", "docs/repo/architecture.md", "docs/hardlink.md"}
-    assert "Market observations" in brand_document(root, "example", docs["research/market.md"])["html"]
+    market = brand_document(root, "example", docs["research/market.md"])
+    assert "Market observations" in market["content"] and "html" not in market
     def reject_call(status, operation, *args):
         try:
             operation(*args)
@@ -197,7 +198,7 @@ with TemporaryDirectory() as temporary:
     reject_call(422, brand_document, root, "example", docs["docs/hardlink.md"])
     assert brand_logo(root, "example", "mark")["mediaType"] == "image/png"
     reject_call(422, brand_logo, root, "example", "unsafe")
-    assert "<h4>Research role</h4>" in agent_profile(root, "seo__researcher")["html"]
+    assert agent_profile(root, "seo__researcher") == {"content": "## Research role\n\nUse public sources.\n"}
 
     current_brand.write_text(current_brand.read_text() +
         "screenshots: [{file: screenshots/home.png, source_url: 'https://example.test/'}]\n"

@@ -52,7 +52,7 @@ const brandAsset = z.object({
 export type BrandAsset = z.infer<typeof brandAsset>;
 const document = z.object({ id: documentId, title: z.string(), path: z.string() });
 const brand = record.extend({
-  revision, knowledge: z.string(), knowledgeHtml: z.string().optional(), knowledgeFile: z.string().optional(), knowledgeRevision: revision.optional(),
+  revision, knowledge: z.string(), knowledgeFile: z.string().optional(), knowledgeRevision: revision.optional(),
   palette: stringMap, logos: stringMap, assets: z.record(z.string(), strings),
   assetFiles: z.array(brandAsset).optional(),
   channels: z.array(discovery).optional(),
@@ -66,7 +66,7 @@ const brand = record.extend({
   internalDocumentation: z.object({ index: z.string(), mode: z.enum(["summarized", "mirrored"]) }).optional(),
   documents: z.array(document).max(64).optional(),
 });
-const playbook = record.extend({ revision, brandId: z.string(), strategy: z.string(), strategyHtml: z.string().optional() });
+const playbook = record.extend({ revision, brandId: z.string(), strategy: z.string() });
 export type CampaignMode = z.infer<typeof campaignMode>;
 const campaignConfiguration = z.object({
   revision, provider: z.string(), modelId: z.string(), baseUrl: z.string(),
@@ -106,7 +106,7 @@ const inventory = z.object({
 
 export type AgentWorkspace = z.infer<typeof inventory>;
 export type SavedBrand = z.infer<typeof brand>;
-const documentBody = z.object({ content: z.string(), html: z.string().optional() });
+const documentBody = z.object({ content: z.string() });
 const brandDocument = document.extend(documentBody.shape);
 const logoResponse = z.object({
   mediaType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),

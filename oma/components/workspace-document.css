@@ -1,17 +1,17 @@
-/* Styles structured brand knowledge and playbook strategy documents. */
+/* Styles agent-authored Markdown: structured workspace documents and compact prose. */
 
-.record-document {
+.record-structured {
   display: grid;
   gap: 16px;
   min-width: 0;
-  grid-area: 1 / 1;
 }
+.record-columns > .record-structured { grid-area: 1 / 1; }
 
-.record-document > .record-section-heading { margin-bottom: 2px; }
-.record-document > .record-section-heading h2 { margin: 0; font-size: 1.25rem; font-weight: 650; letter-spacing: -0.015em; }
-.record-document .record-knowledge-source { color: var(--muted); }
+.record-structured > .record-section-heading { margin-bottom: 2px; }
+.record-structured > .record-section-heading h2 { margin: 0; font-size: 1.25rem; font-weight: 650; letter-spacing: -0.015em; }
+.record-structured .record-knowledge-source { color: var(--muted); }
 
-.workspace-document {
+.workspace-document, .doc-prose {
   display: grid;
   gap: 16px;
   min-width: 0;
@@ -19,10 +19,10 @@
   line-height: 1.65;
 }
 
-.workspace-document p { margin: 0; max-width: 70ch; }
-.workspace-document a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
-.workspace-document code { padding: 1px 5px; border-radius: 4px; background: var(--raised); font-family: var(--font-mono), monospace; font-size: 0.88em; }
-.workspace-document hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--border); }
+:is(.workspace-document, .doc-prose) p { margin: 0; max-width: 70ch; }
+:is(.workspace-document, .doc-prose) a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+:is(.workspace-document, .doc-prose) code { padding: 1px 5px; border-radius: 4px; background: var(--raised); font-family: var(--font-mono), monospace; font-size: 0.88em; }
+:is(.workspace-document, .doc-prose) hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--border); }
 .doc-empty { color: var(--muted); }
 
 /* Opening tagline and summary */
@@ -63,7 +63,7 @@
 }
 .record-detail .doc-card-heading h3 { margin: 0; font-size: 1.06rem; font-weight: 650; line-height: 1.3; text-wrap: balance; }
 .doc-card-body { display: grid; gap: 14px; min-width: 0; }
-.record-detail .doc-subheading { margin: 6px 0 -4px; font-size: 0.95rem; font-weight: 650; }
+.doc-subheading { margin: 6px 0 -4px; font-size: 0.95rem; font-weight: 650; }
 
 /* Lists */
 .doc-points, .doc-steps, .doc-tasks, .doc-chips, .doc-guidance ul { margin: 0; padding: 0; list-style: none; }
@@ -128,7 +128,7 @@
 .doc-callout::before { content: "\201C"; position: absolute; top: 4px; left: 14px; color: var(--accent); font-size: 2.2rem; font-weight: 700; line-height: 1; }
 .doc-callout > * + * { margin-top: 8px; }
 .doc-code { margin: 0; padding: 12px 14px; overflow-x: auto; border-radius: 8px; background: var(--raised); font: 0.85rem/1.6 var(--font-mono), monospace; white-space: pre; overflow-wrap: normal; }
-.workspace-document .doc-code code { padding: 0; background: none; }
+:is(.workspace-document, .doc-prose) .doc-code code { padding: 0; background: none; }
 .doc-footnote { display: flex; gap: 6px; color: var(--muted); font-size: 0.85rem; }
 
 .doc-table { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
@@ -190,9 +190,46 @@
 .doc-contents a { justify-content: flex-start; color: var(--text); }
 .doc-contents a svg { color: var(--muted); }
 @media (max-width: 960px) {
-  .record-columns > .record-document { grid-area: auto; }
+  .record-columns > .record-structured { grid-area: auto; }
   .doc-contents { display: none; }
   .record-related:not(:has(.record-links:not(.doc-contents))) { display: none; }
   .doc-contents + .record-links { margin-top: 0; padding-top: 0; border-top: 0; }
   .record-related:has(.doc-contents) { position: static; max-height: none; }
 }
+
+/* Section list for documents shown without a side column */
+.doc-inline-contents ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.doc-inline-contents a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 550;
+}
+.doc-inline-contents a:hover { border-color: var(--accent); color: var(--accent); }
+.doc-inline-contents svg { color: var(--muted); }
+
+/* Prose: headings stay inline with the text instead of starting cards */
+.doc-prose { gap: 10px; }
+.doc-prose .doc-subheading { margin: 6px 0 -2px; font-size: 1rem; font-weight: 650; line-height: 1.35; }
+.doc-prose :is(h4, h5, h6).doc-subheading { font-size: 0.92rem; }
+.doc-prose .doc-stats dd { font-size: 1.3rem; }
+.doc-prose.doc-chat { gap: 8px; font-size: 0.9rem; line-height: 1.6; }
+.doc-chat .doc-subheading { font-size: 0.95rem; }
+.doc-chat .doc-callout { padding-block: 10px; font-weight: 500; }
+/* Agent chat bubbles already use the raised fill, so inner parts sit on the surface color. */
+.doc-chat { margin-top: 4px; }
+.doc-chat :is(.doc-chips li, .doc-callout, .doc-code, .doc-stats div, .doc-table th, code),
+.doc-chat .doc-table, .doc-chat .doc-facts div { background: var(--surface); }
+.doc-chat .doc-facts { background: var(--border); }
+
+/* Compact prose for task details, transcripts and list items */
+.doc-prose.doc-compact { gap: 8px; font-size: 0.9rem; line-height: 1.6; }
+.doc-compact p { white-space: pre-line; }
+.doc-compact .doc-subheading { font-size: 0.95rem; }
+.doc-compact .doc-stats dd { font-size: 1.15rem; }

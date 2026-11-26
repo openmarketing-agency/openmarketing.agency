@@ -11,6 +11,8 @@ import { CampaignKanban } from "./campaign-kanban";
 import type { CampaignKanbanStatus } from "@/lib/server/agent-workspace";
 import type { CampaignProgressSnapshot, CampaignTask, CampaignTaskActivity } from "@/lib/server/campaign-progress";
 import { Button } from "@/components/ui/button";
+import { MarkdownContent } from "@/components/workspace-document";
+import { markdownText } from "@/lib/workspace-document";
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const groups = [
@@ -61,9 +63,9 @@ function TaskDetail({ path, refresh, agents }: { path: string; refresh: number; 
   return <>
     {state.error && <p className="form-error" role="status">{state.error}</p>}
     {task && <>
-      {task.body && <p className="campaign-progress-text">{task.body}</p>}
+      {task.body && <MarkdownContent className="doc-compact campaign-progress-text" text={task.body} />}
       {task.blockReason && <p className="campaign-progress-warning"><strong>Blocked</strong> · {task.blockReason}</p>}
-      {task.result && <div><h4>Result</h4><p className="campaign-progress-text">{task.result}</p></div>}
+      {task.result && <div><h4>Result</h4><MarkdownContent className="doc-compact campaign-progress-text" text={task.result} /></div>}
       {task.runs.length > 0 && <div>
         <h4>Recent run attempts</h4>
         <ul className="campaign-progress-list">
@@ -74,7 +76,7 @@ function TaskDetail({ path, refresh, agents }: { path: string; refresh: number; 
               {time(run.endedAt ?? run.startedAt)}
             </div>
             {run.error && <p className="campaign-progress-warning">{run.error}</p>}
-            {run.summary && run.summary !== task.result && <p className="campaign-progress-text">{run.summary}</p>}
+            {run.summary && run.summary !== task.result && <MarkdownContent className="doc-compact campaign-progress-text" text={run.summary} />}
           </li>)}
         </ul>
       </div>}
@@ -159,7 +161,7 @@ export function CampaignProgress({ campaign, agents, kanban }: {
                     </span>
                   </button>
                   {(task.summary || task.failure) && <p className={task.failure ? "campaign-progress-warning" : "campaign-progress-preview"}>
-                    {task.failure ? "Latest failure · " + task.failure : task.summary}
+                    {task.failure ? "Latest failure · " + task.failure : markdownText(task.summary)}
                   </p>}
                   {open && <div className="campaign-progress-task-detail" id={detailId}>
                     <TaskDetail path={path + "?task=" + task.id} refresh={refresh} agents={agents} />

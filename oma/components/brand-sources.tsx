@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, ArrowUpRight, FileText } from "lucide-react";
 
-import { WorkspaceText } from "@/components/workspace-text";
+import { WorkspaceDocument } from "@/components/workspace-document";
 import type { SavedBrand, SavedBrandDocument } from "@/lib/server/agent-workspace";
+import { parseWorkspaceDocument } from "@/lib/workspace-document";
 
 const discoveryLabels = {
   verified: "Verified", not_checked: "Unchecked", not_found: "Not found",
@@ -83,11 +84,15 @@ export function BrandResearch({ brand, path, selected }: Props) {
   return (
     <div className="record-groups" id="brand-research">
       {selected ? (
-        <section id="brand-document" className="record-reading record-document" aria-labelledby="document-title">
+        <section id="brand-document" className="record-structured" aria-labelledby="document-title">
           <Link href={researchPath} className="back-link"><ArrowLeft size={14} aria-hidden="true" /> All documents</Link>
-          <h2 id="document-title">{selected.document ? labelFor(selected.document.title) : "Brand document"}</h2>
+          <div className="record-section-heading">
+            <h2 id="document-title">{selected.document ? labelFor(selected.document.title) : "Brand document"}</h2>
+            {selected.document && <small className="record-knowledge-source">{selected.document.path}</small>}
+          </div>
           {selected.document
-            ? <WorkspaceText text={selected.document.content} html={selected.document.html} empty="This document is empty." />
+            ? <WorkspaceDocument document={parseWorkspaceDocument(selected.document.content)} name={labelFor(selected.document.title)}
+              empty="This document is empty." contents />
             : <p className="form-error" role="alert">{selected.error}</p>}
         </section>
       ) : hasDocuments && (

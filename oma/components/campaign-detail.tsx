@@ -180,8 +180,9 @@ export function CampaignDetail({
 
       {view === "progress" && <CampaignProgress campaign={campaign.id} agents={agentNames} kanban={kanban} />}
       {view === "overview" && <>
-        {configuration && <CampaignPlanEditor campaign={campaign} revision={configuration.revision} />}
-        {overview}
+        {configuration
+          ? <CampaignPlanEditor campaign={campaign} revision={configuration.revision}>{overview}</CampaignPlanEditor>
+          : overview}
       </>}
       {view === "analytics" && <WorkspaceAnalytics key={campaign.id} id={campaign.id} />}
       {view === "agents" && <>

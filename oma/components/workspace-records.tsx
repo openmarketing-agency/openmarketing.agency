@@ -1,9 +1,12 @@
 /** Displays linked brands, playbooks, and agent records from the mounted workspace. */
 
 import Link from "next/link";
-import { ArrowRight, BookOpen, Tag } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarClock, CircleCheck, Cpu, ListOrdered, Network, Sparkles, Tag, Target, Wrench } from "lucide-react";
 
 import type { AgentWorkspace, SavedCampaign } from "@/lib/server/agent-workspace";
+import { describeSchedule } from "@/lib/job-schedule";
+import { MarkdownInline } from "@/components/workspace-document";
+import { agentDisplayName, agentInitials } from "@/lib/agent-name";
 
 export function WorkspaceIndex({ workspace }: { workspace: AgentWorkspace }) {
   return (
@@ -54,17 +57,21 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
   return (
     <div className="campaign-overview">
       {hasPlan && (
-        <div className="campaign-reading">
+        <div className="campaign-reading campaign-plan-reading">
           {campaign.goals.length > 0 && (
-            <section>
-              <h2>Goals</h2>
-              <ul className="workspace-copy-list">{campaign.goals.map((goal, index) => <li key={index}>{goal}</li>)}</ul>
+            <section aria-labelledby="campaign-goals-heading">
+              <h2 id="campaign-goals-heading"><Target size={17} aria-hidden="true" /> Goals</h2>
+              <ul className="campaign-goal-list">{campaign.goals.map((goal, index) => (
+                <li key={index}><CircleCheck size={16} aria-hidden="true" /><span><MarkdownInline text={goal} /></span></li>
+              ))}</ul>
             </section>
           )}
           {campaign.plans.length > 0 && (
-            <section>
-              <h2>Plans</h2>
-              <ol className="workspace-copy-list">{campaign.plans.map((plan, index) => <li key={index}>{plan}</li>)}</ol>
+            <section aria-labelledby="campaign-steps-heading">
+              <h2 id="campaign-steps-heading"><ListOrdered size={17} aria-hidden="true" /> Plan steps</h2>
+              <ol className="campaign-step-list">{campaign.plans.map((plan, index) => (
+                <li key={index}><span><MarkdownInline text={plan} /></span></li>
+              ))}</ol>
             </section>
           )}
         </div>
@@ -89,47 +96,77 @@ export function CampaignOverview({ workspace, campaign }: { workspace: AgentWork
   );
 }
 
+type CampaignAgent = AgentWorkspace["agents"][number];
+
+function plural(count: number, word: string) {
+  return count + " " + word + (count === 1 ? "" : "s");
+}
+
+function AgentChips({ items }: { items: string[] }) {
+  return <ul className="campaign-agent-chips">{items.map((item, index) => <li key={index}>{item}</li>)}</ul>;
+}
+
+function CampaignAgentCard({ id, agent, coordinator }: { id: string; agent?: CampaignAgent; coordinator: boolean }) {
+  const name = agent ? agentDisplayName(agent) : agentDisplayName({ id, name: id });
+  const skills = agent?.skills ?? [];
+  const toolsets = agent?.toolsets ?? [];
+  return (
+    <li className="campaign-agent-card" data-coordinator={coordinator || undefined} data-missing={agent ? undefined : true}>
+      <div className="campaign-agent-head">
+        <span className="campaign-agent-avatar" aria-hidden="true">{agentInitials(name)}</span>
+        <div className="campaign-agent-title">
+          <h3>{agent
+            ? <Link href={"/workspace/agents/" + agent.id}>{name}<ArrowRight size={15} aria-hidden="true" /></Link>
+            : name}</h3>
+          <code>{id}</code>
+        </div>
+        {coordinator && <span className="campaign-coordinator"><Network size={13} aria-hidden="true" /> Coordinator</span>}
+      </div>
+      {agent?.description
+        ? <div className="campaign-agent-description"><MarkdownInline text={agent.description} /></div>
+        : !agent && <p className="campaign-agent-description">No profile is saved for this agent yet.</p>}
+      {(agent?.model || skills.length > 0 || toolsets.length > 0) && (
+        <dl className="campaign-agent-facts">
+          {agent?.model && <div><dt><Cpu size={14} aria-hidden="true" /> Model</dt><dd><code>{agent.model}</code></dd></div>}
+          {skills.length > 0 && <div><dt><Sparkles size={14} aria-hidden="true" /> Skills</dt><dd><AgentChips items={skills} /></dd></div>}
+          {toolsets.length > 0 && <div><dt><Wrench size={14} aria-hidden="true" /> Tools</dt><dd><AgentChips items={toolsets} /></dd></div>}
+        </dl>
+      )}
+      {!!agent?.jobs.length && (
+        <div className="campaign-agent-jobs">
+          <h4><CalendarClock size={14} aria-hidden="true" /> Scheduled work</h4>
+          <ul>
+            {agent.jobs.map(({ name: job, schedule, timezone, repeat }, index) => (
+              <li key={index} title={schedule || undefined}>
+                <strong>{job || "Scheduled job"}</strong>
+                <span>{[schedule && describeSchedule(schedule), timezone, repeat && repeat + (repeat === 1 ? " run" : " runs")].filter(Boolean).join(" · ")}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function CampaignAgents({ workspace, campaign, ids }: {
   workspace: AgentWorkspace;
   campaign: SavedCampaign;
   ids: string[];
 }) {
   const agentsById = new Map(workspace.agents.filter(({ campaignId }) => campaignId === campaign.id).map((agent) => [agent.id, agent]));
+  // The coordinator leads the team, so it comes first; the rest keep their saved order.
+  const ordered = [...ids.filter((id) => id === campaign.orchestrator), ...ids.filter((id) => id !== campaign.orchestrator)];
+  const jobs = ids.reduce((total, id) => total + (agentsById.get(id)?.jobs.length ?? 0), 0);
   return (
     <section className="campaign-roster" aria-labelledby="campaign-agents-heading">
-      <h2 id="campaign-agents-heading">Campaign agents</h2>
+      <header className="campaign-roster-heading">
+        <h2 id="campaign-agents-heading">Campaign agents</h2>
+        {ids.length > 0 && <p>{plural(ids.length, "agent")} · {plural(jobs, "scheduled job")}</p>}
+      </header>
       {ids.length === 0 ? <p className="campaign-placeholder">No agents saved for this campaign yet.</p> : (
-        <ul className="campaign-agent-list">
-          {ids.map((id) => {
-            const agent = agentsById.get(id);
-            return (
-              <li key={id} className="campaign-agent">
-                <div className="campaign-agent-title">
-                  <h3>{agent ? <Link href={"/workspace/agents/" + agent.id}>{agent.name}<ArrowRight size={16} aria-hidden="true" /></Link> : id}</h3>
-                  {id === campaign.orchestrator && <span className="campaign-coordinator">Coordinator</span>}
-                </div>
-                {agent?.description && <p>{agent.description}</p>}
-                {(agent?.model || !!agent?.skills?.length || !!agent?.toolsets.length) && (
-                  <dl className="campaign-agent-metadata">
-                    {agent?.model && <div><dt>Model</dt><dd>{agent.model}</dd></div>}
-                    {!!agent?.skills?.length && <div><dt>Skills</dt><dd>{agent.skills.join(", ")}</dd></div>}
-                    {!!agent?.toolsets.length && <div><dt>Toolsets</dt><dd>{agent.toolsets.join(", ")}</dd></div>}
-                  </dl>
-                )}
-                {!!agent?.jobs.length && (
-                  <div className="campaign-agent-jobs">
-                    <h4>Scheduled work</h4>
-                    <ul className="workspace-copy-list">
-                      {agent.jobs.map(({ name, schedule, timezone, repeat }, index) => (
-                        <li key={index}>{[name, schedule, timezone, repeat && repeat + (repeat === 1 ? " run" : " runs")]
-                          .filter(Boolean).join(" · ")}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </li>
-            );
-          })}
+        <ul className="campaign-agent-grid">
+          {ordered.map((id) => <CampaignAgentCard key={id} id={id} agent={agentsById.get(id)} coordinator={id === campaign.orchestrator} />)}
         </ul>
       )}
     </section>

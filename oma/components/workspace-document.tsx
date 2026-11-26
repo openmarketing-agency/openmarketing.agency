@@ -1,4 +1,4 @@
-/** Renders saved brand knowledge and playbook strategy as section cards built from their Markdown structure. */
+/** Renders agent-authored Markdown: workspace documents as section cards, and short text such as chat replies as prose. */
 
 import type { List, ListItem, PhrasingContent, RootContent, Table } from "mdast";
 import { createElement, Fragment, type ReactNode } from "react";
@@ -9,7 +9,7 @@ import {
 import { toString } from "mdast-util-to-string";
 
 import {
-  colorCode, documentFact, listLayout, phaseLabel, safeLink,
+  colorCode, documentFact, listLayout, parseMarkdown, phaseLabel, safeLink,
   type DocumentGroup, type DocumentSection, type WorkspaceDocument as ParsedDocument,
 } from "@/lib/workspace-document";
 
@@ -208,7 +208,13 @@ function Section({ section }: { section: DocumentSection }) {
   );
 }
 
-export function WorkspaceDocument({ document, name, empty }: { document: ParsedDocument; name?: string; empty: string }) {
+export function WorkspaceDocument({ document, name, empty, contents = false }: {
+  document: ParsedDocument;
+  name?: string;
+  empty: string;
+  /** Lists the sections above the document, for pages without a side column. */
+  contents?: boolean;
+}) {
   if (document.empty) return <p className="doc-empty">{empty}</p>;
   const title = document.title && document.title.toLowerCase() !== name?.trim().toLowerCase() ? document.title : undefined;
   return (
@@ -219,6 +225,13 @@ export function WorkspaceDocument({ document, name, empty }: { document: ParsedD
           {document.tagline && <blockquote>{blocks(document.tagline.children, 1)}</blockquote>}
           {document.lede.length > 0 && <div className="doc-hero-lede">{blocks(document.lede)}</div>}
         </div>
+      )}
+      {contents && document.sections.length >= 3 && (
+        <nav className="doc-inline-contents" aria-label="Document sections">
+          <ul>{document.sections.map(({ id, title }) => (
+            <li key={id}><a href={"#" + id}><SectionIcon title={title} size={14} />{title}</a></li>
+          ))}</ul>
+        </nav>
       )}
       {document.intro.length > 0 && <section className="doc-card"><div className="doc-card-body">{blocks(document.intro)}</div></section>}
       {document.sections.map((section) => <Section key={section.id} section={section} />)}
@@ -239,4 +252,16 @@ export function WorkspaceDocumentContents({ document }: { document: ParsedDocume
       </ul>
     </nav>
   );
+}
+
+/** Renders short Markdown, such as a chat reply, as plain prose without section cards. */
+export function MarkdownContent({ text, id, className }: { text: string; id?: string; className?: string }) {
+  return <div id={id} className={"doc-prose" + (className ? " " + className : "")}>{blocks(parseMarkdown(text).children)}</div>;
+}
+
+/** Renders one short Markdown item, such as a goal, keeping inline formatting without paragraph spacing. */
+export function MarkdownInline({ text }: { text: string }) {
+  const nodes = parseMarkdown(text).children;
+  if (nodes.length === 1 && nodes[0].type === "paragraph") return <>{inline(nodes[0].children)}</>;
+  return <MarkdownContent text={text} className="doc-compact" />;
 }

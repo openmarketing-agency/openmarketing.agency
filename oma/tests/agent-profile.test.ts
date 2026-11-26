@@ -23,7 +23,7 @@ test("keeps canonical identifiers accessible and links back to the campaign rost
   const html = renderToStaticMarkup(createElement(AgentProfileDetail, {
     agent,
     campaign: { id: "seo", name: "Organic Search" },
-    profile: { content: "Review for clarity.", html: "<p>Review for clarity.</p>" },
+    profile: { content: "Review for clarity." },
   }));
   assert.match(html, /<h1>Humanizer<\/h1>/);
   assert.match(html, /href="\/campaigns\/seo\?view=agents"/);
@@ -47,7 +47,7 @@ test("retains the saved display name, job details, and profile load error", () =
   assert.match(html, /role="alert">The profile could not be read/);
   assert.match(html, /href="\/dashboard"/);
   assert.match(html, /<h3>Review drafts<\/h3>/);
-  assert.match(html, /<p>0 9 \* \* 1<\/p>/);
+  assert.match(html, /<p title="0 9 \* \* 1">Every Monday at 09:00<\/p>/);
   assert.match(html, /UTC · 1 run<\/p>/);
   assert.doesNotMatch(html, /No jobs saved/);
 });

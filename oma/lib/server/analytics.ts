@@ -82,6 +82,11 @@ export async function generateAnalytics(key: AnalyticsKey, regenerate = false): 
 
   try {
     const observationContext = await campaignObservationContext(key.id, now);
+    // Without sample records the agent cannot see the value structure and only repeats the example layout.
+    if (!observationContext.observations.length) {
+      throw new WorkspaceRequestError(409,
+        "No observations have been collected for this campaign in the last 28 days. Refresh the data once a source has records, then generate the dashboard.");
+    }
     const request = { scope: "campaigns", targetId: key.id, campaignIds: [key.id], observationContext };
     let correction = "";
     let dashboard: (Omit<AnalyticsReport, "generatedAt"> & { measurementFields: MeasurementField[] }) | undefined;

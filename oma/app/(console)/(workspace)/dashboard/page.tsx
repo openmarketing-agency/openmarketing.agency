@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, readCampaignKanbanStatus } from "@/lib/server/agent-workspace";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
 import "@/components/campaign-pages.css";
+import "@/components/workspace-document.css";
 
 export const metadata: Metadata = { title: "Campaigns" };
 

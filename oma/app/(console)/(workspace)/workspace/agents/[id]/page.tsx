@@ -10,6 +10,7 @@ import { Loading } from "@/components/ui";
 import { requireUser } from "@/lib/dal";
 import { loadAgentProfile, loadAgentWorkspace, workspaceId } from "@/lib/server/agent-workspace";
 import "@/components/workspace-record-detail.css";
+import "@/components/workspace-document.css";
 
 type Props = { params: Promise<{ id: string }> };
 
