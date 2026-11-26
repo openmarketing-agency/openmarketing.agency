@@ -4,15 +4,15 @@
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
+import { Hand, ShieldCheck, TriangleAlert, Zap, type LucideIcon } from "lucide-react";
 import { saveCampaignModeAction } from "@/app/actions/workspace";
 import type { CampaignConfiguration, CampaignMode } from "@/lib/server/agent-workspace";
 import { Button } from "@/components/ui/button";
-import { NativeSelect } from "@/components/ui/native-select";
 
-const options: Record<CampaignMode, { label: string; description: string }> = {
-  approve: { label: "Approve", description: "Review publication drafts before queuing the publisher." },
-  control: { label: "Control", description: "Run only explicitly approved publications. Scheduled work is paused." },
-  yolo: { label: "Yolo", description: "Run automation and auto-approve new publication drafts." },
+const options: Record<CampaignMode, { label: string; description: string; icon: LucideIcon }> = {
+  approve: { label: "Approve", icon: ShieldCheck, description: "Agents draft publications and you review each one before it is queued." },
+  control: { label: "Control", icon: Hand, description: "Only publications you explicitly approve run. Scheduled work is paused." },
+  yolo: { label: "Yolo", icon: Zap, description: "Automation runs and new publication drafts are approved automatically." },
 };
 
 export function CampaignModeSettings({ campaignId, configuration, installed }: {
@@ -23,26 +23,46 @@ export function CampaignModeSettings({ campaignId, configuration, installed }: {
   const saved = configuration.mode ?? "approve";
   const [mode, setMode] = useState(saved);
   const [result, action, pending] = useActionState(saveCampaignModeAction.bind(null, campaignId), {});
+  const changed = mode !== saved;
 
   return (
     <section className="campaign-settings campaign-mode-settings" aria-labelledby="campaign-mode-heading">
-      <h2 id="campaign-mode-heading">Publishing mode</h2>
-      <form action={action} className="workspace-editor">
+      <header className="campaign-settings-heading">
+        <h2 id="campaign-mode-heading">Publishing mode</h2>
+        <p>Choose how much the agents can publish without you.</p>
+      </header>
+      <form action={action} className="campaign-settings-form">
         <input type="hidden" name="revision" value={configuration.revision} />
-        <label htmlFor="campaign-mode">Mode</label>
-        <NativeSelect id="campaign-mode" name="mode" disabled={pending} value={mode}
-          aria-describedby="campaign-mode-description"
-          onChange={(event) => setMode(event.target.value as CampaignMode)}>
-          {Object.entries(options).map(([value, option]) => <option key={value} value={value}>{option.label}</option>)}
-        </NativeSelect>
-        <p id="campaign-mode-description">{options[mode].description}</p>
-        {result.error && <p role="alert" className="form-error">{result.error}</p>}
-        {result.saved && !pending && mode === saved && <p role="status">{installed ? "Mode synced." : "Mode saved for first start."}</p>}
-        <div className="campaign-mode-actions">
-          <Button type="submit" disabled={pending || (mode === saved && !result.error)}>
-            {pending ? "Saving and syncing…" : "Save mode"}
+        <fieldset className="campaign-mode-options" disabled={pending}>
+          <legend className="sr-only">Mode</legend>
+          {(Object.entries(options) as [CampaignMode, typeof options[CampaignMode]][]).map(([value, option]) => {
+            const Icon = option.icon;
+            return (
+              <label key={value} className="campaign-mode-option" data-mode={value}>
+                <input type="radio" name="mode" value={value} checked={mode === value} onChange={() => setMode(value)} />
+                <span className="campaign-mode-icon" aria-hidden="true"><Icon size={18} /></span>
+                <span className="campaign-mode-text">
+                  <span className="campaign-mode-title">{option.label}{value === saved && <span className="campaign-mode-current">Current</span>}</span>
+                  <span>{option.description}</span>
+                </span>
+              </label>
+            );
+          })}
+        </fieldset>
+        {mode === "yolo" && changed && (
+          <p className="campaign-mode-warning"><TriangleAlert size={15} aria-hidden="true" /> New drafts will publish without anyone reviewing them.</p>
+        )}
+        <div className="campaign-settings-actions">
+          <p className="campaign-settings-state" role="status">
+            {result.error ? <span className="form-error" role="alert">{result.error}</span>
+              : pending ? "Saving and syncing…"
+              : changed ? `Switch from ${options[saved].label} to ${options[mode].label}.`
+              : result.saved ? (installed ? "Mode synced." : "Mode saved for first start.") : ""}
+          </p>
+          <Button asChild variant="ghost"><Link href={`/approvals?campaign=${campaignId}`}>Review publications</Link></Button>
+          <Button type="submit" disabled={pending || (!changed && !result.error)}>
+            {pending ? "Saving…" : "Save mode"}
           </Button>
-          <Button asChild variant="outline"><Link href={`/approvals?campaign=${campaignId}`}>Review publications</Link></Button>
         </div>
       </form>
     </section>

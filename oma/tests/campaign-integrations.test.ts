@@ -131,6 +131,10 @@ test("shows only configured tools in campaigns and keeps the shared catalog in w
   assert.match(required, /Reconnect Discord/);
   assert.match(required, /class="connection-status">.*?Ready<\/span>/);
   assert.match(required, /<button[^>]*>Sync tools<\/button>/);
+  assert.match(required, /1 of 2 required tools ready/);
+  assert.match(required, /role="progressbar"[^>]*aria-valuemax="2"[^>]*aria-valuenow="1"/);
+  assert.match(required, /Reconnect needed/);
+  assert.ok(required.indexOf("Reconnect Discord") < required.indexOf("Facebook"), "tools that need an account come first");
   assert.doesNotMatch(required, /Search tools|Find a tool|Edit required tools|Save tools|Refresh connections|All tools|Tool category|GitHub|Disconnect/);
 
   const unconfigured = renderToStaticMarkup(createElement(ToolkitBrowser, {

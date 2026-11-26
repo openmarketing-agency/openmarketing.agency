@@ -203,6 +203,13 @@ export function ToolkitBrowser({
         .includes(search.toLowerCase().trim()) &&
       (!category || tool.categories.some((item) => item.id === category)),
   );
+  const isReady = (tool: Toolkit) => snapshot.connected.includes(tool.slug) || tool.noAuth;
+  if (isCampaign) {
+    // Tools that still need an account come first, so the next action is at the top.
+    localItems.sort((a, b) => Number(isReady(a)) - Number(isReady(b)));
+  }
+  const readyCount = isCampaign ? localItems.filter(isReady).length : 0;
+  const requiredCount = isCampaign ? localItems.length + unsupported.length : 0;
   const catalogLoading = tab === "all" && canBrowseCatalog && loading;
   const showFilters = !isCampaign && (canBrowseCatalog || connectedIds.length > 0);
   const visible = tab === "all" ? page.items : localItems;
@@ -348,7 +355,7 @@ export function ToolkitBrowser({
       <div className="tool-browser-heading">
         <div>
           <h2>{isCampaign ? "Campaign tools" : "Tool catalog"}</h2>
-          {hasRequiredTools && <p>Connect the tools required by this campaign’s configuration.</p>}
+          {hasRequiredTools && <p>Connect each account this campaign’s agents use. After changing a connection on a running campaign, sync so the agents pick it up.</p>}
         </div>
         {isCampaign ? headingAction : (
           <button
@@ -434,6 +441,19 @@ export function ToolkitBrowser({
           </label>}
         </div>
       )}
+      {hasRequiredTools && canBrowseCatalog && (
+        <div className="tool-readiness" data-complete={readyCount === requiredCount || undefined}>
+          <div className="tool-readiness-text">
+            <strong>{readyCount === requiredCount ? "All required tools are ready" : `${readyCount} of ${requiredCount} required tools ready`}</strong>
+            <span>{readyCount === requiredCount ? "Agents can use every tool this campaign needs."
+              : `Connect ${requiredCount - readyCount === 1 ? "the remaining tool" : `the ${requiredCount - readyCount} remaining tools`} before starting the campaign.`}</span>
+          </div>
+          <div className="tool-readiness-bar" role="progressbar" aria-label="Required tools ready"
+            aria-valuemin={0} aria-valuemax={requiredCount} aria-valuenow={readyCount}>
+            <span style={{ width: `${requiredCount ? (readyCount / requiredCount) * 100 : 0}%` }} />
+          </div>
+        </div>
+      )}
       {!canBrowseCatalog && (!isCampaign || hasRequiredTools) && (
         <div className="notice">
           <div>
@@ -491,12 +511,13 @@ export function ToolkitBrowser({
             const reconnect = snapshot.reconnect?.includes(tool.slug);
             const waiting = snapshot.pending?.includes(tool.slug);
             return (
-              <article className="tool-catalog-item" key={tool.slug}>
+              <article className="tool-catalog-item" key={tool.slug} data-state={isCampaign ? (active ? "ready" : "action") : undefined}>
                 <ToolkitLogo url={tool.logoUrl} />
                 <div className="tool-catalog-info">
                   <h3>{tool.name}</h3>
                   {tool.description && <p>{tool.description}</p>}
                   <div className="tool-catalog-tags">
+                    {isCampaign && !active && !waiting && <span className="tool-tag-action">{reconnect ? "Reconnect needed" : "Needs connection"}</span>}
                     {required && <span>Required</span>}
                     {tool.noAuth && <span>No sign-in needed</span>}
                     {tool.categories.slice(0, 1).map((item) => (

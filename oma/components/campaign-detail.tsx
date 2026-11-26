@@ -206,9 +206,9 @@ export function CampaignDetail({
       )}
       {view === "settings" && (configuration ? (
         <>
-          <p className="campaign-run-guide">{running
-            ? "Saving changes briefly pauses the campaign. It resumes after sync succeeds."
-            : "The campaign can use the default agent’s model and ask for publishing approval."}</p>
+          {running && <p className="campaign-settings-notice" role="note">
+            Saving a change briefly pauses the campaign. It resumes once the agents have synced.
+          </p>}
           <CampaignModeSettings campaignId={campaign.id} configuration={configuration} installed={installed} />
           <CampaignSettings key={configuration.mode ?? "approve"} campaignId={campaign.id}
             configuration={configuration} firstStart={!installed} canStart={!blocked && !runPending} />

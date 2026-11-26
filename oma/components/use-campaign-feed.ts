@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 
-type LoadState<T> = { path: string; data?: T; error?: string };
+type LoadState<T> = { path: string; data?: T; error?: string; updatedAt?: number };
 const refreshInterval = 12_000;
 
 export function useCampaignFeed<T>(path: string, refresh: number, live = true) {
@@ -20,10 +20,11 @@ export function useCampaignFeed<T>(path: string, refresh: number, live = true) {
         const response = await fetch(path, { cache: "no-store", signal: controller.signal });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Couldn’t refresh campaign data.");
-        if (!disposed) setState({ path, data: result as T });
+        if (!disposed) setState({ path, data: result as T, updatedAt: Date.now() });
       } catch (error) {
         if (!disposed) setState((previous) => ({
           path, data: previous?.path === path ? previous.data : undefined,
+          updatedAt: previous?.path === path ? previous.updatedAt : undefined,
           error: error instanceof Error && error.name === "Error" ? error.message : "Couldn’t refresh campaign data.",
         }));
       } finally {

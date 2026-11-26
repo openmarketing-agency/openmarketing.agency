@@ -3,6 +3,7 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
+import { Cpu, KeyRound } from "lucide-react";
 import { deployCampaignAction, saveCampaignSettingsAction } from "@/app/actions/workspace";
 import type { CampaignConfiguration } from "@/lib/server/agent-workspace";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,9 @@ export function CampaignSettings({
   const saved = configuration;
   const modelMatches = provider.trim() === saved.provider
     && modelId === saved.modelId && baseUrl === saved.baseUrl;
+  const override = Boolean(saved.provider || saved.modelId || saved.baseUrl);
+  const [editing, setEditing] = useState(false);
+  const host = (() => { try { return saved.baseUrl ? new URL(saved.baseUrl).host : ""; } catch { return saved.baseUrl; } })();
   function useDefaultModel() {
     setProvider("");
     setModelId("");
@@ -32,9 +36,25 @@ export function CampaignSettings({
   }
 
   return (
-    <details className="campaign-edit-disclosure campaign-model-editor">
-      <summary>Model override <span>Optional</span></summary>
-      <form action={action} className="workspace-editor">
+    <section className="campaign-settings campaign-model-settings" aria-labelledby="campaign-model-heading">
+      <header className="campaign-settings-heading">
+        <h2 id="campaign-model-heading">Model</h2>
+        <p>The language model this campaign’s agents run on.</p>
+      </header>
+      <div className="campaign-model-summary">
+        <span className="campaign-mode-icon" aria-hidden="true"><Cpu size={18} /></span>
+        <div>
+          <strong>{override ? saved.modelId || "Custom model" : "Default agent model"}</strong>
+          <span>{override
+            ? [saved.provider, host, saved.hasModelKey ? "API key saved" : "No API key"].filter(Boolean).join(" · ")
+            : "Uses the same model as the default agent. Set an override to run this campaign on a different one."}</span>
+        </div>
+        <Button type="button" variant="outline" aria-expanded={editing} aria-controls="campaign-model-form"
+          onClick={() => setEditing(!editing)}>
+          {editing ? "Close" : override ? "Change override" : "Use a different model"}
+        </Button>
+      </div>
+      {editing && <form action={action} className="workspace-editor campaign-model-form" id="campaign-model-form">
         <input type="hidden" name="revision" value={saved.revision} />
         <fieldset disabled={pending}>
           <div className="campaign-settings-intro">
@@ -57,7 +77,7 @@ export function CampaignSettings({
             <Input name="baseUrl" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)}
               placeholder="https://provider.example.com/v1" maxLength={2048} />
           </label>
-          <label>Model API key
+          <label><span className="campaign-label-icon"><KeyRound size={14} aria-hidden="true" /> Model API key</span>
             <Input name="modelKey" type="password" ref={modelKey} autoComplete="new-password" maxLength={4096}
               aria-describedby="model-api-key-hint" />
           </label>
@@ -73,7 +93,8 @@ export function CampaignSettings({
         <Button type="submit" disabled={pending || (firstStart && !canStart)}>
           {pending ? "Syncing model settings…" : firstStart ? "Save model and start" : "Save model"}
         </Button>
-      </form>
-    </details>
+      </form>}
+      {!editing && result.error && <p className="form-error" role="alert">{result.error}</p>}
+    </section>
   );
 }

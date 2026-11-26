@@ -165,3 +165,37 @@ test("derives readable agent names and initials from profile IDs", async () => {
   assert.equal(agentInitials("Content Writer"), "CW");
   assert.equal(agentInitials("Researcher"), "RE");
 });
+
+test("describes activity times relative to now", async () => {
+  const { relativeTime } = await import("../lib/relative-time");
+  const now = 1_800_000_000_000;
+  assert.equal(relativeTime(new Date(now - 10_000), now), "just now");
+  assert.equal(relativeTime(new Date(now - 3 * 3600_000), now), "3 h ago");
+  assert.equal(relativeTime(new Date(now - 2 * 86400_000), now), "2 days ago");
+  assert.equal(relativeTime(new Date(now + 5 * 60_000), now), "in 5 min");
+});
+
+test("offers publishing modes as option cards with the saved mode marked", (t) => {
+  const require = createRequire(import.meta.url);
+  const actionsPath = require.resolve("../app/actions/workspace.ts");
+  const modePath = require.resolve("../components/campaign-mode-settings.tsx");
+  const original = require.cache[actionsPath];
+  const actions = new Module(actionsPath);
+  actions.exports = { saveCampaignModeAction: async () => ({}) };
+  actions.loaded = true;
+  require.cache[actionsPath] = actions;
+  t.after(() => {
+    if (original) require.cache[actionsPath] = original;
+    else delete require.cache[actionsPath];
+    delete require.cache[modePath];
+  });
+  const { CampaignModeSettings } = require(modePath) as typeof import("../components/campaign-mode-settings");
+  const html = renderToStaticMarkup(createElement(CampaignModeSettings, {
+    campaignId: "seo", installed: true,
+    configuration: { revision: "a".repeat(64), provider: "", modelId: "", baseUrl: "", hasModelKey: false, mode: "control" },
+  }));
+  assert.equal(html.match(/type="radio" name="mode"/g)?.length, 3);
+  assert.match(html, /<input type="radio" name="mode" checked="" value="control"\/>/);
+  assert.match(html, /Control<span class="campaign-mode-current">Current<\/span>/);
+  assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""[^>]*>Save mode<\/button>/);
+});
