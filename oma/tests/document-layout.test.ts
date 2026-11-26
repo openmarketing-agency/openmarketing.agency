@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Renderer } from "@openuidev/react-lang";
-import { createElement } from "react";
+import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { documentLibrary, swatch } from "../lib/document-library";
@@ -88,11 +88,11 @@ test("shows the saved system prompt, user message, and OpenUI source under a des
   require.cache[actionPath] = action;
   t.after(() => { delete require.cache[actionPath]; delete require.cache[componentPath]; });
   const { DesignedDocument } = require(componentPath) as typeof import("../components/designed-document");
-  const html = renderToStaticMarkup(createElement(DesignedDocument, {
+  const props = {
     target: { kind: "brand", id: "fernway" },
     layout: { source: program, generatedAt: 1, generation: { systemPrompt: "SYSTEM PROMPT", userMessage: "Make this Markdown visually better" } },
-    children: createElement("p", null, "standard"),
-  }));
+  } as ComponentProps<typeof DesignedDocument>;
+  const html = renderToStaticMarkup(createElement(DesignedDocument, props, createElement("p", null, "standard")));
   assert.match(html, /<summary>Generation details<\/summary>/);
   assert.match(html, /<code>SYSTEM PROMPT<\/code>/);
   assert.match(html, /<code>Make this Markdown visually better<\/code>/);
