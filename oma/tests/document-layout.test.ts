@@ -45,3 +45,25 @@ test("renders swatches only for literal hex colors through the OpenUI library", 
   assert.match(html, /style="background:#2F5D50"/);
   assert.match(html, /Talk like a neighbor\./);
 });
+
+test("repairs small model slips instead of discarding the whole page", async () => {
+  const { trimArguments } = await import("../lib/server/openui-repair");
+  assert.equal(trimArguments(`k = Kpis([Kpi("A, (b)", x.y, "number", null, null, "hint, with comma"), Kpi("B", 1)])`, { Kpi: 3 }),
+    `k = Kpis([Kpi("A, (b)", x.y, "number"), Kpi("B", 1)])`);
+  // A reference to a card the model never defined is dropped, and the rest of the page stays valid.
+  const missing = program.replace("[hero, colors, voice]", "[hero, colors, ghost, voice]");
+  assert.equal(validateDocumentLayout(missing, markdown), program);
+  const orphan = program + "\nextra = Card([CardHeader(\"Unused\")])";
+  assert.throws(() => validateDocumentLayout(orphan, markdown), /Connect extra to root/);
+});
+
+test("repairs small model slips instead of discarding the whole page", async () => {
+  const { trimArguments } = await import("../lib/server/openui-repair");
+  assert.equal(trimArguments(`k = Kpis([Kpi("A, (b)", x.y, "number", null, null, "hint, with comma"), Kpi("B", 1)])`, { Kpi: 3 }),
+    `k = Kpis([Kpi("A, (b)", x.y, "number"), Kpi("B", 1)])`);
+  // A reference to a card the model never defined is dropped, and the rest of the page stays valid.
+  const missing = program.replace("[hero, colors, voice]", "[hero, colors, ghost, voice]");
+  assert.equal(validateDocumentLayout(missing, markdown), program);
+  const orphan = program + "\nextra = Card([CardHeader(\"Unused\")])";
+  assert.throws(() => validateDocumentLayout(orphan, markdown), /Connect extra to root/);
+});

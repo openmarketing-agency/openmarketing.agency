@@ -5,6 +5,7 @@ import { createParser, generateSystemPrompt, parseExpression, split, tokenize, w
 import { analyticsDateRange, observationColumns, observationQueryTool } from "../analytics";
 import { observationDashboard, observationQueryStatement } from "../observation-dashboard";
 import spec from "./analytics-library.spec.json";
+import { dropUndefinedReferences, structureProblem, trimArguments } from "./openui-repair";
 import type { MeasurementField } from "./campaign-observations";
 
 const library = spec as LibrarySpec;
@@ -61,7 +62,9 @@ function binding(node: ASTNode | undefined, dataset: keyof typeof fields, allowe
 /** Validate the live dashboard and return the measurement definitions its bindings use. */
 export function validateAnalyticsProgram(value: string, measurements: MeasurementField[] = []) {
   const fenced = /^\s*```(?:openui(?:-lang)?)?\s*\n([\s\S]*?)\n```\s*$/i.exec(value);
-  const source = (fenced ? fenced[1] : value).trim();
+  // The live query has exactly one valid form, so restore it when a model fills in defaults or changes the refresh.
+  const source = dropUndefinedReferences(trimArguments((fenced ? fenced[1] : value).trim()
+    .replace(new RegExp(`^${queryName}\\s*=\\s*Query\\(\\s*"${observationQueryTool}".*$`, "m"), observationQueryStatement), maxArgs), parser);
   if (!source || source.length > 16_000 || /\]\]>openui:|<script/i.test(source)) {
     throw new Error("Return a short OpenUI Lang dashboard without scripts.");
   }
@@ -69,8 +72,9 @@ export function validateAnalyticsProgram(value: string, measurements: Measuremen
   const { root, meta, stateDeclarations, queryStatements, mutationStatements } = parser.parse(source);
   const errors = meta.errors.filter(({ severity }) => severity !== "warning");
   if (errors.length) throw new Error("Use the documented component arguments. OpenUI could not parse the layout.");
-  if (meta.incomplete || meta.unresolved.length || meta.orphaned.length || root?.typeName !== "Dashboard" ||
-      !Array.isArray(root.props.children) || !root.props.children.length) {
+  const problem = structureProblem(meta);
+  if (problem) throw new Error(problem);
+  if (root?.typeName !== "Dashboard" || !Array.isArray(root.props.children) || !root.props.children.length) {
     throw new Error("Return a complete Dashboard with every component connected to root.");
   }
 

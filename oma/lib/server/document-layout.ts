@@ -7,6 +7,7 @@ import { z } from "zod";
 import { getDb, writeTransaction } from "../db";
 import { workspaceRequest, WorkspaceRequestError } from "./agent-workspace";
 import spec from "./document-library.spec.json";
+import { dropUndefinedReferences, structureProblem } from "./openui-repair";
 
 export type DocumentKind = "brand" | "playbook" | "research";
 export type DocumentLayout = { source: string; generatedAt: number };
@@ -59,7 +60,7 @@ export function documentHash(markdown: string) {
 /** Check that a generated program only uses read-only document components and the document's own colors. */
 export function validateDocumentLayout(value: string, markdown: string) {
   const fenced = /^\s*```(?:openui(?:-lang)?)?\s*\n([\s\S]*?)\n```\s*$/i.exec(value);
-  const source = (fenced ? fenced[1] : value).trim();
+  const source = dropUndefinedReferences((fenced ? fenced[1] : value).trim(), parser);
   if (!source || source.length > maxSource || /\]\]>openui:|<script|<img|!\[[^\]]*\]\(/i.test(source)) {
     throw new Error("Return a complete OpenUI Lang program under 20,000 characters without scripts.");
   }
@@ -84,9 +85,9 @@ export function validateDocumentLayout(value: string, markdown: string) {
   }
   const { root, meta, stateDeclarations, queryStatements, mutationStatements } = parser.parse(source);
   if (meta.errors.some(({ severity }) => severity !== "warning")) throw new Error("Use the documented component arguments. OpenUI could not parse the layout.");
-  if (meta.incomplete || meta.unresolved.length || meta.orphaned.length || root?.typeName !== "Stack") {
-    throw new Error("Return a complete program rooted in a Stack with every statement connected to root.");
-  }
+  const problem = structureProblem(meta);
+  if (problem) throw new Error(problem);
+  if (root?.typeName !== "Stack") throw new Error("Return a complete program rooted in a Stack with every statement connected to root.");
   if (queryStatements.length || mutationStatements.length || Object.keys(stateDeclarations).length) {
     throw new Error("Leave out queries, mutations, and $variables. The page is read-only.");
   }
