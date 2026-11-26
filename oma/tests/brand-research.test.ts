@@ -1,7 +1,7 @@
 /** Verifies that brand research opens as a reader with a grouped, searchable document list and page controls. */
 
 import assert from "node:assert/strict";
-import Module, { createRequire } from "node:module";
+import { createRequire } from "node:module";
 import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -24,13 +24,8 @@ test("groups research documents by folder in saved order", () => {
 
 test("shows the open document beside the list with previous and next links", (t) => {
   const require = createRequire(import.meta.url);
-  const actionPath = require.resolve("../app/actions/document-layout.ts");
   const sourcesPath = require.resolve("../components/brand-sources.tsx");
-  const action = new Module(actionPath);
-  action.exports = { designDocumentAction: async () => ({}) };
-  action.loaded = true;
-  require.cache[actionPath] = action;
-  t.after(() => { delete require.cache[actionPath]; delete require.cache[sourcesPath]; });
+  t.after(() => { delete require.cache[sourcesPath]; });
   const { BrandResearch } = require(sourcesPath) as typeof import("../components/brand-sources");
   const brand = { id: "clozva", name: "CLOZVA", description: "", revision: "", knowledge: "", palette: {}, logos: {}, assets: {}, documents };
   const selected = { document: { ...documents[1], content: "# Competitors\n\nCrocs and Joybees." } };

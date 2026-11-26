@@ -78,15 +78,10 @@ test("teaches the model with a brand and a playbook example that pass validation
 });
 
 test("shows the saved system prompt, user message, and OpenUI source under a designed page", async (t) => {
-  const { createRequire, default: Module } = await import("node:module");
+  const { createRequire } = await import("node:module");
   const require = createRequire(import.meta.url);
-  const actionPath = require.resolve("../app/actions/document-layout.ts");
   const componentPath = require.resolve("../components/designed-document.tsx");
-  const action = new Module(actionPath);
-  action.exports = { designDocumentAction: async () => ({}) };
-  action.loaded = true;
-  require.cache[actionPath] = action;
-  t.after(() => { delete require.cache[actionPath]; delete require.cache[componentPath]; });
+  t.after(() => { delete require.cache[componentPath]; });
   const { DesignedDocument } = require(componentPath) as typeof import("../components/designed-document");
   const props = {
     target: { kind: "brand", id: "fernway" },
@@ -97,4 +92,57 @@ test("shows the saved system prompt, user message, and OpenUI source under a des
   assert.match(html, /<code>SYSTEM PROMPT<\/code>/);
   assert.match(html, /<code>Make this Markdown visually better<\/code>/);
   assert.match(html, /aria-label="Agent-generated OpenUI source"><code>root = Stack/);
+});
+
+test("streams the page as the agent writes it, retries one invalid draft, and saves the exact prompts", async (t) => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { createServer } = await import("node:http");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { DatabaseSync } = await import("node:sqlite");
+  const dir = await mkdtemp(join(tmpdir(), "oma-layout-"));
+  const env = { OMA_DATA_DIR: dir, OMA_WORKSPACE_SOCKET: join(dir, "ws") };
+  const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  // An installation from before the prompt columns upgrades in place.
+  const old = new DatabaseSync(join(dir, "oma.sqlite"));
+  old.exec(`CREATE TABLE users (id TEXT PRIMARY KEY, onboarding_state TEXT); INSERT INTO users VALUES ('owner', NULL);
+    CREATE TABLE document_layouts (user_id TEXT NOT NULL, content_hash TEXT NOT NULL, source TEXT, generated_at INTEGER, attempt TEXT, lease_until INTEGER, PRIMARY KEY (user_id, content_hash));
+    PRAGMA user_version = 9;`);
+  old.close();
+
+  const requests: { prompt: string; message: string }[] = [];
+  const server = createServer(async (request, response) => {
+    let body = "";
+    for await (const chunk of request) body += chunk;
+    requests.push(JSON.parse(body));
+    response.writeHead(200, { "Content-Type": "application/x-ndjson" });
+    const draft = requests.length === 1 ? program.replace("root = Stack(", "root = Card(") : program;
+    const half = Math.floor(draft.length / 2);
+    for (const text of [draft.slice(0, half), draft.slice(half)]) response.write(JSON.stringify({ type: "delta", text }) + "\n");
+    response.end(JSON.stringify({ type: "done" }) + "\n");
+  });
+  await new Promise<void>((resolve) => server.listen(env.OMA_WORKSPACE_SOCKET, resolve));
+  const { getDb } = await import("../lib/db");
+  t.after(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    getDb().close();
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const { documentLayoutMessage, generateDocumentLayout, readDocumentLayout } = await import("../lib/server/document-layout");
+  const events: { type: string }[] = [];
+  const layout = await generateDocumentLayout("owner", markdown, (event) => events.push(event));
+  assert.deepEqual(events.map(({ type }) => type), ["delta", "delta", "retry", "delta", "delta"]);
+  assert.equal(layout.source, program);
+  assert.equal(requests[0].message, documentLayoutMessage(markdown));
+  assert.match(requests[1].prompt, /Correct the following validation issue/);
+  const saved = readDocumentLayout("owner", markdown).layout;
+  assert.equal(saved?.source, program);
+  assert.equal(saved?.generation?.userMessage, "Make this Markdown visually better, easy to read, and fun to read. Keep all of its content.\n\n" + markdown);
+  assert.equal(saved?.generation?.systemPrompt, requests[1].prompt);
 });

@@ -5,7 +5,7 @@ import { createParser, generateSystemPrompt, parseExpression, split, tokenize, w
 import { z } from "zod";
 
 import { getDb, writeTransaction } from "../db";
-import { workspaceRequest, WorkspaceRequestError } from "./agent-workspace";
+import { workspaceStream, WorkspaceRequestError } from "./agent-workspace";
 import spec from "./document-library.spec.json";
 import { dropUndefinedReferences, structureProblem } from "./openui-repair";
 
@@ -130,55 +130,81 @@ export function readDocumentLayout(userId: string, markdown: string): DocumentLa
   return {
     layout: row?.source && row.generated_at ? {
       source: row.source, generatedAt: row.generated_at,
-      generation: row.system_prompt ? { systemPrompt: row.system_prompt, userMessage: row.user_message ?? undefined } : undefined,
+      // The user message is the instruction plus this exact Markdown, so older rows can show it too.
+      generation: row.system_prompt ? { systemPrompt: row.system_prompt, userMessage: row.user_message ?? documentLayoutMessage(markdown) } : undefined,
     } : undefined,
     generating: Boolean(row?.lease_until && row.lease_until > Date.now()),
   };
 }
 
-const generated = z.object({ source: z.string(), userMessage: z.string().optional() });
+const instruction = "Make this Markdown visually better, easy to read, and fun to read. Keep all of its content.";
 
-export async function generateDocumentLayout(userId: string, markdown: string): Promise<DocumentLayout> {
+/** The exact user message sent with a document, so the saved design can always show it. */
+export function documentLayoutMessage(markdown: string) {
+  return instruction + "\n\n" + markdown;
+}
+
+const streamEvent = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("delta"), text: z.string() }),
+  z.object({ type: z.literal("done") }),
+  z.object({ type: z.literal("error"), status: z.number().int(), message: z.string() }),
+]);
+
+export type DesignEvent = { type: "delta"; text: string } | { type: "retry"; message: string };
+
+/** Stream the default agent's page as it is written, then validate it and save it for this exact Markdown. */
+export async function generateDocumentLayout(userId: string, markdown: string, onEvent: (event: DesignEvent) => void = () => {}): Promise<DocumentLayout> {
   if (!markdown.trim()) throw new WorkspaceRequestError(422, "Save some content before designing this page.");
   if (markdown.length > maxLayoutDocument) throw new WorkspaceRequestError(422, "This document is too long to design. Keep it under 48,000 characters.");
   const db = getDb();
   const hash = documentHash(markdown);
   const attempt = randomUUID();
+  const userMessage = documentLayoutMessage(markdown);
   writeTransaction(db, () => {
     const row = readRow(userId, hash);
     if (row?.lease_until && row.lease_until > Date.now()) throw new WorkspaceRequestError(409, "This page is already being designed.");
     db.prepare(`
       INSERT INTO document_layouts (user_id, content_hash, attempt, lease_until) VALUES (?, ?, ?, ?)
       ON CONFLICT(user_id, content_hash) DO UPDATE SET attempt = excluded.attempt, lease_until = excluded.lease_until
-    `).run(userId, hash, attempt, Date.now() + 120_000);
+    `).run(userId, hash, attempt, Date.now() + 240_000);
   });
   try {
     let correction = "";
     for (let attemptNo = 0; attemptNo < 2; attemptNo++) {
       const systemPrompt = documentLayoutPrompt + correction;
-      let reply: unknown;
+      let text = "";
       try {
-        reply = await workspaceRequest("/workspace/documents/layout", { document: markdown, prompt: systemPrompt }, "POST");
+        await workspaceStream("/workspace/documents/layout", { prompt: systemPrompt, message: userMessage }, (value) => {
+          const event = streamEvent.safeParse(value).data;
+          if (event?.type === "delta") {
+            text += event.text;
+            onEvent(event);
+          } else if (event?.type === "error") {
+            throw new WorkspaceRequestError(event.status, event.message);
+          }
+        });
       } catch (error) {
-        if (error instanceof WorkspaceRequestError && error.status === 404 && error.message === "Unknown workspace request.") {
+        // Older oma-agent builds either lack the route or expect the earlier request shape.
+        if (error instanceof WorkspaceRequestError && ((error.status === 404 && error.message === "Unknown workspace request.")
+          || (error.status === 422 && error.message === "Check the document layout request."))) {
           throw new WorkspaceRequestError(503, "Update oma-agent to design pages with OpenUI.");
         }
         throw error;
       }
       try {
-        const output = generated.safeParse(reply).data;
-        if (!output) throw new Error("Return OpenUI Lang source as plain text.");
-        const source = validateDocumentLayout(output.source, markdown);
+        const source = validateDocumentLayout(text, markdown);
         const generatedAt = Date.now();
         const update = db.prepare(`
           UPDATE document_layouts SET source = ?, system_prompt = ?, user_message = ?, generated_at = ?, attempt = NULL, lease_until = NULL
           WHERE user_id = ? AND content_hash = ? AND attempt = ?
-        `).run(source, systemPrompt, output.userMessage ?? null, generatedAt, userId, hash, attempt);
+        `).run(source, systemPrompt, userMessage, generatedAt, userId, hash, attempt);
         if (!update.changes) throw new WorkspaceRequestError(409, "Page design was superseded. Reload the page.");
-        return { source, generatedAt, generation: { systemPrompt, userMessage: output.userMessage } };
+        return { source, generatedAt, generation: { systemPrompt, userMessage } };
       } catch (error) {
         if (error instanceof WorkspaceRequestError) throw error;
-        correction = "\n\nCorrect the following validation issue in a new complete program: " + (error instanceof Error ? error.message : "Follow the example.");
+        const message = error instanceof Error ? error.message : "Follow the example.";
+        correction = "\n\nCorrect the following validation issue in a new complete program: " + message;
+        if (attemptNo === 0) onEvent({ type: "retry", message });
       }
     }
     throw new WorkspaceRequestError(502, "The default agent returned an invalid page design. Try again.");

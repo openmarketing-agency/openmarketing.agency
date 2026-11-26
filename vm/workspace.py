@@ -920,23 +920,49 @@ def default_agent_completion(root, system, user_message, *, max_tokens, timeout,
     return raw
 
 
-DOCUMENT_INSTRUCTION = "Make this Markdown visually better, easy to read, and fun to read. Keep all of its content."
-
-
-def generate_document_layout(root, request):
-    if (not isinstance(request, dict) or request.keys() != {"document", "prompt"}
-            or not isinstance(request["document"], str) or not 0 < len(request["document"]) <= 48_000
-            or not isinstance(request["prompt"], str) or not 0 < len(request["prompt"]) <= 32_768):
+def document_layout_messages(request):
+    if (not isinstance(request, dict) or request.keys() != {"prompt", "message"}
+            or not isinstance(request["prompt"], str) or not 0 < len(request["prompt"]) <= 32_768
+            or not isinstance(request["message"], str) or not 0 < len(request["message"]) <= 50_000):
         raise WorkspaceError(422, "Check the document layout request.")
-    user_message = DOCUMENT_INSTRUCTION + "\n\n" + request["document"]
-    raw = default_agent_completion(root, request["prompt"], user_message, max_tokens=8000, timeout=90.0,
-                                   unavailable="Page design needs oma-agent’s default profile.",
-                                   truncated="The default agent reached its response limit before finishing the page. Try again.",
-                                   empty="The default agent returned an empty page. Try again.")
-    source = raw.strip()
-    if len(source) > 24_000:
-        raise WorkspaceError(502, "The default agent returned a page that exceeds the layout limit.")
-    return {"source": source, "userMessage": user_message}
+    return [{"role": "system", "content": request["prompt"]}, {"role": "user", "content": request["message"]}]
+
+
+def stream_document_layout(root, messages):
+    """Yield the default profile's OpenUI page as the model writes it."""
+    from agent.auxiliary_client import call_llm
+    from agent.runtime_scope import bind_profile_scope
+    from hermes_cli.oma_campaigns.install import default_home
+
+    home = default_home()
+    if home != root.parent.resolve():
+        raise WorkspaceError(503, "Page design needs oma-agent’s default profile.")
+    try:
+        with bind_profile_scope(home):
+            result = call_llm(messages=messages, tools=[], max_tokens=8000, timeout=90.0,
+                              reasoning_config={"enabled": False}, stream=True)
+            # Some provider shims ignore stream=True and return the completed response.
+            if hasattr(result, "choices"):
+                choice = result.choices[0] if result.choices else None
+                if getattr(choice, "finish_reason", None) == "length":
+                    raise WorkspaceError(502, "The default agent reached its response limit before finishing the page. Try again.")
+                text = getattr(getattr(choice, "message", None), "content", None)
+                if isinstance(text, str) and text:
+                    yield text
+                return
+            for chunk in result:
+                choices = getattr(chunk, "choices", None) or []
+                if not choices:
+                    continue
+                text = getattr(getattr(choices[0], "delta", None), "content", None)
+                if isinstance(text, str) and text:
+                    yield text
+                if getattr(choices[0], "finish_reason", None) == "length":
+                    raise WorkspaceError(502, "The default agent reached its response limit before finishing the page. Try again.")
+    except WorkspaceError:
+        raise
+    except Exception:
+        raise WorkspaceError(502, "The default agent’s model request failed. Check its provider settings and try again.") from None
 
 
 def generate_analytics(root, request):
@@ -2138,24 +2164,51 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self.reply(200, result if self.headers.get("X-OMA-Analytics-Details") == "1" else result["source"])
 
     def post_document_layout(self):
+        """Stream newline-delimited JSON events: delta text as the model writes, then done or error."""
         try:
             if self.headers.get_content_type() != "application/json":
                 raise WorkspaceError(415, "Page design requires a JSON request.")
-            request = self.read_update(131_072)
+            messages = document_layout_messages(self.read_update(131_072))
             if not self.server.layout_lock.acquire(blocking=False):
                 raise WorkspaceError(429, "oma-agent is designing another page. Try again in a moment.")
-            try:
-                result = generate_document_layout(self.server.root, request)
-            finally:
-                self.server.layout_lock.release()
         except (ValueError, RecursionError):
             self.reply(400, {"message": "Invalid workspace request."})
+            return
         except WorkspaceError as error:
             self.reply(error.status, {"message": str(error)})
+            return
         except OSError:
             self.reply(503, {"message": "Could not read the agent workspace."})
-        else:
-            self.reply(200, result)
+            return
+
+        def send(event):
+            self.wfile.write(json.dumps(event).encode() + b"\n")
+            self.wfile.flush()
+
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.close_connection = True
+            size = 0
+            for text in stream_document_layout(self.server.root, messages):
+                size += len(text)
+                if size > 24_000:
+                    raise WorkspaceError(502, "The default agent returned a page that exceeds the layout limit.")
+                send({"type": "delta", "text": text})
+            if not size:
+                raise WorkspaceError(502, "The default agent returned an empty page. Try again.")
+            send({"type": "done"})
+        except WorkspaceError as error:
+            try:
+                send({"type": "error", "status": error.status, "message": str(error)})
+            except OSError:
+                pass
+        except OSError:
+            pass
+        finally:
+            self.server.layout_lock.release()
 
     def do_POST(self):
         if self.path == "/workspace/analytics":

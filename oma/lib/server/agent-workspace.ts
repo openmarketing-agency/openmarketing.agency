@@ -143,13 +143,63 @@ export class WorkspaceRequestError extends Error {
 const unavailable = () => new WorkspaceRequestError(503, "Couldn’t reach the agent workspace. Check that oma-agent is running.");
 
 /** Call a trusted workspace endpoint over the private Unix socket. */
+/** Send a JSON request and pass each newline-delimited JSON event the workspace streams back to `onEvent`. */
+export async function workspaceStream(path: string, body: object, onEvent: (event: unknown) => void, timeout = 110_000): Promise<void> {
+  const socketPath = process.env.OMA_WORKSPACE_SOCKET;
+  if (!socketPath) throw unavailable();
+  const payload = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = request({
+      socketPath, path, method: "POST", signal: AbortSignal.timeout(timeout),
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+    }, (response) => {
+      const status = response.statusCode ?? 503;
+      let buffered = "";
+      let size = 0;
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => {
+        size += chunk.length;
+        if (size > 4 * 1024 * 1024) {
+          req.destroy(unavailable());
+          return;
+        }
+        buffered += chunk;
+        if (status !== 200) return;
+        const lines = buffered.split("\n");
+        buffered = lines.pop() ?? "";
+        try {
+          for (const line of lines) if (line.trim()) onEvent(JSON.parse(line));
+        } catch (error) {
+          req.destroy(error instanceof Error ? error : unavailable());
+        }
+      });
+      response.on("error", () => reject(unavailable()));
+      response.on("end", () => {
+        if (status === 200) {
+          try {
+            if (buffered.trim()) onEvent(JSON.parse(buffered));
+            resolve();
+          } catch (error) {
+            reject(error instanceof WorkspaceRequestError ? error : unavailable());
+          }
+          return;
+        }
+        const parsed = z.object({ message: z.string() }).safeParse((() => { try { return JSON.parse(buffered); } catch { return null; } })());
+        reject(new WorkspaceRequestError(status, parsed.success ? parsed.data.message : "The agent workspace request failed."));
+      });
+    });
+    req.on("error", (error) => reject(error instanceof WorkspaceRequestError ? error : unavailable()));
+    req.end(payload);
+  });
+}
+
 export async function workspaceRequest(
   path: string, body?: object, method = body ? "PUT" : "GET", headers?: Record<string, string>,
 ): Promise<unknown> {
   const socketPath = process.env.OMA_WORKSPACE_SOCKET;
   if (!socketPath) throw unavailable();
   const payload = body ? JSON.stringify(body) : undefined;
-  const timeout = path.endsWith("/deploy") ? 130_000 : path.endsWith("/documents/layout") ? 100_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000
+  const timeout = path.endsWith("/deploy") ? 130_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000
     : path.endsWith("/custom-mcp") ? 15_000 : 6_000;
   return new Promise((resolve, reject) => {
     const req = request({
