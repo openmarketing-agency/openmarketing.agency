@@ -920,18 +920,15 @@ def default_agent_completion(root, system, user_message, *, max_tokens, timeout,
     return raw
 
 
-DOCUMENT_KINDS = {"brand": "brand knowledge", "playbook": "playbook strategy", "research": "brand research document"}
+DOCUMENT_INSTRUCTION = "Make this Markdown visually better, easy to read, and fun to read. Keep all of its content."
 
 
 def generate_document_layout(root, request):
-    if (not isinstance(request, dict) or request.keys() != {"kind", "title", "document", "prompt"}
-            or request["kind"] not in DOCUMENT_KINDS
-            or not isinstance(request["title"], str) or len(request["title"]) > 200
+    if (not isinstance(request, dict) or request.keys() != {"document", "prompt"}
             or not isinstance(request["document"], str) or not 0 < len(request["document"]) <= 48_000
             or not isinstance(request["prompt"], str) or not 0 < len(request["prompt"]) <= 32_768):
         raise WorkspaceError(422, "Check the document layout request.")
-    user_message = (f"Design the page for this {DOCUMENT_KINDS[request['kind']]}.\n\nTitle: {request['title']}\n\n"
-                    "<document>\n" + request["document"] + "\n</document>")
+    user_message = DOCUMENT_INSTRUCTION + "\n\n" + request["document"]
     raw = default_agent_completion(root, request["prompt"], user_message, max_tokens=8000, timeout=90.0,
                                    unavailable="Page design needs oma-agent’s default profile.",
                                    truncated="The default agent reached its response limit before finishing the page. Try again.",
