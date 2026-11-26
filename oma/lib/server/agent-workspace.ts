@@ -149,7 +149,7 @@ export async function workspaceRequest(
   const socketPath = process.env.OMA_WORKSPACE_SOCKET;
   if (!socketPath) throw unavailable();
   const payload = body ? JSON.stringify(body) : undefined;
-  const timeout = path.endsWith("/deploy") ? 130_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000
+  const timeout = path.endsWith("/deploy") ? 130_000 : path.endsWith("/documents/layout") ? 100_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000
     : path.endsWith("/custom-mcp") ? 15_000 : 6_000;
   return new Promise((resolve, reject) => {
     const req = request({

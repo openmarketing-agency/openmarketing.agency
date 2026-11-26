@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, ArrowUpRight, FileText } from "lucide-react";
 
+import { DesignedDocument } from "@/components/designed-document";
 import { WorkspaceDocument } from "@/components/workspace-document";
+import type { DocumentLayoutState } from "@/lib/server/document-layout";
 import type { SavedBrand, SavedBrandDocument } from "@/lib/server/agent-workspace";
 import { parseWorkspaceDocument } from "@/lib/workspace-document";
 
@@ -59,6 +61,7 @@ type Props = {
   brand: SavedBrand;
   path: string;
   selected?: { document?: SavedBrandDocument; error?: string };
+  layout?: DocumentLayoutState;
 };
 
 export function BrandChannels({ brand }: { brand: SavedBrand }) {
@@ -71,7 +74,16 @@ export function BrandChannels({ brand }: { brand: SavedBrand }) {
   );
 }
 
-export function BrandResearch({ brand, path, selected }: Props) {
+function ResearchDocument({ brandId, document, layout }: { brandId: string; document: SavedBrandDocument; layout?: DocumentLayoutState }) {
+  const standard = <WorkspaceDocument document={parseWorkspaceDocument(document.content)} name={labelFor(document.title)}
+    empty="This document is empty." contents />;
+  return layout
+    ? <DesignedDocument target={{ kind: "research", id: brandId, documentId: document.id }} layout={layout.layout}
+      generating={layout.generating}>{standard}</DesignedDocument>
+    : standard;
+}
+
+export function BrandResearch({ brand, path, selected, layout }: Props) {
   const hasDocuments = Boolean(brand.designSource || brand.documents?.length || brand.internalDocumentation);
   const researchPath = path + "?view=research";
   const documentHref = (id: string) => researchPath + "&document=" + id + "#brand-document";
@@ -91,8 +103,7 @@ export function BrandResearch({ brand, path, selected }: Props) {
             {selected.document && <small className="record-knowledge-source">{selected.document.path}</small>}
           </div>
           {selected.document
-            ? <WorkspaceDocument document={parseWorkspaceDocument(selected.document.content)} name={labelFor(selected.document.title)}
-              empty="This document is empty." contents />
+            ? <ResearchDocument brandId={brand.id} document={selected.document} layout={layout} />
             : <p className="form-error" role="alert">{selected.error}</p>}
         </section>
       ) : hasDocuments && (
