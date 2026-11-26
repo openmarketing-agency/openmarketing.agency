@@ -91,7 +91,8 @@ test("shows the saved system prompt, user message, and OpenUI source under a des
   const html = renderToStaticMarkup(createElement(DesignedDocument, {
     target: { kind: "brand", id: "fernway" },
     layout: { source: program, generatedAt: 1, generation: { systemPrompt: "SYSTEM PROMPT", userMessage: "Make this Markdown visually better" } },
-  }, createElement("p", null, "standard")));
+    children: createElement("p", null, "standard"),
+  }));
   assert.match(html, /<summary>Generation details<\/summary>/);
   assert.match(html, /<code>SYSTEM PROMPT<\/code>/);
   assert.match(html, /<code>Make this Markdown visually better<\/code>/);
