@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowRight, BookOpen, Tag } from "lucide-react";
 
 import type { AgentWorkspace, SavedCampaign } from "@/lib/server/agent-workspace";
+import { describeSchedule } from "@/lib/job-schedule";
 
 export function WorkspaceIndex({ workspace }: { workspace: AgentWorkspace }) {
   return (
@@ -121,7 +122,7 @@ export function CampaignAgents({ workspace, campaign, ids }: {
                     <h4>Scheduled work</h4>
                     <ul className="workspace-copy-list">
                       {agent.jobs.map(({ name, schedule, timezone, repeat }, index) => (
-                        <li key={index}>{[name, schedule, timezone, repeat && repeat + (repeat === 1 ? " run" : " runs")]
+                        <li key={index} title={schedule || undefined}>{[name, schedule && describeSchedule(schedule), timezone, repeat && repeat + (repeat === 1 ? " run" : " runs")]
                           .filter(Boolean).join(" · ")}</li>
                       ))}
                     </ul>

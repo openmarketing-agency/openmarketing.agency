@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Bot, CalendarClock, SlidersHorizontal } from "lucide-react";
 
 import { WorkspaceText } from "@/components/workspace-text";
+import { describeSchedule } from "@/lib/job-schedule";
 import type { SavedAgent, SavedCampaign } from "@/lib/server/agent-workspace";
 
 export function AgentProfileDetail({ agent, campaign, profile, error }: {
@@ -59,7 +60,7 @@ export function AgentProfileDetail({ agent, campaign, profile, error }: {
                 {agent.jobs.map(({ name, schedule, timezone, repeat }, index) => (
                   <li key={index}>
                     <h3>{name || "Scheduled job"}</h3>
-                    {schedule && <p>{schedule}</p>}
+                    {schedule && <p title={schedule}>{describeSchedule(schedule)}</p>}
                     {(timezone || repeat) && <p className="agent-profile-job-details">
                       {[timezone, repeat && repeat + (repeat === 1 ? " run" : " runs")].filter(Boolean).join(" · ")}
                     </p>}
