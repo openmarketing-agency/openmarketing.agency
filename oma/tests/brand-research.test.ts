@@ -35,10 +35,11 @@ test("shows the open document beside the list with previous and next links", (t)
   const brand = { id: "clozva", name: "CLOZVA", description: "", revision: "", knowledge: "", palette: {}, logos: {}, assets: {}, documents };
   const selected = { document: { ...documents[1], content: "# Competitors\n\nCrocs and Joybees." } };
   const html = renderToStaticMarkup(createElement(BrandResearch, { brand, path: "/workspace/brands/clozva", selected }));
-  // The switcher shows the open document and keeps the list closed so the document gets the full width.
-  assert.match(html, /aria-expanded="false"[^>]*><span><small>Research<\/small><strong>Competitors<\/strong><\/span>/);
-  assert.match(html, /All 3 documents/);
-  assert.doesNotMatch(html, /research-switcher-panel/);
+  // Every document stays visible above the open one, grouped under readable folder names.
+  assert.match(html, /<nav class="research-index" aria-label="Research documents">/);
+  assert.match(html, /<dt title="research">Research<\/dt>.*<dt title="design">Design<\/dt>/s);
+  assert.match(html, /aria-current="page" href="[^"]+">Competitors<\/a>/);
+  assert.equal(html.match(/<a [^>]*href="\/workspace\/brands\/clozva\?view=research&amp;document=/g)?.length, 5);
   assert.match(html, /<span>2 of 3<\/span>/);
   assert.match(html, /aria-label="Previous: Market"/);
   assert.match(html, /aria-label="Next: DESIGN"/);
