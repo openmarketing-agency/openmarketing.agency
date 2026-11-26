@@ -27,7 +27,7 @@
 .task-group summary { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 7px; background: var(--raised); cursor: pointer; font-weight: 600; list-style: none; }
 .task-group summary::-webkit-details-marker { display: none; }
 .task-group[open] summary { border-radius: 7px 7px 0 0; }
-.task-group[open] > summary .task-chevron, .task-detail-section[open] > summary .task-chevron { transform: rotate(90deg); }
+.task-group[open] > summary .task-chevron { transform: rotate(90deg); }
 .task-group[data-status="blocked"] { border-color: var(--negative-border); }
 .task-group[data-status="blocked"] summary { background: var(--negative-soft); color: var(--negative); }
 .task-group summary small { margin-left: 3px; color: var(--muted); font-weight: 500; font-size: 12px; }
@@ -56,17 +56,26 @@
 .task-detail-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .tasks-page .task-detail-close { flex: none; padding-inline: 8px; }
 .task-detail-content { flex: 1; min-block-size: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: 0 12px 10px; }
-.task-detail-text, .task-detail .tasks-warning p { white-space: pre-wrap; }
-.task-detail-section + .task-detail-section { margin-top: 6px; }
-.task-detail-section summary { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; background: var(--raised); cursor: pointer; list-style: none; font-weight: 600; }
-.task-detail-section summary::-webkit-details-marker { display: none; }
-.task-detail-section summary small { color: var(--muted); font-size: 12px; }
-.task-detail-section-body { padding: 8px 0 4px; }
-.task-detail-update { margin-top: 12px; }
-.task-detail-section h3, .task-actions label { display: block; font-weight: 600; margin-bottom: 4px; }
-.task-comments { display: grid; gap: 8px; }
-.task-comments li { padding: 8px 10px; border-radius: 6px; background: var(--raised); }
-.task-comments li > div { display: flex; gap: 6px 12px; flex-wrap: wrap; margin-bottom: 3px; font-size: 12px; }
+.task-detail-section { display: grid; gap: 10px; padding-block: 14px; }
+.task-detail-section + .task-detail-section { border-top: 1px solid var(--border); }
+.task-detail-section:first-child { padding-top: 4px; }
+.task-detail-section > h3 { display: flex; align-items: baseline; gap: 6px; font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.task-detail-section > h3 small { font-size: 12px; font-weight: 500; letter-spacing: 0; }
+.task-detail-text { font-size: 0.875rem; }
+.task-detail .tasks-warning { display: grid; gap: 4px; margin: 0; }
+.task-detail .tasks-warning .doc-prose { color: inherit; }
+.task-detail-update { display: grid; gap: 6px; padding: 10px 12px; border-left: 2px solid var(--accent); background: var(--raised); border-radius: 0 6px 6px 0; }
+.task-detail-update h4 { font-size: 12px; font-weight: 650; color: var(--muted); }
+.task-actions label { display: block; font-weight: 600; margin-bottom: 4px; }
+.task-comments { display: grid; gap: 14px; }
+.task-comments > li { display: grid; gap: 6px; }
+.task-comments > li + li { padding-top: 14px; border-top: 1px solid var(--border); }
+.task-comment-heading { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.task-comment-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.task-comment-heading time { margin-left: auto; flex: none; }
+.task-comment-avatar { display: grid; place-items: center; flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--raised); border: 1px solid var(--border); color: var(--muted); font-size: 10px; font-weight: 650; }
+.task-comments > li > .task-detail-text { padding-left: 32px; }
+.task-detail-update > * { margin: 0; }
 .task-actions { flex: none; padding: 10px 12px; border-top: 1px solid var(--border); }
 .task-actions textarea { display: block; padding: 6px 8px; margin-bottom: 6px; width: 100%; resize: none; }
 .task-action-buttons { display: flex; flex-wrap: wrap; gap: 6px; }

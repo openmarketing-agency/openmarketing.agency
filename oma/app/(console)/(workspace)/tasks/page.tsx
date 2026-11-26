@@ -7,6 +7,9 @@ import { WorkspaceRequestError } from "@/lib/server/agent-workspace";
 import { listWorkspaceTasks, readWorkspaceTask } from "@/lib/server/workspace-tasks";
 import { groupTasks, taskHref, taskKey, taskStatusLabel } from "@/lib/tasks";
 import { TaskActions } from "./task-actions";
+import { MarkdownContent } from "@/components/workspace-document";
+import { agentDisplayName, agentInitials } from "@/lib/agent-name";
+import "@/components/workspace-document.css";
 import "./tasks.css";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -140,28 +143,33 @@ async function TaskPanel({ board, id, filter, boardName }: { board: string; id: 
         {close}
       </header>
       <div className="task-detail-content" role="region" aria-label="Task details and comments" tabIndex={0}>
-        <details className="task-detail-section">
-          <summary><ChevronRight className="task-chevron" size={15} aria-hidden="true" /> Task details</summary>
-          <div className="task-detail-section-body">
-            {task.status === "blocked" && <div className="tasks-warning"><strong>Why it’s blocked</strong>
-              <p>{blocker || "No reason was recorded."}</p>
-            </div>}
-            {body && <p className="task-detail-text">{body}</p>}
-            {task.summary && task.summary !== body && task.summary !== blocker && (
-              <section className="task-detail-update"><h3>Latest update</h3><p className="task-detail-text">{task.summary}</p></section>
-            )}
-            {!body && !task.summary && task.status !== "blocked" && <p className="task-feedback">No details yet.</p>}
-          </div>
-        </details>
-        <details className="task-detail-section">
-          <summary><ChevronRight className="task-chevron" size={15} aria-hidden="true" /> Comments <small>{comments.length}</small></summary>
-          <div className="task-detail-section-body">
-            {comments.length ? <ol className="task-comments">
-              {comments.map((comment) => <li key={comment.id}><div><strong>{comment.author || "Unknown author"}</strong>
-                {comment.at && <TaskDate at={comment.at} />}</div><p className="task-detail-text">{comment.body}</p></li>)}
-            </ol> : <p className="task-feedback">No comments yet.</p>}
-          </div>
-        </details>
+        <section className="task-detail-section" aria-labelledby="task-detail-about">
+          <h3 id="task-detail-about">Details</h3>
+          {task.status === "blocked" && <div className="tasks-warning"><strong>Why it’s blocked</strong>
+            <MarkdownContent className="doc-compact" text={blocker || "No reason was recorded."} />
+          </div>}
+          {body && <MarkdownContent className="doc-compact task-detail-text" text={body} />}
+          {task.summary && task.summary !== body && task.summary !== blocker && (
+            <div className="task-detail-update"><h4>Latest update</h4><MarkdownContent className="doc-compact task-detail-text" text={task.summary} /></div>
+          )}
+          {!body && !task.summary && task.status !== "blocked" && <p className="task-feedback">No details yet.</p>}
+        </section>
+        <section className="task-detail-section" aria-labelledby="task-detail-comments">
+          <h3 id="task-detail-comments">Comments <small>{comments.length}</small></h3>
+          {comments.length ? <ol className="task-comments">
+            {comments.map((comment) => {
+              const author = comment.author ? agentDisplayName({ id: comment.author, name: comment.author }) : "Unknown author";
+              return <li key={comment.id}>
+                <div className="task-comment-heading">
+                  <span className="task-comment-avatar" aria-hidden="true">{agentInitials(author)}</span>
+                  <strong title={comment.author || undefined}>{author}</strong>
+                  {comment.at && <TaskDate at={comment.at} />}
+                </div>
+                <MarkdownContent className="doc-compact task-detail-text" text={comment.body} plain />
+              </li>;
+            })}
+          </ol> : <p className="task-feedback">No comments yet.</p>}
+        </section>
       </div>
       <TaskActions board={board} id={id} blocked={task.status === "blocked"} />
     </>

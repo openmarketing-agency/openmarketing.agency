@@ -265,3 +265,10 @@
 .doc-compact p { white-space: pre-line; }
 .doc-compact .doc-subheading { font-size: 0.95rem; }
 .doc-compact .doc-stats dd { font-size: 1.15rem; }
+
+/* Authored copy, such as a social post, keeps ordinary lists and quotes. */
+.doc-plain-list { display: grid; gap: 4px; margin: 0; padding-left: 1.3em; }
+ul.doc-plain-list { list-style: disc; }
+ol.doc-plain-list { list-style: decimal; }
+.doc-plain-list li::marker { color: var(--muted); }
+.doc-quote { margin: 0; padding: 2px 0 2px 12px; border-left: 2px solid var(--border); color: var(--muted); }

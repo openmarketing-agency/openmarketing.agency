@@ -204,3 +204,11 @@ test("renders palettes as color cards and single codes as inline swatches", () =
   assert.match(markup, /<span class="doc-palette-name">Forest<\/span><code>#2F4A3A<\/code>/);
   assert.doesNotMatch(markup, /doc-facts/);
 });
+
+test("keeps authored copy as ordinary lists and quotes in plain mode", () => {
+  const text = "- **Sunrise**: bright\n- **Midnight**: rich\n\n> Great taste";
+  const html = renderToStaticMarkup(createElement(MarkdownContent, { text, plain: true }));
+  assert.match(html, /<ul class="doc-plain-list"><li><strong>Sunrise<\/strong>: bright<\/li>/);
+  assert.match(html, /<blockquote class="doc-quote">/);
+  assert.doesNotMatch(html, /doc-facts|doc-callout/);
+});

@@ -66,41 +66,49 @@ function PaletteGrid({ palette }: { palette: ColorPalette }) {
   );
 }
 
-function blocks(nodes: RootContent[], depth = 0): ReactNode {
-  return nodes.map((node, index) => <Fragment key={index}>{block(node, depth)}</Fragment>);
+function blocks(nodes: RootContent[], depth = 0, plain = false): ReactNode {
+  return nodes.map((node, index) => <Fragment key={index}>{block(node, depth, plain)}</Fragment>);
 }
 
-function block(node: RootContent, depth: number): ReactNode {
+/** `plain` keeps authored copy, such as a social post, as written: no palette, fact, or step layouts. */
+function block(node: RootContent, depth: number, plain = false): ReactNode {
   if (depth > maxDepth) return <p>{toString(node)}</p>;
   switch (node.type) {
     case "paragraph": {
-      const palette = extractPalette(toString(node));
+      const palette = plain ? undefined : extractPalette(toString(node));
       return palette ? <PaletteGrid palette={palette} /> : <p>{inline(node.children)}</p>;
     }
     case "heading": {
       const Tag = ("h" + Math.min(6, Math.max(3, node.depth + 1))) as "h3" | "h4" | "h5" | "h6";
       return <Tag className="doc-subheading">{inline(node.children)}</Tag>;
     }
-    case "blockquote": return <blockquote className="doc-callout">{blocks(node.children, depth + 1)}</blockquote>;
-    case "list": return <DocumentList list={node} depth={depth} />;
+    case "blockquote": return <blockquote className={plain ? "doc-quote" : "doc-callout"}>{blocks(node.children, depth + 1, plain)}</blockquote>;
+    case "list": return plain ? <PlainList list={node} depth={depth} /> : <DocumentList list={node} depth={depth} />;
     case "table": return <DocumentTable table={node} />;
     case "code": return <pre className="doc-code"><code>{node.value}</code></pre>;
     case "thematicBreak": return <hr />;
     case "html": return <p>{node.value}</p>;
-    case "footnoteDefinition": return <div className="doc-footnote"><sup>[{node.label ?? node.identifier}]</sup>{blocks(node.children, depth + 1)}</div>;
+    case "footnoteDefinition": return <div className="doc-footnote"><sup>[{node.label ?? node.identifier}]</sup>{blocks(node.children, depth + 1, plain)}</div>;
     case "definition": return null;
     default: return <p>{toString(node)}</p>;
   }
 }
 
-function itemContent(item: ListItem, depth: number) {
+function itemContent(item: ListItem, depth: number, plain = false) {
   const [first, ...rest] = item.children;
-  const palette = first?.type === "paragraph" ? extractPalette(toString(first)) : undefined;
+  const palette = !plain && first?.type === "paragraph" ? extractPalette(toString(first)) : undefined;
   if (palette) return <><PaletteGrid palette={palette} />{blocks(rest, depth + 1)}</>;
   // Tight list items hold a single paragraph; render it inline so markers line up with the text.
   return first?.type === "paragraph"
-    ? <>{inline(first.children)}{blocks(rest, depth + 1)}</>
-    : blocks(item.children, depth + 1);
+    ? <>{inline(first.children)}{blocks(rest, depth + 1, plain)}</>
+    : blocks(item.children, depth + 1, plain);
+}
+
+function PlainList({ list, depth }: { list: List; depth: number }) {
+  const items = list.children.map((item, index) => <li key={index}>{itemContent(item, depth, true)}</li>);
+  return list.ordered
+    ? <ol className="doc-plain-list" start={list.start ?? undefined}>{items}</ol>
+    : <ul className="doc-plain-list">{items}</ul>;
 }
 
 function DocumentList({ list, depth }: { list: List; depth: number }) {
@@ -253,8 +261,8 @@ export function WorkspaceDocumentContents({ document }: { document: ParsedDocume
 }
 
 /** Renders short Markdown, such as a chat reply, as plain prose without section cards. */
-export function MarkdownContent({ text, id, className }: { text: string; id?: string; className?: string }) {
-  return <div id={id} className={"doc-prose" + (className ? " " + className : "")}>{blocks(parseMarkdown(text).children)}</div>;
+export function MarkdownContent({ text, id, className, plain }: { text: string; id?: string; className?: string; plain?: boolean }) {
+  return <div id={id} className={"doc-prose" + (className ? " " + className : "")}>{blocks(parseMarkdown(text).children, 0, plain)}</div>;
 }
 
 /** Renders one short Markdown item, such as a goal, keeping inline formatting without paragraph spacing. */

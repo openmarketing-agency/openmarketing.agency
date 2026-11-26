@@ -8,6 +8,7 @@ import { listCampaignPublications, type CampaignPublicationGroup } from "@/lib/s
 import { loadAgentWorkspace, WorkspaceRequestError } from "@/lib/server/agent-workspace";
 
 import { ApprovalQueue } from "./approval-queue";
+import "@/components/workspace-document.css";
 import "./approvals.css";
 
 export const metadata = { title: "Approvals" };
