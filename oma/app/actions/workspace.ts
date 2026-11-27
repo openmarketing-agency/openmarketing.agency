@@ -6,11 +6,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/dal";
-import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
 import { approveCampaignPublication } from "@/lib/server/agent-publications";
 import { completeAgentSetup, needsAgentSetup, requireAgentSetup } from "@/lib/server/agent-setup";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
-import { changeCampaignRunState, saveCampaignCustomMcp, saveCampaignPlan, syncCampaignTools, syncCampaignAgents, workspaceId, approveWorkspacePublication, listWorkspacePublications, publicationRevision, brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveCampaignMode, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { changeCampaignRunState, saveCampaignPlan, syncCampaignAgents, workspaceId, approveWorkspacePublication, listWorkspacePublications, publicationRevision, brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveCampaignMode, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -65,8 +64,7 @@ async function runCampaignAction(
 }
 
 export async function changeCampaignRunAction(id: string, _previous: CampaignConfigurationResult, form: FormData) {
-  return runCampaignAction(id, (userId) => changeCampaignRunState(id, Object.fromEntries(form),
-    (required) => generateCampaignMcpUrl(userId, required)));
+  return runCampaignAction(id, () => changeCampaignRunState(id, Object.fromEntries(form)));
 }
 
 export async function saveCampaignPlanAction(id: string, _previous: CampaignConfigurationResult, form: FormData) {
@@ -74,17 +72,6 @@ export async function saveCampaignPlanAction(id: string, _previous: CampaignConf
     revision: form.get("revision"), name: form.get("name"), description: form.get("description"),
     goals: form.getAll("goals").filter((value) => typeof value !== "string" || value.trim()),
     plans: form.getAll("plans").filter((value) => typeof value !== "string" || value.trim()),
-  }));
-}
-
-export async function syncCampaignToolsAction(id: string, _previous: CampaignConfigurationResult, form: FormData) {
-  return runCampaignAction(id, (userId) => syncCampaignTools(id, form.get("revision"),
-    (required) => generateCampaignMcpUrl(userId, required)));
-}
-
-export async function saveCampaignCustomMcpAction(id: string, integrationId: string, _previous: CampaignConfigurationResult, form: FormData) {
-  return runCampaignAction(id, () => saveCampaignCustomMcp(id, {
-    integrationId, revision: form.get("revision"), url: form.get("url"),
   }));
 }
 
@@ -97,8 +84,7 @@ export async function saveCampaignSettingsAction(
   _previous: CampaignConfigurationResult,
   form: FormData,
 ): Promise<CampaignConfigurationResult> {
-  return runCampaignAction(id, (userId) => saveCampaignConfiguration(id, Object.fromEntries(form),
-    (required) => generateCampaignMcpUrl(userId, required)));
+  return runCampaignAction(id, () => saveCampaignConfiguration(id, Object.fromEntries(form)));
 }
 
 export async function saveCampaignModeAction(
@@ -143,6 +129,7 @@ export async function saveStandaloneModelAction(
     revision: form.get("revision"), provider: form.get("provider"), modelId: form.get("modelId"), baseUrl: form.get("baseUrl"),
     modelKey: form.get("modelKey"),
     reasoningEffort: form.get("reasoningEffort"),
+    composioUrl: form.get("composioUrl") ?? "", composioKey: form.get("composioKey") ?? "",
   }, { requireKey: setup || needsAgentSetup(user.id) });
   if (result.models && !result.error) {
     completeAgentSetup(user.id);
@@ -158,8 +145,7 @@ export async function deployCampaignAction(
   _previous: CampaignConfigurationResult,
   form: FormData,
 ): Promise<CampaignConfigurationResult> {
-  return runCampaignAction(id, (userId) => saveCampaignConfiguration(id, Object.fromEntries(form),
-    (required) => generateCampaignMcpUrl(userId, required), true));
+  return runCampaignAction(id, () => saveCampaignConfiguration(id, Object.fromEntries(form), true));
 }
 
 export async function loadSavedCampaignPublications(id: string, before?: number) {

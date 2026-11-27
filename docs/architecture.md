@@ -40,8 +40,7 @@ flowchart TB
     Client -->|"Versioned API and bearer auth"| Next
     Next -->|"Private Unix socket"| WS
     Next -->|"HTTP and gateway key"| Runs
-    Next -->|"Catalog and authorization SDK"| Composio["Composio"]
-    Runtime -->|"Hosted MCP"| Composio
+    Runtime -->|"Default agent's MCP"| Composio["Composio"]
     Runtime -->|"Inference"| Provider["Model provider"]
 ```
 
@@ -75,7 +74,7 @@ sequenceDiagram
     Note over Next,DB: Protected pages validate the session through requireUser
     alt Full stack and agent setup pending
         Next->>WS: GET /workspace for current settings and revision
-        User->>Next: Provider, model ID, HTTPS base URL, API key, shared reasoning effort
+        User->>Next: Provider, model ID, HTTPS base URL, API key, shared reasoning effort, Composio MCP URL and key
         Next->>WS: POST /workspace/agents/model with settings and current revision
         WS-->>Next: Staged revisions for default and maintenance
         loop One request for each agent
@@ -95,7 +94,7 @@ sequenceDiagram
 
 Registration creates the installation’s single account and signs it in. The full-stack setup gates run when entering onboarding or a protected console route. With only the console, the login action opens the dashboard and the agent setup gate is disabled. Settings uses the same shared model save and sync path later.
 
-The shared model save stages credential references in the agent YAML. The submitted key travels in the two private sync requests and is stored in Hermes profile credentials. The setup flag confirms both settings were applied and read back. A model call happens later when a run starts.
+The shared model save stages credential references in the agent YAML. The submitted key travels in the two private sync requests and is stored in Hermes profile credentials. The required Composio MCP URL is saved only to the default agent’s record, with a `${COMPOSIO_API_KEY}` header reference. The header is `x-api-key` for an `ak_` key and `x-consumer-api-key` for a `ck_` key. The key travels only in the default agent’s sync request. The setup flag confirms both settings were applied and read back. A model call happens later when a run starts.
 
 **Code to read** · [Auth actions](../oma/app/actions/auth.ts) · [In-process API client](../oma/lib/backend.ts) · [Session gate](../oma/lib/dal.ts) · [Agent setup flag](../oma/lib/server/agent-setup.ts) · [Settings action](../oma/app/actions/workspace.ts) · [Sync orchestration](../oma/lib/server/agent-workspace.ts)
 
@@ -192,51 +191,11 @@ The console layout renders the right-side chat panel through the `@conversation`
 
 The status strip above the chat composer uses the same run poll to show queueing, the current tool when reported, and waits for clarification or approval. The last-activity time comes from the gateway, not the poll time. This measures activity, not percentage complete, and is separate from the workspace-wide Agent activity panel.
 
-## 5. Tool catalog and authorization
+## 5. Composio tools
 
-```mermaid
----
-config:
-  sequence:
-    actorMargin: 30
-    width: 125
-    diagramMarginX: 12
-    wrap: true
-    mirrorActors: false
----
-sequenceDiagram
-    actor User
-    participant Next as Next.js
-    participant WS as Private workspace
-    participant C as Composio
-    participant Tool as Connected tool provider
+The console has no Composio SDK, tool catalog, or OAuth callback. Agent setup and **Settings** require a Composio MCP URL and API key. The workspace service writes `mcp_servers.composio` to the default agent’s record, and the default agent’s sync applies it to the native profile. The console picks the header from the key prefix: `x-api-key` for `ak_` and `x-consumer-api-key` for `ck_`. The header holds `${COMPOSIO_API_KEY}`, and the key value lives in that profile’s credentials. Apps are connected in the Composio dashboard. The maintenance agent doesn’t get the server. A campaign’s `integrations` list is informational.
 
-    User->>Next: Open campaign Tools or workspace Tools
-    opt Campaign Tools
-        Next->>WS: Read required integration IDs from campaign inventory
-    end
-    Next->>C: Fetch toolkit metadata and user connection status
-    C-->>Next: Toolkit metadata and connected accounts
-    Next-->>User: Show toolkit names, logos, and ready status
-    User->>Next: Connect a toolkit
-    Next->>C: Start authorization for this user and toolkit
-    alt Toolkit requires account authorization
-        Next-->>User: Save short-lived attempt cookie and return authorization URL
-        User->>C: Open the authorization URL
-        C->>Tool: Request account authorization
-        Tool-->>C: Return authorization result
-        C-->>User: Redirect browser to the console callback
-        User->>Next: GET /api/connections/callback
-        Next->>C: Verify the matching account and connection attempt
-        Next-->>User: Redirect to the originating Tools view
-    else Toolkit is ready or requires no authentication
-        Next-->>User: Show ready state
-    end
-```
-
-Campaign requirements come from the `integrations` list in `campaigns/{id}/config.yaml`. The workspace service maps canonical IDs to verified toolkit slugs. Campaign **Tools** displays the saved integration list and connects required accounts. The workspace-wide **Tools** page provides catalog search and shared account management. The campaign’s saved integration list determines which toolkits the campaign MCP session receives.
-
-**Code to read** · [Toolkit browser](../oma/components/toolkit-browser.tsx) · [Composio actions](../oma/app/actions/composio.ts) · [OAuth callback](../oma/app/api/connections/callback/route.ts) · [Account and MCP sessions](../oma/lib/tool-connection-service.ts) · [Campaign toolkit resolution](../oma/lib/tool-workspace.ts)
+**Code to read** · [Settings form](../oma/components/standalone-model-settings.tsx) · [Shared model save](../oma/lib/server/agent-workspace.ts) · [Default agent MCP write](../vm/workspace.py)
 
 ## 6. Campaign save, sync, deploy, and start
 
@@ -253,16 +212,11 @@ config:
 sequenceDiagram
     actor User
     participant Next as Next.js
-    participant C as Composio
     participant WS as Private workspace
     participant H as Hermes campaign runtime
 
     User->>Next: Save changes, sync agent edits, start, or resume
     Next->>WS: Read saved campaign, lifecycle, and revision
-    opt Model or MCP update, first start, or resume with required integrations
-        Next->>C: Validate required accounts and build hosted MCP session
-        C-->>Next: Session URL or missing connection error
-    end
     opt Editing a campaign that is running or still pausing
         Next->>WS: PUT /workspace/campaigns/{id}/lifecycle with state paused
         WS->>H: Pause campaign and wait for stopped state
@@ -273,7 +227,7 @@ sequenceDiagram
             Next->>WS: PUT /workspace/campaigns/{id}/plan or /mode
         end
         Next->>WS: POST /workspace/campaigns/{id}/sync with revision only
-    else Model or tool update, first start, or resume
+    else Model update, first start, or resume
         Next->>WS: PUT /workspace/campaigns/{id}/config
         Next->>WS: POST /workspace/campaigns/{id}/sync with revision and env
     end
@@ -292,7 +246,7 @@ sequenceDiagram
     Next-->>User: Refresh campaign settings and show result
 ```
 
-- Model overrides are optional. Campaign profiles inherit the default model and its credential when there is no override. A model or MCP update sends only the relevant credential values in the private sync or deploy body. Plan, mode, and agent sync omit the credential body. Resume uses the existing deployment.
+- Model overrides are optional. Campaign profiles inherit the default model and its credential when there is no override. A model update sends only the relevant credential values in the private sync or deploy body. Plan, mode, and agent sync omit the credential body. Resume uses the existing deployment.
 - **Approve** is the default mode and requires review before publication. **Yolo** runs automation and auto-approves new drafts. **Control** pauses scheduled work and runs explicitly approved publications.
 - Each mutation uses the latest revision from the previous step. A stale revision gives `409` and requires a reload. A save can succeed before sync fails. If a running campaign was paused for the change, it remains paused until a successful sync and resume.
 
@@ -352,17 +306,17 @@ This flow requires an agent image that supports native publications. The private
 | Console activity API | [Activity route](../oma/app/api/agent/activity/route.ts) | Authenticated, uncached activity snapshots and public message streaming. |
 | Private workspace API | [Workspace service](../vm/workspace.py) | Workspace reads, Kanban summaries, config updates, sync, deployment, lifecycle, and publication approvals. Next.js connects through `/run/oma-console/workspace.sock`. |
 | Hermes gateway | [Agent chat client](../oma/lib/server/agent-chat.ts) | Run creation, status, events, clarification, and run-level tool approvals. The gateway key is distinct from the model API key. |
-| Composio | [Composio SDK adapter](../oma/lib/composio.ts) | Hosted toolkit catalog, OAuth accounts, and campaign MCP sessions. |
+| Composio | [Default agent MCP write](../vm/workspace.py) | Hosted MCP server for the default agent. Apps are connected in the Composio dashboard. |
 | Optional local apps | [VM startup](../vm/start.sh) | `omactl` and Traefik manage separate catalog apps. Optional Camofox supplies browser tooling to the agent. |
 
 | Data | Source of truth |
 | --- | --- |
 | Account, refresh sessions, setup flag, project answers and run handle | Console SQLite at `/app/data/oma.sqlite`. Local Compose binds `.oma-data/` to `/app/data`. |
 | Workspace and campaign conversations | oma-agent’s native Hermes sessions, read through `GET /api/sessions` and `GET /api/sessions/{id}/messages`. |
-| Generic MCP integration records created with the versioned API | Console SQLite `mcp_integrations`. Submitted credentials are encrypted at rest and write-only. This API is separate from hosted Composio accounts. |
+| Generic MCP integration records created with the versioned API | Console SQLite `mcp_integrations`. Submitted credentials are encrypted at rest and write-only. |
 | Brand, playbook, campaigns, and authored agent records | Agent volume under `$HERMES_HOME/oma/`. Key paths are `brand/config.yaml`, `playbook/config.yaml`, `campaigns/{id}/config.yaml`, and `agents/{id}/config.yaml`. |
 | Effective model and tool settings, model credentials, schedules, Kanban, and agent run state | Native Hermes state in the agent volume at `$HERMES_HOME`, which defaults to `/opt/data`. Agent YAML stores credential references. Hermes profile credential files store key values. |
-| Composio account authorization and hosted sessions | Composio. The campaign YAML holds the generated MCP URL and a reference to the Composio key. |
+| Composio account authorization | Composio. The default agent’s YAML holds the MCP URL and a reference to the Composio key. |
 | Local gateway access | A shared Compose mount at `/run/oma-console` provides the gateway key and workspace socket to the console. |
 
 ## 9. Local development and debugging
@@ -374,6 +328,6 @@ Start the full stack with `make dev` and open [the console](http://localhost:300
 | Login loops or missing session | [Auth actions](../oma/app/actions/auth.ts), [session validation](../oma/lib/dal.ts), and [identity sessions](../oma/lib/server/identity/sessions.ts). |
 | Agent setup asks for a reload | [Agent settings tests](../oma/tests/agent-setup.test.ts) and the [workspace service’s revision checks](../vm/workspace.py). Reload to obtain the latest saved revision. |
 | Dashboard shows setup failed or misses new campaigns | [Project setup tests](../oma/tests/project-setup.test.ts), [run status projection](../oma/lib/server/agent-chat.ts), and the [dashboard loader](<../oma/app/(console)/(workspace)/dashboard/page.tsx>). Check the run status and what oma-agent saved. |
-| Toolkit connects but campaign can’t start | [Connection service](../oma/lib/tool-connection-service.ts), [integration tests](../oma/tests/campaign-integrations.test.ts), and the campaign’s saved integration IDs. |
+| Default agent can’t reach Composio | [Agent settings tests](../oma/tests/agent-setup.test.ts), [VM standalone sync test](../vm/tests/standalone_sync.py), and the default profile’s `mcp_servers.composio`. |
 | Settings saved but sync failed | [Campaign settings tests](../oma/tests/campaign-settings.test.ts) and [VM deployment tests](../vm/tests/campaign_deploy.py). Check the native profiles, board routing, and campaign schedules. |
 | Publication preview or approval fails | [Publication tests](../oma/tests/agent-publications.test.ts), the agent image’s native publication support, and the current publication revision. |

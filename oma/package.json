@@ -12,7 +12,6 @@
     "pretypecheck": "next typegen"
   },
   "dependencies": {
-    "@composio/core": "^0.29.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@next/env": "16.4.6",

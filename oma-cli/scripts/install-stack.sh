@@ -330,7 +330,6 @@ OMA_INTEGRATION_ENCRYPTION_KEY="$integration_key" create_container oma-console "
     -e "OMA_REGISTRATION_ENABLED=${OMA_REGISTRATION_ENABLED:-true}" \
     -e "OMA_CORS_ORIGINS=${OMA_CORS_ORIGINS:-[]}" \
     -e "OMA_DOCS_ENABLED=${OMA_DOCS_ENABLED:-true}" \
-    -e COMPOSIO_API_KEY \
     -e "OMA_AGENT_URL=http://$gateway_host:8642" \
     -e OMA_AGENT_API_KEY_FILE=/run/oma-console/gateway.key \
     -e OMA_WORKSPACE_SOCKET=/run/oma-console/workspace.sock

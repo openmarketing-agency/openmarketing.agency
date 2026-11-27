@@ -245,6 +245,67 @@ with TemporaryDirectory(prefix="oma-agent-sync-") as temporary:
                     runtime = resolve_runtime_provider(requested="openai-api", target_model=expected["default"])
                     assert runtime["api_key"] == openai_key
 
+            # Agent setup's Composio MCP server goes only to the default agent, with its key in the profile env.
+            # The console picks the header from the key prefix: ck_ uses x-consumer-api-key and ak_ uses x-api-key.
+            settings = request(address, "GET", "/workspace")[1]["standaloneModels"]
+            assert (settings["composioUrl"], settings["hasComposioKey"]) == ("", False)
+            composio_url = "https://connect.composio.dev/mcp"
+            consumer_key = "ck_fixture-consumer-key"
+            composio = {**openai, "revision": settings["revision"], "composioUrl": composio_url}
+            assert request(address, "POST", endpoint, composio)[0] == 422
+            assert request(address, "POST", endpoint, {**composio, "composioUrl": composio_url + "?key=1",
+                                                       "setComposioKey": "x-consumer-api-key"})[0] == 422
+            assert request(address, "POST", endpoint, {**composio, "composioUrl": "",
+                                                       "setComposioKey": "x-consumer-api-key"})[0] == 422
+            for header in (True, "x-user-api-key", "authorization"):
+                assert request(address, "POST", endpoint, {**composio, "setComposioKey": header})[0] == 422
+            status, staged = request(address, "POST", endpoint, {**composio, "setComposioKey": "x-consumer-api-key"})
+            assert status == 200, staged
+            server_config = {"url": composio_url, "headers": {"x-consumer-api-key": "${COMPOSIO_API_KEY}"}}
+            assert safe_load(record.read_bytes())["mcp_servers"] == {"composio": server_config}
+            assert "mcp_servers" not in safe_load(saved_maintenance.read_bytes())
+            composio_env = {"env": {"COMPOSIO_API_KEY": consumer_key}}
+            assert post(address, "maintenance", {"revision": staged["revisions"]["maintenance"], **composio_env})[0] == 422
+            assert post(address, "default", composio_env)[0] == 422
+            assert post(address, "default", {"revision": staged["revisions"]["default"], **composio_env})[0] == 200
+            assert post(address, "maintenance", {"revision": staged["revisions"]["maintenance"]})[0] == 200
+            assert safe_load(native.read_bytes())["mcp_servers"] == {"composio": server_config}
+            assert "mcp-composio" in safe_load(native.read_bytes())["agent"]["enabled_toolsets"]
+            assert load_env_file(home / ".env")["COMPOSIO_API_KEY"] == consumer_key
+            assert "COMPOSIO_API_KEY" not in load_env_file(maintenance.parent / ".env")
+            assert "mcp_servers" not in safe_load(maintenance.read_bytes())
+            settings = request(address, "GET", "/workspace")[1]["standaloneModels"]
+            assert (settings["composioUrl"], settings["hasComposioKey"]) == (composio_url, True)
+            assert consumer_key not in json.dumps(settings)
+            # The saved key is kept when the URL is unchanged, and a new URL needs a key.
+            assert request(address, "POST", endpoint, {**composio, "revision": settings["revision"],
+                                                       "composioUrl": "https://other.example.com/mcp"})[0] == 422
+            status, staged = request(address, "POST", endpoint, {**composio, "revision": settings["revision"]})
+            assert status == 200, staged
+            assert safe_load(record.read_bytes())["mcp_servers"] == {"composio": server_config}
+            # A project key replaces the consumer header with x-api-key.
+            settings = request(address, "GET", "/workspace")[1]["standaloneModels"]
+            status, staged = request(address, "POST", endpoint, {**composio, "revision": settings["revision"],
+                                                                 "setComposioKey": "x-api-key"})
+            assert status == 200, staged
+            project_config = {"url": composio_url, "headers": {"x-api-key": "${COMPOSIO_API_KEY}"}}
+            assert safe_load(record.read_bytes())["mcp_servers"] == {"composio": project_config}
+            project_key = "ak_fixture-project-key"
+            assert post(address, "default", {"revision": staged["revisions"]["default"],
+                                             "env": {"COMPOSIO_API_KEY": project_key}})[0] == 200
+            assert safe_load(native.read_bytes())["mcp_servers"] == {"composio": project_config}
+            assert load_env_file(home / ".env")["COMPOSIO_API_KEY"] == project_key
+            assert request(address, "GET", "/workspace")[1]["standaloneModels"]["hasComposioKey"] is True
+            # Clearing the URL removes the server from the record and, on sync, from the native profile.
+            settings = request(address, "GET", "/workspace")[1]["standaloneModels"]
+            status, staged = request(address, "POST", endpoint, {**composio, "revision": settings["revision"],
+                                                                 "composioUrl": ""})
+            assert status == 200, staged
+            assert safe_load(record.read_bytes())["mcp_servers"] == {}
+            assert post(address, "default", {"revision": staged["revisions"]["default"]})[0] == 200
+            assert not safe_load(native.read_bytes()).get("mcp_servers")
+            assert request(address, "GET", "/workspace")[1]["standaloneModels"]["composioUrl"] == ""
+
             config = safe_load(saved_maintenance.read_bytes())
             config["model"] = {"default": expected["default"], "api_key": "${TEST_MODEL_KEY}"}
             config["mcp_servers"] = {

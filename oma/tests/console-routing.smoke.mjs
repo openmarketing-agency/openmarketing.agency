@@ -87,7 +87,7 @@ try {
   const { access_token: token } = await signedIn.json();
   const headers = { cookie: "oma_access=" + token };
 
-  for (const path of ["/dashboard", "/settings", "/connections", "/approvals"]) {
+  for (const path of ["/dashboard", "/settings", "/approvals"]) {
     await assertPage(path, "Workspace chat", headers);
   }
   await assertPage("/dashboard", 'href="/tasks"', headers);

@@ -6,8 +6,6 @@ import { CampaignDetail } from "@/components/campaign-detail";
 import { campaignAgentIds, CampaignAgents, CampaignOverview } from "@/components/workspace-records";
 import { agentDisplayName } from "@/lib/agent-name";
 import { Loading } from "@/components/ui";
-import { loadCampaignTools } from "@/lib/tool-workspace";
-import { connectionFeedback } from "@/lib/connection-attempt";
 import { requireUser } from "@/lib/dal";
 import { loadAgentWorkspace, readCampaignKanbanStatus, workspaceId } from "@/lib/server/agent-workspace";
 import "@/components/campaign-pages.css";
@@ -15,14 +13,13 @@ import "@/components/workspace-document.css";
 
 type Props = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export default function Page(props: Props) {
   return <Suspense fallback={<Loading label="Loading campaign…" />}><Detail {...props} /></Suspense>;
 }
 
-async function Detail({ params, searchParams }: Props) {
+async function Detail({ params }: Props) {
   const { id } = await params;
   if (!workspaceId.safeParse(id).success) notFound();
   await requireUser();
@@ -39,11 +36,7 @@ async function Detail({ params, searchParams }: Props) {
     );
   }
 
-  const [workspace, query, kanban] = await Promise.all([
-    loadCampaignTools(saved.requiredIntegrations),
-    searchParams,
-    readCampaignKanbanStatus(saved),
-  ]);
+  const kanban = await readCampaignKanbanStatus(saved);
   const agents = campaignAgentIds(records, saved);
 
   return (
@@ -54,8 +47,6 @@ async function Detail({ params, searchParams }: Props) {
       overview={<CampaignOverview workspace={records} campaign={saved} />}
       agents={<CampaignAgents workspace={records} campaign={saved} ids={agents} />}
       agentNames={Object.fromEntries(agents.map((id) => [id, agentDisplayName(records.agents.find((agent) => agent.id === id) ?? { id, name: id })]))}
-      {...workspace}
-      feedback={connectionFeedback(query.connection_result)}
     />
   );
 }

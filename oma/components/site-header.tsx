@@ -18,9 +18,6 @@ export function SiteHeader() {
           <Link href="/dashboard" className="opacity-70 transition hover:opacity-100">
             Dashboard
           </Link>
-          <Link href="/connections" className="opacity-70 transition hover:opacity-100">
-            Connections
-          </Link>
           <Link href="/users" className="opacity-70 transition hover:opacity-100">
             Users
           </Link>

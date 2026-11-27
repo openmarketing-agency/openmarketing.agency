@@ -1,4 +1,4 @@
-/** Verifies that onboarding sends credentials only to sync and confirms both native settings. */
+/** Verifies that onboarding sends credentials only to sync, gives Composio only to the default agent, and confirms both native settings. */
 
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -37,12 +37,12 @@ test("agent setup leaves submission available for browser validation before hydr
   const selection = { provider: "", modelId: "", baseUrl: "", reasoningEffort: "" } as const;
   const html = renderToStaticMarkup(createElement(StandaloneModelSettings, {
     setup: true,
-    models: { revision: "a".repeat(64), default: selection, maintenance: selection },
+    models: { revision: "a".repeat(64), default: selection, maintenance: selection, composioUrl: "", hasComposioKey: false },
   }));
   const button = html.match(/<button[^>]*>Sync and continue<\/button>/)?.[0];
   assert.ok(button);
   assert.doesNotMatch(button, /(?:^|\s)disabled(?:=""|(?=\s|>))/);
-  for (const field of ["provider", "modelId", "baseUrl", "modelKey"]) {
+  for (const field of ["provider", "modelId", "baseUrl", "modelKey", "composioUrl", "composioKey"]) {
     const input = html.match(new RegExp(`<input(?=[^>]*name="${field}")[^>]*>`))?.[0];
     assert.ok(input, `Missing input for ${field}`);
     assert.match(input, /\brequired\b/);
@@ -56,12 +56,15 @@ test("requires a base URL and confirms the same reasoning effort on both agents"
   const selection = { provider: "openrouter", modelId: "openai/gpt-4.1-mini", baseUrl: "https://openrouter.ai/api/v1" };
   const reasoningEffort = "high";
   const modelKey = "sk-or-v1-fixture-agent-setup";
-  const input = { ...selection, reasoningEffort, revision: "a".repeat(64) };
+  const composioUrl = "https://connect.composio.dev/mcp";
+  const composioKey = "ck_fixture-composio";
+  const input = { ...selection, reasoningEffort, revision: "a".repeat(64), composioUrl };
   const revisions = { default: "b".repeat(64), maintenance: "c".repeat(64) };
   const synced = {
     revision: "d".repeat(64),
     default: { ...selection, reasoningEffort },
     maintenance: { ...selection, reasoningEffort },
+    composioUrl, hasComposioKey: true,
   };
   const native = { ...synced };
   let failMaintenance = false;
@@ -98,12 +101,20 @@ test("requires a base URL and confirms the same reasoning effort on both agents"
     assert.match((await saveStandaloneModel({ ...input, baseUrl })).error ?? "", /valid HTTPS provider base URL/);
   }
   assert.ok((await saveStandaloneModel({ ...input, modelKey: "invalid\nkey" })).error);
+  // Setup requires the provider key and the Composio MCP URL and key.
   assert.match((await saveStandaloneModel(input, { requireKey: true })).error ?? "", /Enter your provider API key/);
+  assert.match((await saveStandaloneModel({ ...input, modelKey }, { requireKey: true })).error ?? "", /Composio API key/);
+  for (const url of ["", undefined, "https://connect.composio.dev/mcp?key=1"]) {
+    assert.match((await saveStandaloneModel({ ...input, composioUrl: url })).error ?? "", /Composio MCP URL/);
+  }
+  assert.match((await saveStandaloneModel({ ...input, composioKey: "uak_fixture" })).error ?? "", /ak_ or ck_/);
   assert.deepEqual(calls, []);
-  assert.deepEqual(await saveStandaloneModel({ ...input, modelKey }, { requireKey: true }), { models: synced });
+  assert.deepEqual(await saveStandaloneModel({ ...input, modelKey, composioKey }, { requireKey: true }), { models: synced });
   assert.deepEqual(calls, [
-    { path: "/workspace/agents/model", body: { ...input, setModelKey: true } },
-    { path: "/workspace/agents/default/sync", body: { revision: revisions.default, env: { HERMES_MODEL_API_KEY: modelKey } } },
+    { path: "/workspace/agents/model", body: { ...input, setModelKey: true, setComposioKey: "x-consumer-api-key" } },
+    { path: "/workspace/agents/default/sync", body: {
+      revision: revisions.default, env: { HERMES_MODEL_API_KEY: modelKey, COMPOSIO_API_KEY: composioKey },
+    } },
     { path: "/workspace/agents/maintenance/sync", body: { revision: revisions.maintenance, env: { HERMES_MODEL_API_KEY: modelKey } } },
   ]);
   calls.length = 0;
@@ -113,6 +124,19 @@ test("requires a base URL and confirms the same reasoning effort on both agents"
     { path: "/workspace/agents/default/sync", body: { revision: revisions.default } },
     { path: "/workspace/agents/maintenance/sync", body: { revision: revisions.maintenance } },
   ]);
+
+  // A project key uses x-api-key, and the key still goes only to the default agent's sync.
+  calls.length = 0;
+  const projectKey = "ak_fixture-composio";
+  assert.deepEqual(await saveStandaloneModel({ ...input, composioKey: projectKey }), { models: synced });
+  assert.deepEqual(calls, [
+    { path: "/workspace/agents/model", body: { ...input, setComposioKey: "x-api-key" } },
+    { path: "/workspace/agents/default/sync", body: { revision: revisions.default, env: { COMPOSIO_API_KEY: projectKey } } },
+    { path: "/workspace/agents/maintenance/sync", body: { revision: revisions.maintenance } },
+  ]);
+  native.composioUrl = "https://other.example.com/mcp";
+  assert.match((await saveStandaloneModel(input)).error ?? "", /confirm the saved settings on both agents/);
+  native.composioUrl = composioUrl;
 
   failMaintenance = true;
   const failed = await saveStandaloneModel(input);
