@@ -1,4 +1,4 @@
-ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.31
+ARG OMA_AGENT_IMAGE=ghcr.io/openmarketing-agency/oma-agent:v0.1.33
 
 FROM ${OMA_AGENT_IMAGE} AS agent
 USER root

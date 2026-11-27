@@ -43,7 +43,7 @@ def verify_observations(home, address):
     directory = home / "oma/campaigns/seo"
     directory.mkdir(parents=True)
     assert request("GET")[0] == 404
-    config = {"id": "seo", "name": "Example", "installation_state": "installed",
+    config = {"id": "seo", "name": "Example", "installation_state": "installed", "mode": "control",
               "lifecycle_state": "resumed", "agents": ["seo__analyst"]}
     config_path = directory / "config.yaml"
     config_path.write_text(json.dumps(config))
@@ -79,10 +79,6 @@ def verify_observations(home, address):
 
     config_path.write_text(json.dumps({**config, "lifecycle_state": "paused"}))
     assert request("POST", "/refresh")[0] == 409
-    assert request("GET", "?metric=drafts_created")[0] == 200
-
-    config_path.write_text(json.dumps({**config, "mode": "control"}))
-    assert request("POST", "/refresh") == (409, {"message": "Analytics refresh is disabled in control mode."})
     assert request("GET", "?metric=drafts_created")[0] == 200
 
 

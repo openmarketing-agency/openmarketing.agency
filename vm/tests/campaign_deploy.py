@@ -206,11 +206,12 @@ def verify(home):
     synced = sync_campaign_configuration(root, campaign_id, {"revision": result["revision"], "env": {}})
     assert synced["modelId"] == "" and "model" not in safe_load(record.read_bytes())
     assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "rotated-model"
-    assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == default_key
-    synced = sync_campaign_configuration(root, campaign_id, {
-        "revision": synced["revision"], "env": {"OPENROUTER_API_KEY": rotated_key},
-    })
     assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == rotated_key
+    explicit_key = "sk-or-v1-fixture-explicit"
+    synced = sync_campaign_configuration(root, campaign_id, {
+        "revision": synced["revision"], "env": {"OPENROUTER_API_KEY": explicit_key},
+    })
+    assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == explicit_key
 
     override = {
         "revision": synced["revision"], "provider": "custom", "modelId": "campaign-model",
@@ -233,6 +234,7 @@ def verify(home):
     saved_agent = safe_load(agent.read_bytes())
     assert "model" not in saved_agent and "model" not in saved_agent.get("effective", {})
     assert safe_load((profile / "config.yaml").read_bytes())["model"]["default"] == "rotated-model"
+    assert load_env_file(profile / ".env")["OPENROUTER_API_KEY"] == rotated_key
     assert safe_load(reviewer.read_bytes())["model"] == reviewer_model
     assert safe_load((home / "profiles" / reviewer_id / "config.yaml").read_bytes())["model"] == reviewer_model
 
