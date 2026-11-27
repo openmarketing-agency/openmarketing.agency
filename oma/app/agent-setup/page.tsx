@@ -1,4 +1,4 @@
-/** Collects the shared provider, model, API key, and optional Composio MCP server before the account opens its agent workspace. */
+/** Collects the shared provider, model, API key, and Composio MCP server before the account opens its agent workspace. */
 
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
@@ -38,7 +38,7 @@ export default function AgentSetupPage() {
       <main id="main-content" tabIndex={-1} className="project-setup-layout">
         <header className="project-setup-heading">
           <h1>Set up your agents</h1>
-          <p>Configure the provider, model, and shared reasoning effort for your agents, and optionally connect Composio tools, before starting project setup.</p>
+          <p>Configure the provider, model, and shared reasoning effort for your agents, and connect Composio tools, before starting project setup.</p>
         </header>
         <div className="project-setup-panel">
           <Suspense fallback={<p className="project-setup-loading" role="status">Loading agent settings…</p>}>

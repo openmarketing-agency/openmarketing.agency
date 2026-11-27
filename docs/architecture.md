@@ -74,7 +74,7 @@ sequenceDiagram
     Note over Next,DB: Protected pages validate the session through requireUser
     alt Full stack and agent setup pending
         Next->>WS: GET /workspace for current settings and revision
-        User->>Next: Provider, model ID, HTTPS base URL, API key, shared reasoning effort, optional Composio MCP URL and key
+        User->>Next: Provider, model ID, HTTPS base URL, API key, shared reasoning effort, Composio MCP URL and key
         Next->>WS: POST /workspace/agents/model with settings and current revision
         WS-->>Next: Staged revisions for default and maintenance
         loop One request for each agent
@@ -94,7 +94,7 @@ sequenceDiagram
 
 Registration creates the installation’s single account and signs it in. The full-stack setup gates run when entering onboarding or a protected console route. With only the console, the login action opens the dashboard and the agent setup gate is disabled. Settings uses the same shared model save and sync path later.
 
-The shared model save stages credential references in the agent YAML. The submitted key travels in the two private sync requests and is stored in Hermes profile credentials. An optional Composio MCP URL is saved only to the default agent’s record, with a `${COMPOSIO_API_KEY}` header reference. The header is `x-api-key` for an `ak_` key and `x-consumer-api-key` for a `ck_` key. The key travels only in the default agent’s sync request. The setup flag confirms both settings were applied and read back. A model call happens later when a run starts.
+The shared model save stages credential references in the agent YAML. The submitted key travels in the two private sync requests and is stored in Hermes profile credentials. The required Composio MCP URL is saved only to the default agent’s record, with a `${COMPOSIO_API_KEY}` header reference. The header is `x-api-key` for an `ak_` key and `x-consumer-api-key` for a `ck_` key. The key travels only in the default agent’s sync request. The setup flag confirms both settings were applied and read back. A model call happens later when a run starts.
 
 **Code to read** · [Auth actions](../oma/app/actions/auth.ts) · [In-process API client](../oma/lib/backend.ts) · [Session gate](../oma/lib/dal.ts) · [Agent setup flag](../oma/lib/server/agent-setup.ts) · [Settings action](../oma/app/actions/workspace.ts) · [Sync orchestration](../oma/lib/server/agent-workspace.ts)
 
@@ -193,7 +193,7 @@ The status strip above the chat composer uses the same run poll to show queueing
 
 ## 5. Composio tools
 
-The console has no Composio SDK, tool catalog, or OAuth callback. Agent setup and **Settings** take an optional Composio MCP URL and API key. The workspace service writes `mcp_servers.composio` to the default agent’s record, and the default agent’s sync applies it to the native profile. The console picks the header from the key prefix: `x-api-key` for `ak_` and `x-consumer-api-key` for `ck_`. The header holds `${COMPOSIO_API_KEY}`, and the key value lives in that profile’s credentials. Apps are connected in the Composio dashboard. The maintenance agent doesn’t get the server. A campaign’s `integrations` list is informational.
+The console has no Composio SDK, tool catalog, or OAuth callback. Agent setup and **Settings** require a Composio MCP URL and API key. The workspace service writes `mcp_servers.composio` to the default agent’s record, and the default agent’s sync applies it to the native profile. The console picks the header from the key prefix: `x-api-key` for `ak_` and `x-consumer-api-key` for `ck_`. The header holds `${COMPOSIO_API_KEY}`, and the key value lives in that profile’s credentials. Apps are connected in the Composio dashboard. The maintenance agent doesn’t get the server. A campaign’s `integrations` list is informational.
 
 **Code to read** · [Settings form](../oma/components/standalone-model-settings.tsx) · [Shared model save](../oma/lib/server/agent-workspace.ts) · [Default agent MCP write](../vm/workspace.py)
 

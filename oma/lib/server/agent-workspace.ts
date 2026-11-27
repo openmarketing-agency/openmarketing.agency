@@ -334,7 +334,7 @@ const standaloneModelUpdate = z.object({
   baseUrl: requiredModelBaseUrl,
   modelKey: keyValue.transform((value) => value.trim()).default(""),
   reasoningEffort,
-  composioUrl: z.union([z.literal(""), requiredModelBaseUrl]).default(""),
+  composioUrl: requiredModelBaseUrl,
   composioKey: keyValue.transform((value) => value.trim()).default(""),
 });
 const standaloneIds = ["default", "maintenance"] as const;
@@ -351,12 +351,12 @@ export async function saveStandaloneModel(input: unknown, { requireKey = false }
   if (!parsed.success) {
     const field = parsed.error.issues[0]?.path[0];
     return { error: field === "baseUrl" ? "Enter a valid HTTPS provider base URL."
-      : field === "composioUrl" ? "Enter a valid HTTPS Composio MCP URL without a query string."
+      : field === "composioUrl" ? "Enter your Composio MCP URL. Use HTTPS without a query string."
       : "Check the provider, model ID, reasoning effort, and API keys." };
   }
   const { modelKey, composioKey, ...settings } = parsed.data;
   if (requireKey && !modelKey) return { error: "Enter your provider API key to set up both agents." };
-  if (composioKey && !settings.composioUrl) return { error: "Enter the Composio MCP URL for this API key." };
+  if (requireKey && !composioKey) return { error: "Enter your Composio API key to set up the default agent." };
   const header = composioKey ? composioHeader(composioKey) : undefined;
   if (composioKey && !header) return { error: "Enter a Composio API key that starts with ak_ or ck_." };
   try {
