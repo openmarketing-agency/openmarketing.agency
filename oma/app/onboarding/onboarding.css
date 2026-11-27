@@ -21,6 +21,7 @@
 .project-setup-panel { border: 1px solid var(--border); background: var(--surface); }
 .project-setup-help { background: var(--raised); }
 .project-setup-panel h2, .project-setup-help h2 { font-size: 17px; }
+.project-setup-panel.is-wide { grid-column: 1 / -1; width: min(100%, 44rem); }
 .project-setup-help p, .project-setup-loading { margin-top: 8px; }
 
 @media (max-width: 650px) {

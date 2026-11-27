@@ -40,7 +40,7 @@ export default function AgentSetupPage() {
           <h1>Set up your agents</h1>
           <p>Configure the provider, model, and shared reasoning effort for your agents, and connect Composio tools, before starting project setup.</p>
         </header>
-        <div className="project-setup-panel">
+        <div className="project-setup-panel is-wide">
           <Suspense fallback={<p className="project-setup-loading" role="status">Loading agent settings…</p>}>
             <AgentSetup />
           </Suspense>

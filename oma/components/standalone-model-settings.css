@@ -1,15 +1,27 @@
-/* Styles the shared provider and model editor used in setup and Settings. */
+/* Styles the shared provider, model, and Composio editor used in setup and Settings. */
 
-.standalone-model-form { display: grid; gap: 6px; margin-top: 8px; }
-.standalone-model-form button { justify-self: start; min-height: 44px; }
-.standalone-model-hint { color: var(--muted); }
+.standalone-model-form { display: grid; gap: 28px; container-type: inline-size; }
+:is(h2, .standalone-model-summary) + .standalone-model-form { margin-top: 20px; }
+.standalone-model-section { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.standalone-model-section + .standalone-model-section { padding-top: 24px; border-top: 1px solid var(--border); }
+.standalone-model-section legend { float: left; width: 100%; padding: 0; font-size: 0.9375rem; font-weight: 650; }
+.standalone-model-intro { margin: -8px 0 0; color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
+.standalone-model-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px 16px; }
+@container (min-width: 32rem) {
+  .standalone-model-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .standalone-model-field[data-wide] { grid-column: 1 / -1; }
+}
+.standalone-model-field { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.standalone-model-field label { font-size: 0.875rem; font-weight: 550; }
+.standalone-model-hint { margin: 0; color: var(--muted); font-size: 0.8125rem; line-height: 1.45; }
+.standalone-model-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.standalone-model-footer p { margin: 0; }
+.standalone-model-footer button { min-height: 44px; }
 .standalone-model-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
   gap: 8px 16px;
-  margin: 14px 0 16px;
+  margin: 14px 0 0;
 }
 .standalone-model-summary dt { font-size: 0.875rem; font-weight: 600; }
 .standalone-model-summary dd { margin: 2px 0 0; color: var(--muted); overflow-wrap: anywhere; }
-.standalone-model-composio { display: grid; gap: 6px; margin: 10px 0 4px; padding: 0; border: 0; min-width: 0; }
-.standalone-model-composio legend { padding: 0; margin-bottom: 4px; font-weight: 600; }

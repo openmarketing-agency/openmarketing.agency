@@ -20,4 +20,3 @@
   background: var(--surface);
 }
 .workspace-settings-panel h2 { font-size: 1.125rem; font-weight: 650; }
-.workspace-settings-panel .standalone-model-form { gap: 8px; }
