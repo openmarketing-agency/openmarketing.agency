@@ -11,3 +11,5 @@
 }
 .standalone-model-summary dt { font-size: 0.875rem; font-weight: 600; }
 .standalone-model-summary dd { margin: 2px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+.standalone-model-composio { display: grid; gap: 6px; margin: 10px 0 4px; padding: 0; border: 0; min-width: 0; }
+.standalone-model-composio legend { padding: 0; margin-bottom: 4px; font-weight: 600; }

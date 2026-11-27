@@ -5,7 +5,7 @@
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronRight, ClipboardCheck, ListTodo, LogOut, Menu, MessageSquare, Megaphone, PanelLeft, Plug, Settings } from "lucide-react";
+import { ChevronRight, ClipboardCheck, ListTodo, LogOut, Menu, MessageSquare, Megaphone, PanelLeft, Settings } from "lucide-react";
 
 import { logoutAction } from "@/app/actions/auth";
 import { Brand } from "@/components/brand";
@@ -17,7 +17,6 @@ const destinations = [
   { href: "/dashboard", label: "Campaigns", icon: Megaphone },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
-  { href: "/connections", label: "Tools", icon: Plug },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

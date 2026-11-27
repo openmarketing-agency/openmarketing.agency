@@ -3,8 +3,6 @@
 import { request } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
-import { validToolkitSlug } from "../tool-catalog";
-import type { LegacyToolSelections } from "./legacy-tool-selections";
 
 export const workspaceId = z.string().max(64).regex(/^[a-z0-9]+(?:[-_][a-z0-9]+|__[a-z0-9]+)*$/);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
@@ -72,14 +70,9 @@ const campaignConfiguration = z.object({
   revision, provider: z.string(), modelId: z.string(), baseUrl: z.string(),
   hasModelKey: z.boolean(), mode: campaignMode.optional(),
 });
-const campaignIntegration = z.object({ id: workspaceId, name: z.string(), slug: z.string().refine(validToolkitSlug).nullable() });
-const manualCampaignIntegration = z.object({ id: publicationCampaignId, name: z.string(), url: z.string() });
 const campaign = record.extend({
   playbookId: z.string(), version: z.string(), orchestrator: z.string(), agentIds: strings,
   goals: strings, plans: strings, board: z.string(),
-  integrationConfigInvalid: z.boolean().optional(),
-  requiredIntegrations: z.array(campaignIntegration).optional(),
-  manualIntegrations: z.array(manualCampaignIntegration).optional(),
   installationState: z.string().optional(), model: z.string().optional(),
   lifecycleState: z.string().optional(), mode: campaignMode.optional(),
   configuration: campaignConfiguration.optional(),
@@ -94,7 +87,11 @@ const reasoningEffort = z.enum(["", "none", "minimal", "low", "medium", "high", 
 const standaloneSelection = z.object({
   provider: z.string(), modelId: z.string(), baseUrl: z.string(), reasoningEffort: reasoningEffort.default(""),
 });
-const standaloneModels = z.object({ revision, default: standaloneSelection, maintenance: standaloneSelection });
+const standaloneModels = z.object({
+  revision, default: standaloneSelection, maintenance: standaloneSelection,
+  // The default agent's Composio MCP server. Older VMs omit these fields.
+  composioUrl: z.string().default(""), hasComposioKey: z.boolean().default(false),
+});
 export type StandaloneModels = z.infer<typeof standaloneModels>;
 export type StandaloneModelResult = { models?: StandaloneModels; error?: string };
 
@@ -121,8 +118,6 @@ export type WorkspaceEdit = "brands" | "playbooks" | "brand-knowledge";
 export type SavedPlaybook = z.infer<typeof playbook>;
 export type CampaignConfiguration = z.infer<typeof campaignConfiguration>;
 export type SavedCampaign = z.infer<typeof campaign>;
-export type RequiredIntegration = NonNullable<SavedCampaign["requiredIntegrations"]>[number];
-export type ManualCampaignIntegration = z.infer<typeof manualCampaignIntegration>;
 export type SavedAgent = z.infer<typeof agent>;
 
 export const brandUpdate = z.object({
@@ -238,38 +233,6 @@ export async function workspaceRequest(
   });
 }
 
-const toolSelectionsPath = "/workspace/tool-selections";
-const toolkit = z.string().refine(validToolkitSlug);
-const toolSelections = z.object({
-  workspace: z.array(toolkit),
-  campaigns: z.record(workspaceId, z.array(toolkit)),
-});
-export type WorkspaceToolSelections = z.infer<typeof toolSelections>;
-
-function parseToolSelections(result: unknown): WorkspaceToolSelections {
-  const parsed = toolSelections.safeParse(result);
-  if (!parsed.success) throw new WorkspaceRequestError(502, "The agent workspace returned invalid tool selections.");
-  return parsed.data;
-}
-
-export async function readWorkspaceToolSelections(): Promise<WorkspaceToolSelections> {
-  return parseToolSelections(await workspaceRequest(toolSelectionsPath));
-}
-
-export async function writeWorkspaceToolSelection(campaignId: string | null, slug: string, selected: boolean) {
-  if ((campaignId !== null && !workspaceId.safeParse(campaignId).success) || !validToolkitSlug(slug)) {
-    throw new WorkspaceRequestError(422, "Choose a saved campaign and a supported toolkit.");
-  }
-  return parseToolSelections(await workspaceRequest(toolSelectionsPath, { campaignId, slug, selected }));
-}
-
-export async function importWorkspaceToolSelections(data: LegacyToolSelections): Promise<void> {
-  const result = z.object({ migrationId: revision }).safeParse(await workspaceRequest(toolSelectionsPath + "/import", data, "POST"));
-  if (!result.success || result.data.migrationId !== data.migrationId) {
-    throw new WorkspaceRequestError(502, "The agent workspace did not confirm the tool selection import.");
-  }
-}
-
 /** Read uncached workspace data. A console without the bundled agent has no socket. */
 export async function loadAgentWorkspace(): Promise<{ records?: AgentWorkspace; error?: string }> {
   if (!process.env.OMA_WORKSPACE_SOCKET) return {};
@@ -360,7 +323,6 @@ const requiredModelBaseUrl = z.string().max(2048).refine((value) => {
   return url?.protocol === "https:" && !url.username && !url.password && !/[?#\s\\]/.test(value);
 });
 const modelBaseUrl = z.union([z.literal(""), requiredModelBaseUrl]);
-const hostedComposioUrl = z.string().max(2048).regex(/^(?:https:\/\/backend\.composio\.dev\/tool_router\/(?:v3\/)?[A-Za-z0-9_-]+\/mcp\/?)?$/);
 const keyValue = z.string().max(4096).regex(/^[\x20-\x7e]*$/);
 const modelProvider = z.string().trim().max(80).regex(/^(?:[A-Za-z0-9_.-]+(?:[:@][A-Za-z0-9_.-]+)?)?$/);
 const modelIdentifier = z.string().trim().max(200).regex(/^[^\s$]*$/);
@@ -372,8 +334,14 @@ const standaloneModelUpdate = z.object({
   baseUrl: requiredModelBaseUrl,
   modelKey: keyValue.transform((value) => value.trim()).default(""),
   reasoningEffort,
+  composioUrl: z.union([z.literal(""), requiredModelBaseUrl]).default(""),
+  composioKey: keyValue.transform((value) => value.trim()).default(""),
 });
 const standaloneIds = ["default", "maintenance"] as const;
+/** Composio project keys (ak_) authenticate with x-api-key and consumer keys (ck_) with x-consumer-api-key. */
+function composioHeader(key: string) {
+  return key.startsWith("ak_") ? "x-api-key" : key.startsWith("ck_") ? "x-consumer-api-key" : undefined;
+}
 const standaloneRevisions = z.object({ revisions: z.object({ default: revision, maintenance: revision }) });
 const agentSync = z.object({ id: z.enum(standaloneIds), revision });
 
@@ -381,20 +349,29 @@ const agentSync = z.object({ id: z.enum(standaloneIds), revision });
 export async function saveStandaloneModel(input: unknown, { requireKey = false } = {}): Promise<StandaloneModelResult> {
   const parsed = standaloneModelUpdate.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.issues.some(({ path }) => path[0] === "baseUrl")
-      ? "Enter a valid HTTPS provider base URL."
-      : "Check the provider, model ID, reasoning effort, and API key." };
+    const field = parsed.error.issues[0]?.path[0];
+    return { error: field === "baseUrl" ? "Enter a valid HTTPS provider base URL."
+      : field === "composioUrl" ? "Enter a valid HTTPS Composio MCP URL without a query string."
+      : "Check the provider, model ID, reasoning effort, and API keys." };
   }
-  const { modelKey, ...settings } = parsed.data;
+  const { modelKey, composioKey, ...settings } = parsed.data;
   if (requireKey && !modelKey) return { error: "Enter your provider API key to set up both agents." };
+  if (composioKey && !settings.composioUrl) return { error: "Enter the Composio MCP URL for this API key." };
+  const header = composioKey ? composioHeader(composioKey) : undefined;
+  if (composioKey && !header) return { error: "Enter a Composio API key that starts with ak_ or ck_." };
   try {
     const { revisions } = standaloneRevisions.parse(await workspaceRequest("/workspace/agents/model", {
-      ...settings, ...(modelKey ? { setModelKey: true } : {}),
+      ...settings, ...(modelKey ? { setModelKey: true } : {}), ...(header ? { setComposioKey: header } : {}),
     }, "POST"));
     for (const id of standaloneIds) {
+      // Only the default agent gets the Composio MCP server and its key.
+      const env = {
+        ...(modelKey ? { HERMES_MODEL_API_KEY: modelKey } : {}),
+        ...(composioKey && id === "default" ? { COMPOSIO_API_KEY: composioKey } : {}),
+      };
       const result = agentSync.parse(await workspaceRequest("/workspace/agents/" + id + "/sync", {
         revision: revisions[id],
-        ...(modelKey ? { env: { HERMES_MODEL_API_KEY: modelKey } } : {}),
+        ...(Object.keys(env).length ? { env } : {}),
       }, "POST"));
       if (result.id !== id) {
         throw new WorkspaceRequestError(502, "Couldn’t confirm both agent syncs. Reload their settings and retry.");
@@ -402,8 +379,8 @@ export async function saveStandaloneModel(input: unknown, { requireKey = false }
     }
     const workspace = await loadAgentWorkspace();
     const models = workspace.records?.standaloneModels;
-    const { provider, modelId, baseUrl, reasoningEffort } = settings;
-    if (!models || standaloneIds.some((id) =>
+    const { provider, modelId, baseUrl, reasoningEffort, composioUrl } = settings;
+    if (!models || models.composioUrl !== composioUrl || standaloneIds.some((id) =>
       models[id].provider !== provider || models[id].modelId !== modelId || models[id].baseUrl !== baseUrl
       || models[id].reasoningEffort !== reasoningEffort)) {
       return { models, error: "Couldn’t confirm the saved settings on both agents. Reload their settings and retry." };
@@ -429,10 +406,7 @@ const campaignUpdate = z.object({
   (!(input.provider || input.baseUrl || input.modelKey) || input.modelId) && (!input.modelKey || input.baseUrl),
 );
 
-type GenerateCampaignMcp = (required: RequiredIntegration[]) => Promise<{ url: string } | { error: string }>;
-
 export type CampaignConfigurationResult = {
-  mcpToolCount?: number;
   staged?: boolean;
   configuration?: CampaignConfiguration;
   error?: string;
@@ -468,18 +442,6 @@ async function editableCampaign(id: string, expectedRevision?: string) {
     throw new WorkspaceRequestError(409, "This campaign changed. Reload it and try again.");
   }
   return { campaign, configuration: campaign.configuration };
-}
-
-/** The VM owns the live MCP check and the subsequent revision-guarded save. */
-export async function saveCampaignCustomMcp(id: string, input: unknown): Promise<CampaignConfigurationResult> {
-  const parsed = z.object({ revision, integrationId: publicationCampaignId, url: z.string().trim().min(1).max(2048) }).safeParse(input);
-  if (!workspaceId.safeParse(id).success || !parsed.success) {
-    throw new WorkspaceRequestError(422, "Reload the campaign and enter an HTTPS MCP endpoint.");
-  }
-  const { toolCount } = z.object({ toolCount: z.number().int().positive() }).parse(await workspaceRequest(
-    "/workspace/campaigns/" + id + "/custom-mcp", parsed.data,
-  ));
-  return { mcpToolCount: toolCount };
 }
 
 async function syncCampaignRecord(
@@ -589,17 +551,17 @@ async function resumeCampaignAfterSync(id: string, currentRevision: string) {
   return lifecycle.revision;
 }
 
-/** Generate the MCP URL after validating the edit, then save the YAML and sync the campaign’s keys. */
+/** Save the campaign’s model settings, then sync the YAML and the campaign’s keys. */
 export async function saveCampaignConfiguration(
-  id: string, input: unknown, generateMcpUrl: GenerateCampaignMcp, start = false,
+  id: string, input: unknown, start = false,
 ): Promise<CampaignConfigurationResult> {
   if (!workspaceId.safeParse(id).success) return { error: "Campaign not found." };
-  return withCampaignEdit(id, () => applyCampaignConfiguration(id, input, generateMcpUrl, { start }));
+  return withCampaignEdit(id, () => applyCampaignConfiguration(id, input, { start }));
 }
 
 async function applyCampaignConfiguration(
-  id: string, input: unknown, generateMcpUrl: GenerateCampaignMcp,
-  { start = false, prepareDraft = false }: { start?: boolean; prepareDraft?: boolean } = {},
+  id: string, input: unknown,
+  { start = false }: { start?: boolean } = {},
 ): Promise<CampaignConfigurationResult> {
   const parsed = campaignUpdate.safeParse(input);
   if (!workspaceId.safeParse(id).success || !parsed.success) {
@@ -617,24 +579,6 @@ async function applyCampaignConfiguration(
   if (start && campaign.lifecycleState === "resumed") {
     return { configuration: current, state: "resumed" };
   }
-  const stageForFirstStart = prepareDraft &&
-    (campaign.installationState === "" || campaign.installationState === "draft");
-  if (campaign.integrationConfigInvalid) {
-    return { error: "Use a list of unique campaign integration IDs such as discord or facebook in config.yaml." };
-  }
-  const missingManual = campaign.manualIntegrations?.filter(({ url }) => !url) ?? [];
-  if (missingManual.length) {
-    return { error: "Set up custom MCP in Tools for: " + missingManual.map(({ name }) => name).join(", ") + "." };
-  }
-  const mcp = await generateMcpUrl(campaign.requiredIntegrations ?? []);
-  if ("error" in mcp) return { error: mcp.error };
-  const url = hostedComposioUrl.safeParse(mcp.url);
-  if (!url.success) return { error: "Composio returned a URL that can’t be synced to this campaign." };
-  const composioUrl = url.data;
-  const composioKey = composioUrl ? process.env.COMPOSIO_API_KEY?.trim() : undefined;
-  if (composioUrl && (!composioKey || !keyValue.safeParse(composioKey).success)) {
-    return { error: "Set COMPOSIO_API_KEY in OMA’s environment to sync a Composio MCP connection." };
-  }
   const path = "/workspace/campaigns/" + id;
   let stopped;
   try {
@@ -645,7 +589,8 @@ async function applyCampaignConfiguration(
   let saved: CampaignConfiguration;
   try {
     saved = campaignConfiguration.parse(await workspaceRequest(path + "/config", {
-      ...settings, revision: stopped.revision, composioUrl, setModelKey: Boolean(modelKey),
+      // Campaigns no longer get a generated Composio session. An empty URL removes an earlier one.
+      ...settings, revision: stopped.revision, composioUrl: "", setModelKey: Boolean(modelKey),
     }));
   } catch (error) {
     const message = error instanceof WorkspaceRequestError && [404, 409, 422].includes(error.status)
@@ -654,13 +599,10 @@ async function applyCampaignConfiguration(
       ? { configuration: { ...current, revision: stopped.revision }, error: "Campaign stopped. " + message }
       : { error: message };
   }
-  const env = {
-    ...(modelKey ? { HERMES_MODEL_API_KEY: modelKey } : {}),
-    ...(composioKey ? { COMPOSIO_API_KEY: composioKey } : {}),
-  };
+  const env = modelKey ? { HERMES_MODEL_API_KEY: modelKey } : {};
   try {
     saved = campaignConfiguration.parse(await workspaceRequest(path + "/sync", {
-      revision: saved.revision, env, ...(install || stageForFirstStart ? { prepareDeployment: true } : {}),
+      revision: saved.revision, env, ...(install ? { prepareDeployment: true } : {}),
     }, "POST"));
   } catch (error) {
     const recovery = error instanceof WorkspaceRequestError && error.status === 412
@@ -673,7 +615,6 @@ async function applyCampaignConfiguration(
     };
   }
   if (!start) {
-    if (stageForFirstStart) return { configuration: saved, staged: true };
     if (!stopped.resume) return { configuration: saved, synced: true };
     try {
       const latest = await resumeCampaignAfterSync(id, saved.revision);
@@ -716,19 +657,7 @@ function savedModelInput(configuration: CampaignConfiguration) {
     baseUrl: configuration.baseUrl, modelKey: "" };
 }
 
-/** Regenerate campaign MCP from the saved integration IDs, keeping the campaign lifecycle and model selection. */
-export async function syncCampaignTools(id: string, expectedRevision: unknown, generateMcp: GenerateCampaignMcp) {
-  const parsed = revision.safeParse(expectedRevision);
-  if (!workspaceId.safeParse(id).success || !parsed.success) {
-    throw new WorkspaceRequestError(422, "Reload the campaign to sync its latest tools.");
-  }
-  return withCampaignEdit(id, async () => {
-    const { configuration } = await editableCampaign(id, parsed.data);
-    return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, { prepareDraft: true });
-  });
-}
-
-export async function changeCampaignRunState(id: string, input: unknown, generateMcp: GenerateCampaignMcp) {
+export async function changeCampaignRunState(id: string, input: unknown) {
   const parsed = z.object({ revision, state: z.enum(["paused", "resumed"]) }).safeParse(input);
   if (!workspaceId.safeParse(id).success || !parsed.success) {
     throw new WorkspaceRequestError(422, "Choose whether to pause or start the campaign.");
@@ -737,7 +666,7 @@ export async function changeCampaignRunState(id: string, input: unknown, generat
     const { campaign, configuration } = await editableCampaign(id, parsed.data.revision);
     if (parsed.data.state === "resumed") {
       if (campaign.lifecycleState === "pausing") throw new WorkspaceRequestError(409, "Wait for the campaign to finish stopping.");
-      return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp, { start: true });
+      return applyCampaignConfiguration(id, savedModelInput(configuration), { start: true });
     }
     if (campaign.installationState !== "installed" && campaign.lifecycleState !== "resumed") {
       throw new WorkspaceRequestError(409, "Start the campaign before pausing it.");
@@ -753,16 +682,6 @@ export async function syncCampaignAgents(id: string, expectedRevision: unknown) 
   return withCampaignEdit(id, () => syncCampaignRecord(id, parsed.data));
 }
 
-export async function refreshCampaignToolConnection(id: string, slug: string, generateMcp: GenerateCampaignMcp) {
-  if (!workspaceId.safeParse(id).success || !validToolkitSlug(slug)) return undefined;
-  return withCampaignEdit(id, async () => {
-    const { campaign, configuration } = await editableCampaign(id);
-    if (!campaign.requiredIntegrations?.some((tool) => tool.slug === slug) ||
-        campaign.installationState !== "installed") return undefined;
-    return applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp);
-  });
-}
-
 const campaignChanges = z.object({ revision, integrations: revision });
 export type CampaignChanges = z.infer<typeof campaignChanges>;
 
@@ -775,9 +694,9 @@ export async function readCampaignChanges(id: string): Promise<CampaignChanges |
   }
 }
 
-/** Sync authored records when a chat turn changed them, and regenerate MCP only when tool IDs changed. */
+/** Sync authored records when a chat turn changed them. */
 export async function syncCampaignChatChanges(
-  id: string, previous: unknown, generateMcp: GenerateCampaignMcp,
+  id: string, previous: unknown,
 ): Promise<CampaignConfigurationResult | undefined> {
   const before = campaignChanges.safeParse(previous);
   if (!workspaceId.safeParse(id).success || !before.success) return undefined;
@@ -785,20 +704,7 @@ export async function syncCampaignChatChanges(
     const after = await readCampaignChanges(id);
     if (!after) return { error: "Couldn’t check campaign changes. Open Agents to sync the saved records." };
     if (before.data.revision === after.revision) return undefined;
-    const { campaign, configuration } = await editableCampaign(id);
-    if (before.data.integrations !== after.integrations && campaign.installationState === "installed") {
-      const result = await applyCampaignConfiguration(id, savedModelInput(configuration), generateMcp);
-      if (result.error && !result.configuration && campaign.lifecycleState === "resumed") {
-        // Chat already changed the tool list, so stop the previously synced runtime if it cannot apply the edit.
-        try {
-          await pauseCampaignForSync(id, campaign.lifecycleState, configuration.revision);
-          return { error: "Campaign stopped. " + result.error };
-        } catch {
-          return { error: result.error + " Stopping the campaign could not be confirmed. Check its status." };
-        }
-      }
-      return result;
-    }
+    const { configuration } = await editableCampaign(id);
     return syncCampaignRecord(id, configuration.revision);
   });
 }

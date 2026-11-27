@@ -60,6 +60,10 @@ BRAND_ASSET_TYPES = {
 }
 MODEL_KEY = "HERMES_MODEL_API_KEY"
 COMPOSIO_KEY = "COMPOSIO_API_KEY"
+# The default agent's Composio MCP server, entered during agent setup. The console picks the
+# header from the key prefix: ak_ (project key) uses x-api-key, ck_ (consumer key) x-consumer-api-key.
+COMPOSIO_SERVER = "composio"
+COMPOSIO_HEADERS = ("x-api-key", "x-consumer-api-key")
 CUSTOM_MCP_PREFIX = "oma-custom-"
 INTEGRATION_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CUSTOM_MCP_PROBE = Lock()
@@ -1341,10 +1345,26 @@ def standalone_model(value):
     }
 
 
+def default_composio_server(record):
+    """Return the default agent's setup-managed Composio server, if its record has one."""
+    server = mapping(mapping(record.get("mcp_servers")).get(COMPOSIO_SERVER))
+    url = configuration_url(server.get("url"))
+    if not url:
+        return None
+    headers = mapping(server.get("headers"))
+    reference = "${" + COMPOSIO_KEY + "}"
+    return {"url": url, "hasKey": any(headers.get(name) == reference for name in COMPOSIO_HEADERS)}
+
+
 def standalone_model_state(files):
     sources = [source for _, source, _ in files]
     revision = sha256(b"".join(sha256(source).digest() for source in sources)).hexdigest()
-    state = {"revision": revision}
+    composio = default_composio_server(parse_record(sources[0], "default"))
+    state = {
+        "revision": revision,
+        "composioUrl": composio["url"] if composio else "",
+        "hasComposioKey": bool(composio and composio["hasKey"]),
+    }
     for agent_id, source in zip(STANDALONE_AGENTS, sources[1::2]):
         native = mapping(safe_load(source))
         reasoning = parse_reasoning_effort(mapping(native.get("agent")).get("reasoning_effort"))
@@ -1379,9 +1399,44 @@ def standalone_key_name(provider):
     raise WorkspaceError(422, "Choose an API-key provider. For OpenAI, choose OpenAI API.")
 
 
+def update_default_composio_server(document, url, header, credential_revision):
+    """Write or remove the default agent's Composio MCP server; the key stays a profile env reference."""
+    servers = document.get("mcp_servers")
+    if servers is None:
+        servers = CommentedMap()
+    if not isinstance(servers, dict):
+        raise WorkspaceError(422, "The default agent's MCP servers must be a YAML mapping.")
+    if not url:
+        if COMPOSIO_SERVER in servers:
+            # Keep the empty mapping so sync also removes the server from the native profile.
+            del servers[COMPOSIO_SERVER]
+            document["mcp_servers"] = servers
+        return
+    server = servers.get(COMPOSIO_SERVER)
+    if not isinstance(server, dict):
+        server = CommentedMap()
+    headers = server.get("headers")
+    if not isinstance(headers, dict):
+        headers = CommentedMap()
+    if header:
+        # A new key may be the other kind, so replace every Composio credential header.
+        for name in list(headers):
+            if name.lower() in (*COMPOSIO_HEADERS, "x-user-api-key"):
+                del headers[name]
+        headers[header] = "${" + COMPOSIO_KEY + "}"
+        if isinstance(headers, CommentedMap):
+            # Give key rotations distinct saved revisions, even if the URL matches.
+            headers.yaml_add_eol_comment(f"Credential revision {credential_revision or token_hex(16)}", key=header)
+    server["url"] = url
+    server["headers"] = headers
+    servers[COMPOSIO_SERVER] = server
+    document["mcp_servers"] = servers
+
+
 def update_standalone_model(root, request):
     fields = {"revision", "modelId", "provider", "baseUrl"}
-    if (not isinstance(request, dict) or request.keys() - {"setModelKey", "reasoningEffort"} != fields
+    optional = {"setModelKey", "reasoningEffort", "composioUrl", "setComposioKey"}
+    if (not isinstance(request, dict) or request.keys() - optional != fields
             or ("setModelKey" in request and request["setModelKey"] is not True)
             or any(not isinstance(request[field], str) for field in fields)
             or not re.fullmatch(r"[a-f0-9]{64}", request["revision"])
@@ -1396,6 +1451,14 @@ def update_standalone_model(root, request):
     reasoning = request.get("reasoningEffort")
     if "reasoningEffort" in request and reasoning not in STANDALONE_REASONING:
         raise WorkspaceError(422, "Choose a supported reasoning effort for both agents.")
+    composio_url = request.get("composioUrl")
+    composio_header = request.get("setComposioKey")
+    if "composioUrl" in request and (
+        not isinstance(composio_url, str) or (composio_url and not configuration_url(composio_url))
+    ):
+        raise WorkspaceError(422, "Enter a valid HTTPS Composio MCP URL without a query string.")
+    if "setComposioKey" in request and (composio_header not in COMPOSIO_HEADERS or not composio_url):
+        raise WorkspaceError(422, "Enter the Composio MCP URL with an ak_ or ck_ API key.")
     credential = standalone_key_name(request["provider"]) if request.get("setModelKey") else None
     credential_revision = token_hex(16) if credential else None
     try:
@@ -1403,6 +1466,10 @@ def update_standalone_model(root, request):
             current = standalone_model_state(files)
             if request["revision"] != current["revision"]:
                 raise WorkspaceError(409, "An agent configuration changed. Reload the page and try again.")
+            if composio_url and not composio_header and not (
+                current["hasComposioKey"] and current["composioUrl"] == composio_url
+            ):
+                raise WorkspaceError(422, "Enter the Composio API key for this MCP URL.")
             updates = []
             revisions = {}
             for agent_id, (directory, source, mode), (_, native, _) in zip(STANDALONE_AGENTS, files[::2], files[1::2]):
@@ -1444,6 +1511,8 @@ def update_standalone_model(root, request):
                     if not isinstance(agent, dict):
                         raise WorkspaceError(422, "The saved agent settings must be a YAML mapping.")
                     agent["reasoning_effort"] = reasoning
+                if agent_id == "default" and "composioUrl" in request:
+                    update_default_composio_server(document, composio_url, composio_header, credential_revision)
                 text = StringIO()
                 yaml.dump(document, text)
                 updated = text.getvalue().encode()
@@ -1482,6 +1551,10 @@ def sync_agent_configuration(root, agent_id, request):
         if request.get("revision", revision) != revision:
             raise WorkspaceError(409, "This agent changed before sync. Reload its settings and try again.")
         command = [sys.executable, str(Path(__file__).with_name("sync_standalone.py")), agent_id, revision]
+        if COMPOSIO_KEY in env:
+            composio = default_composio_server(parse_record(source, agent_id)) if agent_id == "default" else None
+            if "revision" not in request or not (composio and composio["hasKey"]):
+                raise WorkspaceError(422, "Save the default agent’s Composio MCP URL before syncing its API key.")
         if MODEL_KEY in env:
             if "revision" not in request:
                 raise WorkspaceError(422, "Include the staged revision to sync the agent’s model API key.")

@@ -1,4 +1,4 @@
-/** Collects a shared model selection and provider credential and reports whether both built-in agents synced. */
+/** Collects the shared model, its credential, and the default agent’s Composio MCP server, then reports whether both built-in agents synced. */
 
 "use client";
 
@@ -39,6 +39,10 @@ export function StandaloneModelSettings({ models, setup = false }: { models: Sta
   const [modelId, setModelId] = useState(models.default.modelId || models.maintenance.modelId);
   const [baseUrl, setBaseUrl] = useState(models.default.baseUrl || models.maintenance.baseUrl);
   const [reasoningEffort, setReasoningEffort] = useState<string>(models.default.reasoningEffort);
+  const [composioUrl, setComposioUrl] = useState(models.composioUrl);
+  // A saved key stays in the profile; ask again only for a new or changed URL.
+  const composioKeyRequired = Boolean(composioUrl.trim())
+    && !(current.hasComposioKey && composioUrl.trim() === current.composioUrl);
   return (
     <section aria-labelledby="standalone-model-heading">
       <h2 id="standalone-model-heading">{setup ? "Provider, model, and API key" : "Default and maintenance agents"}</h2>
@@ -51,6 +55,10 @@ export function StandaloneModelSettings({ models, setup = false }: { models: Sta
                 {current[agent].modelId || "No model selected"}</dd>
             </div>
           ))}
+          <div>
+            <dt>Composio</dt>
+            <dd>{current.composioUrl || "Not set up"}</dd>
+          </div>
         </dl>
       )}
       <form action={action} className="standalone-model-form">
@@ -84,6 +92,25 @@ export function StandaloneModelSettings({ models, setup = false }: { models: Sta
           value={reasoningEffort} onChange={(event) => setReasoningEffort(event.target.value)} disabled={pending}>
           {reasoningOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </NativeSelect>
+        <fieldset className="standalone-model-composio" disabled={pending}>
+          <legend>Composio tools (optional)</legend>
+          <p className="standalone-model-hint" id="composio-hint">
+            Paste the MCP URL and API key from your Composio dashboard, and connect your apps there.
+            Only the default agent uses this server.
+          </p>
+          <label htmlFor="composio-url">Composio MCP URL</label>
+          <Input id="composio-url" name="composioUrl" type="url" value={composioUrl}
+            onChange={(event) => setComposioUrl(event.target.value)} placeholder="https://connect.composio.dev/mcp"
+            maxLength={2048} aria-describedby="composio-hint" spellCheck={false} />
+          <label htmlFor="composio-key">Composio API key</label>
+          <Input id="composio-key" name="composioKey" type="password" autoComplete="new-password"
+            aria-describedby="composio-key-hint" maxLength={4096} required={composioKeyRequired} />
+          <p className="standalone-model-hint" id="composio-key-hint">
+            {current.hasComposioKey
+              ? "A key is saved. Leave blank to keep it, or clear the URL to remove Composio."
+              : "Required with the MCP URL. Use a project key (ak_) or a consumer key (ck_)."}
+          </p>
+        </fieldset>
         {result.error && <p className="form-error" role="alert">{result.error}</p>}
         {result.models && !result.error && !pending && <p role="status">Settings synced to both agents.</p>}
         <Button type="submit" disabled={pending}>

@@ -27,7 +27,6 @@ const PUBLIC_PATHS = new Set([
   "/",
   "/login",
   "/register",
-  "/api/connections/callback",
 ]);
 
 /** Signed-in visitors get bounced from these to the dashboard. */

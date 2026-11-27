@@ -6,7 +6,6 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/dal";
 import { requireAgentSetup } from "@/lib/server/agent-setup";
 import { readCampaignChanges, syncCampaignChatChanges, WorkspaceRequestError, workspaceId } from "@/lib/server/agent-workspace";
-import { generateCampaignMcpUrl } from "@/lib/tool-workspace";
 import { AgentChatError, answerAgentPrompt, getAgentRun, steerAgentRun } from "@/lib/server/agent-chat";
 import { loadOlderChatMessages, sendNativeChatTurn } from "@/lib/server/chat-history";
 
@@ -49,7 +48,7 @@ export async function syncCompletedCampaignChat(id: string, handle: string, prev
   if (!workspaceId.safeParse(id).success) return { error: "Campaign not found." };
   try {
     if ((await getAgentRun(user.id, handle, "default")).status !== "completed") return undefined;
-    return await syncCampaignChatChanges(id, previous, (required) => generateCampaignMcpUrl(user.id, required));
+    return await syncCampaignChatChanges(id, previous);
   } catch (error) {
     return { error: error instanceof WorkspaceRequestError ? error.message : "Couldn’t sync the agent’s changes. Open Agents to retry." };
   } finally {
