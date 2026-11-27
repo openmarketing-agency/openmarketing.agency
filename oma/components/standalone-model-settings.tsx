@@ -108,7 +108,7 @@ export function StandaloneModelSettings({ models, setup = false }: { models: Sta
           <p className="standalone-model-hint" id="composio-key-hint">
             {current.hasComposioKey
               ? "A key is saved. Leave blank to keep it, or clear the URL to remove Composio."
-              : "Required with the MCP URL. Use a project key (ak_) or a consumer key (ck_)."}
+              : "Add your Composio consumer API key."}
           </p>
         </fieldset>
         {result.error && <p className="form-error" role="alert">{result.error}</p>}
