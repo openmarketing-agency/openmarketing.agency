@@ -45,7 +45,7 @@ Brand knowledge and playbook strategy display saved Markdown as document section
 
 ## Campaign publishing and approvals
 
-Choose a publishing mode in the campaign’s **Settings**. **Approve** is the default and sends public posts and replies for review. **Control** pauses scheduled work and runs explicitly approved publications. **Yolo** runs automation and auto-approves new publication drafts. **Approvals** shows saved campaign publications with their account, content, media, and reply target. Approving a revision queues the campaign’s publisher agent on its Kanban board. The agent records the result against the reviewed revision. Publication reviews use the native workflow in oma-agent v0.1.20 through the private workspace socket.
+Choose a publishing mode in the campaign’s **Settings**. **Approve** is the default and sends public posts and replies for review. **Control** keeps analytics collection available, pauses other scheduled work, and runs explicitly approved publications. **Yolo** runs automation and auto-approves new publication drafts. **Approvals** shows saved campaign publications with their account, content, media, and reply target. Approving a revision queues the campaign’s publisher agent on its Kanban board. The agent records the result against the reviewed revision. Publication reviews use the native workflow in oma-agent v0.1.20 through the private workspace socket.
 
 Mode changes save to the campaign’s `config.yaml` and sync with the saved revision. Model and MCP changes include their API keys in the private sync request when applicable. The console waits for running campaigns to stop before sync and restarts them after success. Campaigns already stopped stay stopped when syncing settings.
 
@@ -55,9 +55,9 @@ Open a campaign’s **Analytics** tab and select **Generate dashboard**. oma-age
 
 Select **Regenerate dashboard** to rebuild a saved layout from current observations, including after new sources or fields appear. The saved dashboard stays available if regeneration fails. Update both the console and VM service to use observation samples in generation.
 
-OpenUI queries saved observations on load, when the 7- or 28-day UTC filter changes, and once per minute. **Refresh data** queues the campaign’s analyst and reloads the observations when the run settles. The collector also runs hourly for active campaigns. It upserts measurements in the campaign’s `data.sqlite3`. Filtered reads work while a campaign is paused. A partial collection can add observations while the last successful refresh time stays fixed.
+OpenUI queries saved observations on load, when the 7- or 28-day UTC filter changes, and once per minute. **Refresh data** queues the analyst for a running campaign in any mode and reloads observations when the run settles. The analyst also runs every six hours for active campaigns and upserts measurements in the campaign’s `data.sqlite3`. Filtered reads work while a campaign is paused. A partial collection can add observations while the last successful refresh time stays fixed.
 
-This workflow requires oma-agent v0.1.24. Sync installed campaigns after upgrading to provision their analyst. Publication observations are collected automatically. Google Analytics 4 and Search Console also require source bindings and credentials in the analyst profile.
+This schedule and manual refresh behavior require oma-agent v0.1.33. Sync installed campaigns after upgrading to refresh their analyst settings. Publication observations are collected automatically. The analyst uses authorized read-only tools to collect from verified properties or accounts on connected sources such as Google Analytics 4 and Search Console.
 
 Open **Generation details** to inspect the saved prompts and OpenUI source. Existing OpenUI activity layouts keep their source and appear alongside the collected observations.
 
@@ -69,6 +69,6 @@ After editing the analytics component library, run `node --import tsx scripts/ge
 
 The first registration creates the installation's sole account. The nullable `users.onboarding_state` field stores the project setup and any saved agent onboarding transcript. Browser login stores one long-lived access token in an HTTP-only cookie. It lasts 30 days by default; set `OMA_ACCESS_TOKEN_LIFETIME_SECONDS` to change that. Signing out ends every session for the account. API clients send `username` and `password` as form fields to `/api/v1/auth/jwt/login`, then send the returned access token as `Authorization: Bearer <token>`. The bearer API and machine-readable OpenAPI document are available at `/docs` and `/openapi.json`.
 
-The console doesn’t use the Composio SDK. Agent setup and **Settings** require a Composio MCP URL and an `ak_` or `ck_` API key and save them to the default agent’s profile config. Connect apps in your Composio dashboard. The console no longer reads `COMPOSIO_API_KEY` from its environment, and the workspace and campaign **Tools** views have been removed.
+The console doesn’t use the Composio SDK. Agent setup and **Settings** require a Composio MCP URL and an `ak_` or `ck_` API key and save them to the default agent’s profile config. Connect apps in your Composio dashboard. The console no longer reads `COMPOSIO_API_KEY` from its environment, and the workspace **Tools** page has been removed. Each campaign’s **Tools** tab lists its integrations and sets up custom MCP endpoints.
 
 Authenticated custom MCP connections also require `OMA_INTEGRATION_ENCRYPTION_KEY`. Generate one with `openssl rand -base64 32 | tr '+/' '-_'` and back it up securely. Authenticated endpoints use HTTPS, with HTTP allowed for loopback endpoints.

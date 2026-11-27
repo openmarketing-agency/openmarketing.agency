@@ -70,9 +70,17 @@ const campaignConfiguration = z.object({
   revision, provider: z.string(), modelId: z.string(), baseUrl: z.string(),
   hasModelKey: z.boolean(), mode: campaignMode.optional(),
 });
+// Composio prefixes some digit-led toolkit slugs, such as _1password, with an underscore.
+const toolkitSlug = z.string().regex(/^(?=[a-z0-9]|_[0-9])[a-z0-9_-]{1,128}$/);
+// Integrations with a Composio toolkit are connected in Composio; the others need a custom MCP endpoint.
+const campaignIntegration = z.object({ id: workspaceId, name: z.string(), slug: toolkitSlug.nullable() });
+const manualCampaignIntegration = z.object({ id: publicationCampaignId, name: z.string(), url: z.string() });
 const campaign = record.extend({
   playbookId: z.string(), version: z.string(), orchestrator: z.string(), agentIds: strings,
   goals: strings, plans: strings, board: z.string(),
+  integrationConfigInvalid: z.boolean().optional(),
+  requiredIntegrations: z.array(campaignIntegration).optional(),
+  manualIntegrations: z.array(manualCampaignIntegration).optional(),
   installationState: z.string().optional(), model: z.string().optional(),
   lifecycleState: z.string().optional(), mode: campaignMode.optional(),
   configuration: campaignConfiguration.optional(),
@@ -118,6 +126,8 @@ export type WorkspaceEdit = "brands" | "playbooks" | "brand-knowledge";
 export type SavedPlaybook = z.infer<typeof playbook>;
 export type CampaignConfiguration = z.infer<typeof campaignConfiguration>;
 export type SavedCampaign = z.infer<typeof campaign>;
+export type RequiredIntegration = NonNullable<SavedCampaign["requiredIntegrations"]>[number];
+export type ManualCampaignIntegration = z.infer<typeof manualCampaignIntegration>;
 export type SavedAgent = z.infer<typeof agent>;
 
 export const brandUpdate = z.object({
@@ -195,7 +205,7 @@ export async function workspaceRequest(
   if (!socketPath) throw unavailable();
   const payload = body ? JSON.stringify(body) : undefined;
   const timeout = path.endsWith("/deploy") ? 130_000 : method === "POST" || path.endsWith("/lifecycle") ? 70_000
-    : path.endsWith("/custom-mcp") ? 15_000 : 6_000;
+    : path.endsWith("/custom-mcp") ? 15_000 : path.endsWith("/tool-connections") ? 25_000 : 6_000;
   return new Promise((resolve, reject) => {
     const req = request({
       socketPath, path, method,
@@ -407,6 +417,7 @@ const campaignUpdate = z.object({
 );
 
 export type CampaignConfigurationResult = {
+  mcpToolCount?: number;
   staged?: boolean;
   configuration?: CampaignConfiguration;
   error?: string;
@@ -442,6 +453,29 @@ async function editableCampaign(id: string, expectedRevision?: string) {
     throw new WorkspaceRequestError(409, "This campaign changed. Reload it and try again.");
   }
   return { campaign, configuration: campaign.configuration };
+}
+
+const toolConnections = z.object({ configured: z.boolean(), connections: z.record(z.string(), z.boolean()) });
+export type CampaignToolConnections = z.infer<typeof toolConnections>;
+
+/** Ask the VM which of a campaign’s Composio toolkits are connected. It checks over the default agent’s MCP server. */
+export async function readCampaignToolConnections(id: string): Promise<CampaignToolConnections> {
+  if (!workspaceId.safeParse(id).success) throw new WorkspaceRequestError(404, "Campaign not found.");
+  const result = toolConnections.safeParse(await workspaceRequest("/workspace/campaigns/" + id + "/tool-connections"));
+  if (!result.success) throw new WorkspaceRequestError(502, "The agent workspace returned invalid tool connections.");
+  return result.data;
+}
+
+/** The VM owns the live MCP check and the subsequent revision-guarded save. */
+export async function saveCampaignCustomMcp(id: string, input: unknown): Promise<CampaignConfigurationResult> {
+  const parsed = z.object({ revision, integrationId: publicationCampaignId, url: z.string().trim().min(1).max(2048) }).safeParse(input);
+  if (!workspaceId.safeParse(id).success || !parsed.success) {
+    throw new WorkspaceRequestError(422, "Reload the campaign and enter an HTTPS MCP endpoint.");
+  }
+  const { toolCount } = z.object({ toolCount: z.number().int().positive() }).parse(await workspaceRequest(
+    "/workspace/campaigns/" + id + "/custom-mcp", parsed.data,
+  ));
+  return { mcpToolCount: toolCount };
 }
 
 async function syncCampaignRecord(
@@ -578,6 +612,13 @@ async function applyCampaignConfiguration(
   const install = start && campaign.installationState !== "installed";
   if (start && campaign.lifecycleState === "resumed") {
     return { configuration: current, state: "resumed" };
+  }
+  if (campaign.integrationConfigInvalid) {
+    return { error: "Use a list of unique campaign integration IDs such as discord or facebook in config.yaml." };
+  }
+  const missingManual = campaign.manualIntegrations?.filter(({ url }) => !url) ?? [];
+  if (missingManual.length) {
+    return { error: "Set up custom MCP in Tools for: " + missingManual.map(({ name }) => name).join(", ") + "." };
   }
   const path = "/workspace/campaigns/" + id;
   let stopped;

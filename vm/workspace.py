@@ -36,7 +36,7 @@ from hermes_yaml import YAMLError, roundtrip_yaml, safe_load
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from custom_mcp import MCPCheckError, approved_url, check_tools
+from custom_mcp import MCPCheckError, approved_url, check_tools, toolkit_connections
 
 
 COLLECTIONS = ("brands", "playbooks", "campaigns", "agents")
@@ -67,6 +67,7 @@ COMPOSIO_HEADERS = ("x-api-key", "x-consumer-api-key")
 CUSTOM_MCP_PREFIX = "oma-custom-"
 INTEGRATION_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 CUSTOM_MCP_PROBE = Lock()
+COMPOSIO_STATUS_PROBE = Lock()
 CAMPAIGN_MODES = ("approve", "control", "yolo")
 RUNTIME_ENV = ("PATH", "HOME", "USER", "LOGNAME", "HERMES_HOME", "HERMES_DIR", "PYTHONPATH", "LANG",
                "LC_ALL", "XDG_RUNTIME_DIR", "VIRTUAL_ENV")
@@ -1353,7 +1354,8 @@ def default_composio_server(record):
         return None
     headers = mapping(server.get("headers"))
     reference = "${" + COMPOSIO_KEY + "}"
-    return {"url": url, "hasKey": any(headers.get(name) == reference for name in COMPOSIO_HEADERS)}
+    header = next((name for name in COMPOSIO_HEADERS if headers.get(name) == reference), None)
+    return {"url": url, "hasKey": header is not None, "header": header}
 
 
 def standalone_model_state(files):
@@ -1788,6 +1790,31 @@ def read_saved_campaign(root, campaign_id):
         return parse_record(source, campaign_id)
 
 
+def campaign_tool_connections(root, campaign_id):
+    """Report which of a campaign's Composio toolkits have an active connection, using the default agent's server."""
+    from agent.secret_scope import load_env_file
+
+    slugs = [item["slug"] for item in campaign_integrations(read_saved_campaign(root, campaign_id))["requiredIntegrations"]]
+    with editable_record(root, "agents", "default") as (_, source, _):
+        composio = default_composio_server(parse_record(source, "default"))
+    key = load_env_file(root.parent / ".env").get(COMPOSIO_KEY, "").strip() if composio and composio["hasKey"] else ""
+    if not key:
+        return {"configured": False, "connections": {}}
+    if not slugs:
+        return {"configured": True, "connections": {}}
+    # Don't hold the workspace edit lock over remote I/O, and run one check at a time.
+    if not COMPOSIO_STATUS_PROBE.acquire(blocking=False):
+        raise WorkspaceError(429, "Another Composio connection check is running. Try again in a moment.")
+    try:
+        found = toolkit_connections(composio["url"], {composio["header"]: key}, [slug.lower() for slug in slugs])
+    except MCPCheckError as error:
+        raise WorkspaceError(502, str(error)) from None
+    finally:
+        COMPOSIO_STATUS_PROBE.release()
+    # A toolkit Composio didn't report on has no active connection.
+    return {"configured": True, "connections": {slug: found.get(slug.lower(), False) for slug in slugs}}
+
+
 def campaign_kanban_status(root, campaign_id):
     slug, state = resolve_campaign_board(root.parent, read_saved_campaign(root, campaign_id))
     if not slug:
@@ -2155,6 +2182,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         asset = re.fullmatch(r"/workspace/brands/([^/]+)/assets/([a-f0-9]{32})", self.path)
         profile = re.fullmatch(r"/workspace/agents/([^/]+)/profile", self.path)
         kanban = re.fullmatch(r"/workspace/campaigns/([^/]+)/kanban", self.path)
+        tool_connections = re.fullmatch(r"/workspace/campaigns/([^/]+)/tool-connections", self.path)
         lifecycle = re.fullmatch(r"/workspace/campaigns/([^/]+)/lifecycle", self.path)
         changes = re.fullmatch(r"/workspace/campaigns/([^/]+)/changes", self.path)
         analytics = re.fullmatch(r"/workspace/campaigns/([^/?]+)/analytics(/status)?(?:\?(.*))?", self.path)
@@ -2182,6 +2210,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 result = campaign_publications(self.server.root, publication_list[1], publication_list[2] or "")
             elif kanban:
                 result = campaign_kanban_status(self.server.root, kanban[1])
+            elif tool_connections:
+                result = campaign_tool_connections(self.server.root, tool_connections[1])
             elif lifecycle:
                 result = campaign_lifecycle_status(self.server.root, lifecycle[1])
             elif analytics:

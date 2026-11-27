@@ -193,9 +193,9 @@ The status strip above the chat composer uses the same run poll to show queueing
 
 ## 5. Composio tools
 
-The console has no Composio SDK, tool catalog, or OAuth callback. Agent setup and **Settings** require a Composio MCP URL and API key. The workspace service writes `mcp_servers.composio` to the default agent’s record, and the default agent’s sync applies it to the native profile. The console picks the header from the key prefix: `x-api-key` for `ak_` and `x-consumer-api-key` for `ck_`. The header holds `${COMPOSIO_API_KEY}`, and the key value lives in that profile’s credentials. Apps are connected in the Composio dashboard. The maintenance agent doesn’t get the server. A campaign’s `integrations` list is informational.
+The console has no Composio SDK, tool catalog, or OAuth callback. Agent setup and **Settings** require a Composio MCP URL and API key. The workspace service writes `mcp_servers.composio` to the default agent’s record, and the default agent’s sync applies it to the native profile. The console picks the header from the key prefix: `x-api-key` for `ak_` and `x-consumer-api-key` for `ck_`. The header holds `${COMPOSIO_API_KEY}`, and the key value lives in that profile’s credentials. Apps are connected in the Composio dashboard. The maintenance agent doesn’t get the server. A campaign’s **Tools** tab lists the `integrations` from its config: Composio apps, and tools that need a custom MCP endpoint. For each Composio app, the VM calls the read-only `COMPOSIO_SEARCH_TOOLS` tool on the default agent’s server and reports `has_active_connection`. The tab tells the user to connect any missing app in the Composio dashboard. The VM checks each endpoint before saving it, and a campaign can’t start until every custom MCP tool has one.
 
-**Code to read** · [Settings form](../oma/components/standalone-model-settings.tsx) · [Shared model save](../oma/lib/server/agent-workspace.ts) · [Default agent MCP write](../vm/workspace.py)
+**Code to read** · [Settings form](../oma/components/standalone-model-settings.tsx) · [Campaign Tools tab](../oma/components/campaign-tools.tsx) · [Shared model save](../oma/lib/server/agent-workspace.ts) · [Default agent MCP write and custom MCP check](../vm/workspace.py)
 
 ## 6. Campaign save, sync, deploy, and start
 
@@ -247,7 +247,7 @@ sequenceDiagram
 ```
 
 - Model overrides are optional. Campaign profiles inherit the default model and its credential when there is no override. A model update sends only the relevant credential values in the private sync or deploy body. Plan, mode, and agent sync omit the credential body. Resume uses the existing deployment.
-- **Approve** is the default mode and requires review before publication. **Yolo** runs automation and auto-approves new drafts. **Control** pauses scheduled work and runs explicitly approved publications.
+- **Approve** is the default mode and requires review before publication. **Yolo** runs automation and auto-approves new drafts. **Control** keeps analytics collection available, pauses other scheduled work, and runs explicitly approved publications.
 - Each mutation uses the latest revision from the previous step. A stale revision gives `409` and requires a reload. A save can succeed before sync fails. If a running campaign was paused for the change, it remains paused until a successful sync and resume.
 
 **Code to read** · [Campaign settings UI](../oma/components/campaign-settings.tsx) · [Mode settings UI](../oma/components/campaign-mode-settings.tsx) · [Workspace actions](../oma/app/actions/workspace.ts) · [Pause, sync, deploy, and resume](../oma/lib/server/agent-workspace.ts) · [Private endpoint implementations](../vm/workspace.py)

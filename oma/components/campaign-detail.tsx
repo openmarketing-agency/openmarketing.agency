@@ -1,4 +1,4 @@
-/** Shows a saved campaign and manages its plan and agent settings. */
+/** Shows a saved campaign and manages its plan, tools, and agent settings. */
 
 "use client";
 
@@ -13,6 +13,7 @@ import { CampaignKanban } from "@/components/campaign-kanban";
 import { CampaignProgress } from "@/components/campaign-progress";
 import { CampaignModeSettings } from "@/components/campaign-mode-settings";
 import { CampaignSettings } from "@/components/campaign-settings";
+import { CampaignTools } from "@/components/campaign-tools";
 import { WorkspaceAnalytics } from "@/components/workspace-analytics";
 import { campaignLifecycleLabel } from "@/components/workspace-records";
 import type { CampaignKanbanStatus, SavedCampaign } from "@/lib/server/agent-workspace";
@@ -24,6 +25,7 @@ const views = [
   { id: "overview", label: "Plan" },
   { id: "analytics", label: "Analytics" },
   { id: "agents", label: "Agents" },
+  { id: "tools", label: "Tools" },
   { id: "settings", label: "Run settings" },
 ] as const;
 
@@ -79,7 +81,7 @@ export function CampaignDetail({
   const requestedView = query.get("view");
   const view: View = requestedView === "deploy" || requestedView === "mcp" ? "settings"
     : views.find(({ id }) => id === requestedView)?.id
-      ?? (requestedView === "team" || query.has("agent") ? "agents" : "progress");
+      ?? (requestedView === "team" || query.has("agent") ? "tools" : "progress");
   const path = "/campaigns/" + campaign.id;
   const agentCount = Object.keys(agentNames).length;
   const [runResult, runAction, runPending] = useActionState(changeCampaignRunAction.bind(null, campaign.id), {});
@@ -88,6 +90,9 @@ export function CampaignDetail({
   const running = deploymentState === "Running";
   const pausing = deploymentState === "Pausing…";
   const { configuration, name, description } = campaign;
+  // Custom MCP tools need a saved endpoint before the campaign can start.
+  const needsManualSetup = (campaign.manualIntegrations ?? []).some(({ url }) => !url);
+  const blocked = Boolean(campaign.integrationConfigInvalid || needsManualSetup);
   const runLabel = running ? "Pause campaign" : installed ? "Resume campaign" : "Start campaign";
 
   function viewLink(nextView: View) {
@@ -114,23 +119,27 @@ export function CampaignDetail({
           {view !== "progress" && <CampaignKanban status={kanban} />}
         </header>
         <div className="campaign-header-actions">
-          {configuration && (
+          {configuration && (!running && blocked && !pausing && view !== "tools" ? (
+            <Button asChild><Link {...viewLink("tools")}>Set up required tools</Link></Button>
+          ) : (
             <form action={runAction}>
               <input type="hidden" name="revision" value={configuration.revision} />
               <input type="hidden" name="state" value={running ? "paused" : "resumed"} />
               <Button variant={running ? "outline" : "default"}
-                disabled={runPending || pausing}>
+                disabled={runPending || pausing || (!running && blocked)}>
                 {running ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
                 {runPending ? (running ? "Pausing…" : "Starting…") : pausing ? "Pausing…" : runLabel}
               </Button>
             </form>
-          )}
+          ))}
         </div>
       </div>
       {runResult.error && !runPending && <p className="form-error" role="alert">{runResult.error}</p>}
       {!running && !pausing && configuration && (
         <p className="campaign-run-guide">
-          {installed ? "Resume when you’re ready for the agents to continue."
+          {campaign.integrationConfigInvalid ? "Fix the tool IDs before starting."
+            : blocked ? (installed ? "Set up the custom MCP tools before resuming." : "Set up the custom MCP tools before starting.")
+            : installed ? "Resume when you’re ready for the agents to continue."
             : "Starting sets up the agents and their Kanban board."}
         </p>
       )}
@@ -154,6 +163,7 @@ export function CampaignDetail({
         {configuration && <CampaignAgentSync campaignId={campaign.id} revision={configuration.revision} />}
         {agents}
       </>}
+      {view === "tools" && <CampaignTools campaign={campaign} disabled={pausing || runPending || blocked} />}
       {view === "settings" && (configuration ? (
         <>
           {running && <p className="campaign-settings-notice" role="note">
@@ -161,7 +171,7 @@ export function CampaignDetail({
           </p>}
           <CampaignModeSettings campaignId={campaign.id} configuration={configuration} installed={installed} />
           <CampaignSettings key={configuration.mode ?? "approve"} campaignId={campaign.id}
-            configuration={configuration} firstStart={!installed} canStart={!runPending} />
+            configuration={configuration} firstStart={!installed} canStart={!blocked && !runPending} />
         </>
       ) : <p className="notice">Campaign settings are unavailable. Check the agent workspace and reload.</p>)}
     </div>
