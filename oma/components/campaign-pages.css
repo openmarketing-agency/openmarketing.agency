@@ -946,3 +946,30 @@
   .campaign-model-summary > [data-slot="button"] { grid-column: 1 / -1; justify-self: start; }
 }
 @media (prefers-reduced-motion: reduce) { .campaign-mode-option { transition: none; } }
+
+/* Campaign tools: Composio apps to connect, then custom MCP endpoints to set up. */
+.campaign-tools { display: grid; gap: 24px; max-width: 64rem; margin-block: 20px; }
+.campaign-tools-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; }
+.campaign-tools-heading h2 { margin: 0; font-size: 1.125rem; font-weight: 650; }
+.campaign-tools-heading p, .campaign-tools-section > p, .campaign-tools-empty { max-width: 62ch; margin: 4px 0 0; color: var(--muted); font-size: 0.875rem; }
+.campaign-tools-section { display: grid; gap: 10px; padding-top: 20px; border-top: 1px solid var(--border); }
+.campaign-tools-section h3 { margin: 0; font-size: 1rem; font-weight: 650; }
+.campaign-tools-section > p { margin: 0; }
+.campaign-tools-list { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
+.campaign-tools-list li {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+  padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+}
+.campaign-tools-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-weight: 600; }
+.campaign-tools-name code { color: var(--muted); font-size: 0.8125rem; font-weight: 400; }
+.campaign-custom-mcp { display: grid; gap: 8px; }
+.campaign-custom-mcp .campaign-edit-disclosure { width: 100%; max-width: none; margin: 0; padding-inline: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.campaign-tools-section-heading { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.campaign-tools-section-heading p { max-width: 62ch; margin: 4px 0 0; color: var(--muted); font-size: 0.875rem; }
+.campaign-tools-section-heading a { color: inherit; text-decoration: underline; }
+.campaign-tools-status { color: var(--muted); font-size: 0.8125rem; }
+.campaign-tools-list li[data-state="connected"] .campaign-tools-status {
+  padding: 3px 9px; border-radius: 999px; background: var(--positive-soft); color: var(--positive); font-weight: 600;
+}
+.campaign-tools-list li[data-state="missing"] { border-color: color-mix(in srgb, var(--warning) 35%, var(--border)); }
+.campaign-tools-list li[data-state="missing"] .campaign-tools-status { color: var(--warning); font-weight: 600; }

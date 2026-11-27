@@ -1,4 +1,4 @@
-/** Checks that campaign saves clear the old Composio session, sync only the needed keys, and report partial failures. */
+/** Checks that campaign saves require custom MCP tools, clear the old Composio session, sync only the needed keys, and report partial failures. */
 
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-  changeCampaignRunState, saveCampaignConfiguration, saveCampaignMode, saveCampaignPlan, syncCampaignChatChanges,
+  changeCampaignRunState, saveCampaignConfiguration, saveCampaignCustomMcp, saveCampaignMode, saveCampaignPlan, syncCampaignChatChanges,
 } from "../lib/server/agent-workspace";
 
 test("saves a campaign's YAML settings, then POSTs only the requested credentials", async (t) => {
@@ -29,6 +29,9 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     revision: "b".repeat(64), modelId: "proxy-model", provider: "openai-api",
     baseUrl: "https://proxy.example.test", hasModelKey: true,
   };
+  const required = [{ id: "discord", name: "Discord", slug: "discord" }];
+  let integrationConfigInvalid = false;
+  let manualIntegrations: Array<{ id: string; name: string; url: string }> = [];
   let syncFailureStatus = 0;
   let deployFailureStatus = 0;
   let lifecycleState = "resumed";
@@ -48,6 +51,7 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
         campaigns: [{
           id: "seo", name: "Organic Search", description: "", playbookId: "", version: "", orchestrator: "",
           lifecycleState: currentState, installationState, agentIds: [], goals: [], plans: [], board: "",
+          requiredIntegrations: required, integrationConfigInvalid, manualIntegrations,
           configuration: { ...configuration, composioUrl: url, revision: inputRevision },
         }],
       }));
@@ -60,6 +64,11 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
     const failure = request.url?.endsWith("/sync") ? syncFailureStatus : request.url?.endsWith("/deploy") ? deployFailureStatus : 0;
     if (failure) {
       response.writeHead(failure).end(JSON.stringify({ message: "fixture-model" }));
+    } else if (request.url?.endsWith("/custom-mcp")) {
+      assert.equal(payload.integrationId, "hacker-news");
+      assert.equal(payload.revision, inputRevision);
+      manualIntegrations = [{ id: "hacker-news", name: "Hacker News", url: payload.url }];
+      response.end(JSON.stringify({ toolCount: 3 }));
     } else if (request.url?.endsWith("/lifecycle")) {
       if (payload.state === "paused") {
         response.end(JSON.stringify({ id: "seo", state: stopping ? "pausing" : "paused",
@@ -94,6 +103,17 @@ test("saves a campaign's YAML settings, then POSTs only the requested credential
   assert.ok((await saveCampaignConfiguration("seo", { ...input, baseUrl: "http://unrelated.example.test" })).error);
   assert.ok((await saveCampaignConfiguration("seo", { ...input, revision: configuration.revision })).error);
   assert.equal(requests.length, 0);
+  // Invalid tool IDs and custom MCP tools without an endpoint block saving and starting.
+  integrationConfigInvalid = true;
+  assert.match((await saveCampaignConfiguration("seo", input)).error ?? "", /unique campaign integration IDs/);
+  integrationConfigInvalid = false;
+  manualIntegrations = [{ id: "hacker-news", name: "Hacker News", url: "" }];
+  assert.match((await saveCampaignConfiguration("seo", input)).error ?? "", /Set up custom MCP in Tools for: Hacker News/);
+  assert.match((await changeCampaignRunState("seo", { revision: inputRevision, state: "resumed" })).error ?? "", /Hacker News/);
+  assert.equal(requests.length, 0);
+  const custom = { revision: inputRevision, integrationId: "hacker-news", url: "https://mcp.example.test/mcp" };
+  assert.deepEqual(await saveCampaignCustomMcp("seo", custom), { mcpToolCount: 3 });
+  assert.deepEqual(requests.splice(0), [{ method: "PUT", path: "/workspace/campaigns/seo/custom-mcp", body: custom }]);
   const saved = await saveCampaignConfiguration("seo", { ...input, composioUrl: "https://unrelated.example.test/mcp" });
   assert.equal(saved.synced, true);
   assert.ok(!JSON.stringify(saved).includes(url));

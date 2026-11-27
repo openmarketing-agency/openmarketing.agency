@@ -9,7 +9,7 @@ import { requireUser } from "@/lib/dal";
 import { approveCampaignPublication } from "@/lib/server/agent-publications";
 import { completeAgentSetup, needsAgentSetup, requireAgentSetup } from "@/lib/server/agent-setup";
 import { isProjectSetupComplete, readProjectSetup } from "@/lib/server/project-setup";
-import { changeCampaignRunState, saveCampaignPlan, syncCampaignAgents, workspaceId, approveWorkspacePublication, listWorkspacePublications, publicationRevision, brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveCampaignMode, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
+import { changeCampaignRunState, saveCampaignCustomMcp, saveCampaignPlan, syncCampaignAgents, workspaceId, approveWorkspacePublication, listWorkspacePublications, publicationRevision, brandUpdate, knowledgeUpdate, playbookUpdate, saveCampaignConfiguration, saveCampaignMode, saveStandaloneModel, saveWorkspaceRecord, WorkspaceRequestError, type CampaignConfigurationResult, type StandaloneModelResult, type WorkspaceEdit } from "@/lib/server/agent-workspace";
 
 export async function saveWorkspaceEdit(
   collection: WorkspaceEdit,
@@ -72,6 +72,12 @@ export async function saveCampaignPlanAction(id: string, _previous: CampaignConf
     revision: form.get("revision"), name: form.get("name"), description: form.get("description"),
     goals: form.getAll("goals").filter((value) => typeof value !== "string" || value.trim()),
     plans: form.getAll("plans").filter((value) => typeof value !== "string" || value.trim()),
+  }));
+}
+
+export async function saveCampaignCustomMcpAction(id: string, integrationId: string, _previous: CampaignConfigurationResult, form: FormData) {
+  return runCampaignAction(id, () => saveCampaignCustomMcp(id, {
+    integrationId, revision: form.get("revision"), url: form.get("url"),
   }));
 }
 

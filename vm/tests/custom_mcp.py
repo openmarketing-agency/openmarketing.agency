@@ -1,4 +1,4 @@
-"""Exercise the real MCP handshake and the revision-bound campaign save gate."""
+"""Exercise the real MCP handshake, the revision-bound campaign save gate, and the Composio connection check."""
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -12,8 +12,8 @@ import httpx2
 from hermes_yaml import safe_load
 
 sys.path.insert(0, "/opt/oma")
-from workspace import WorkspaceError, records, update_campaign_custom_mcp
-from custom_mcp import check_tools
+from workspace import WorkspaceError, campaign_tool_connections, records, update_campaign_custom_mcp
+from custom_mcp import check_tools, toolkit_connections
 
 URL = "https://tools.example.test/mcp"
 
@@ -119,6 +119,79 @@ class CustomMcpTest(unittest.TestCase):
             with self.assertRaisesRegex(WorkspaceError, "campaign changed"):
                 self.save()
         self.assertEqual(self.record.read_bytes(), changed)
+
+
+
+
+COMPOSIO_URL = "https://connect.composio.dev/mcp"
+
+
+class ComposioConnectionsTest(unittest.TestCase):
+    def search(self, toolkits, payload, *, error=False):
+        """Run the real MCP handshake against a fake Composio server that answers one search call."""
+        self.calls = []
+
+        def respond(request):
+            assert str(request.url) == COMPOSIO_URL
+            self.calls.append(request.headers.get("x-consumer-api-key"))
+            body = json.loads(request.content)
+            method = body["method"]
+            if method == "notifications/initialized":
+                return httpx2.Response(202)
+            if method == "initialize":
+                result = {"protocolVersion": body["params"]["protocolVersion"],
+                          "serverInfo": {"name": "composio", "version": "1"}, "capabilities": {"tools": {}}}
+            elif method == "tools/list":
+                # The MCP client lists tools to validate a call's result.
+                result = {"tools": [{"name": "COMPOSIO_SEARCH_TOOLS", "inputSchema": {"type": "object"}}]}
+            else:
+                assert method == "tools/call" and body["params"]["name"] == "COMPOSIO_SEARCH_TOOLS", body
+                self.queries = body["params"]["arguments"]["queries"]
+                result = {"content": [{"type": "text", "text": json.dumps(payload)}], "isError": error}
+            return httpx2.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": result})
+
+        return toolkit_connections(COMPOSIO_URL, {"x-consumer-api-key": "ck_fixture"}, toolkits,
+                                   transport=httpx2.MockTransport(respond))
+
+    def test_reads_active_connections_from_the_search_tool(self):
+        payload = {"successful": True, "data": {"toolkit_connection_statuses": [
+            {"toolkit": "github", "has_active_connection": True},
+            {"toolkit": "slack", "has_active_connection": False},
+            {"toolkit": "notion", "has_active_connection": True},
+        ]}}
+        self.assertEqual(self.search(["slack", "github"], payload), {"github": True, "slack": False})
+        self.assertEqual(set(self.calls), {"ck_fixture"})
+        self.assertEqual(len(self.queries), 2)
+        self.assertEqual(toolkit_connections(COMPOSIO_URL, {}, []), {})
+
+    def test_failures_do_not_reflect_the_response(self):
+        for payload, error in (({"successful": False, "error": "secret-detail"}, False), ({"data": {}}, True)):
+            with self.assertRaisesRegex(Exception, "Couldn’t check Composio connections") as caught:
+                self.search(["github"], payload, error=error)
+            self.assertNotIn("secret-detail", str(caught.exception))
+
+    def test_endpoint_uses_the_default_agent_server_and_profile_key(self):
+        temporary = TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        home = Path(temporary.name)
+        root = home / "oma"
+        campaign = root / "campaigns" / "launch" / "config.yaml"
+        campaign.parent.mkdir(parents=True)
+        campaign.write_text("id: launch\nname: Launch\nintegrations: [github, hacker-news]\n", encoding="utf-8")
+        agent = root / "agents" / "default" / "config.yaml"
+        agent.parent.mkdir(parents=True)
+        agent.write_text("id: default\nname: Default\n", encoding="utf-8")
+        self.assertEqual(campaign_tool_connections(root, "launch"), {"configured": False, "connections": {}})
+        agent.write_text("id: default\nname: Default\nmcp_servers:\n  composio:\n    url: " + COMPOSIO_URL
+                         + "\n    headers:\n      x-api-key: ${COMPOSIO_API_KEY}\n", encoding="utf-8")
+        self.assertEqual(campaign_tool_connections(root, "launch"), {"configured": False, "connections": {}})
+        (home / ".env").write_text("COMPOSIO_API_KEY=ak_fixture\n", encoding="utf-8")
+        with patch("workspace.toolkit_connections", return_value={}) as check:
+            self.assertEqual(campaign_tool_connections(root, "launch"),
+                             {"configured": True, "connections": {"github": False}})
+        check.assert_called_once_with(COMPOSIO_URL, {"x-api-key": "ak_fixture"}, ["github"])
+        with patch("workspace.toolkit_connections", return_value={"github": True}):
+            self.assertEqual(campaign_tool_connections(root, "launch")["connections"], {"github": True})
 
 
 if __name__ == "__main__":
