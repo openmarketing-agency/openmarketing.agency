@@ -105,6 +105,37 @@ test("OpenUI uses only offered measurements with matching chart labels and value
   assert.throws(() => validateAnalyticsProgram(text.replace(`${field.id}.labels`, `${other.id}.labels`), [textField, other]), /same measurement ID/);
 });
 
+test("OpenUI drops a stray note column and names what the model got wrong", () => {
+  const published = { id: "m92fe89cd762bf7a3", source: "oma-publications", account: "social", metric: "published",
+    unit: "count", numeric: true, path: [] };
+  const drafts = { ...published, id: "m2cbb9af523d59ef4", metric: "drafts_created" };
+  const field = (id: string) => `activity.measurements.${id}`;
+  // A model reply that added the observation note as a seventh table column.
+  const reply = [
+    "root = Dashboard([filters, overview])",
+    '$dateRange = "7d"',
+    observationQueryStatement,
+    'filters = FilterBar([SelectFilter($dateRange, [{value: "7d", label: "Last 7 days"}, {value: "28d", label: "Last 28 days"}], "Observation period")])',
+    'overview = Section("Campaign observations", [summary, measurements, records])',
+    `summary = Kpis([Kpi("Published (latest)", ${field(published.id)}.latest, "number", null, null, "Single observation"), Kpi("Drafts created (latest)", ${field(drafts.id)}.latest, "number")])`,
+    `measurements = Row([Card("Published by observation", [Bars(${field(published.id)}.labels, [Series("Published", ${field(published.id)}.values)], "number")], "half", ${field(published.id)}.note)], 320)`,
+    'records = Row([Card("Saved observations", [Table([Column("Source", activity.observations.source, "primary"), Column("Account", activity.observations.account, "text"), Column("Metric", activity.observations.metric, "text"), Column("Value", activity.observations.value, "text"), Column("Period", activity.observations.period, "text"), Column("Dimensions", activity.observations.dimensions, "text"), Column("Note", activity.observations.note, "text")])], "full", activity.observations.note)], 420)',
+  ].join("\n");
+  const repaired = validateAnalyticsProgram(reply, [published, drafts]);
+  assert.ok(!repaired.source.includes('Column("Note"') && repaired.source.includes('"text")])], "full", activity.observations.note)'));
+  assert.deepEqual(repaired.measurementFields, [published, drafts]);
+
+  // Its retry kept the columns but dropped the table card's note subtitle.
+  const noSubtitle = repaired.source.replace('"full", activity.observations.note)', '"full")');
+  assert.throws(() => validateAnalyticsProgram(noSubtitle, [published, drafts]), /activity\.observations\.note as the fourth argument/);
+  assert.throws(() => validateAnalyticsProgram(repaired.source.replace(', Column("Account", activity.observations.account, "text")', ""),
+    [published, drafts]), /missing observation table columns: activity\.observations\.account\./);
+  assert.throws(() => validateAnalyticsProgram(repaired.source, [published]),
+    /Kpi shows activity\.measurements\.m2cbb9af523d59ef4\.latest, but m2cbb9af523d59ef4 is not one of the measurement_fields/);
+  assert.throws(() => validateAnalyticsProgram(repaired.source.replace(`${field(drafts.id)}.latest`, "activity.observations.note"),
+    [published, drafts]), /Kpi shows activity\.observations\.note, but notes are only card subtitles/);
+});
+
 test("generation details show the saved inputs and escape agent-generated source", () => {
   const markup = renderToStaticMarkup(createElement(AnalyticsGenerationDetails, {
     report: {

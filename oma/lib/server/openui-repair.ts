@@ -49,6 +49,25 @@ export function trimArguments(source: string, limits: Record<string, number>) {
   return output + source.slice(index);
 }
 
+/** Remove each call of one component whose trimmed arguments match, along with the list comma beside it. */
+export function dropCalls(source: string, name: string, drop: (args: string[]) => boolean) {
+  let output = source;
+  const call = new RegExp(`\\b${name}\\(`, "g");
+  for (let match = call.exec(output); match; match = call.exec(output)) {
+    if (insideString(output, match.index)) continue;
+    const args = splitArguments(output, match.index + match[0].length);
+    if (!args || !drop(args.parts.map((part) => part.trim()))) continue;
+    let start = match.index;
+    let end = args.end + 1;
+    const after = /^\s*,\s*/.exec(output.slice(end));
+    if (after) end += after[0].length;
+    else start -= /,\s*$/.exec(output.slice(0, start))?.[0].length ?? 0;
+    output = output.slice(0, start) + output.slice(end);
+    call.lastIndex = start;
+  }
+  return output;
+}
+
 function insideString(source: string, position: number) {
   let quoted = false;
   for (let i = 0; i < position; i++) {
