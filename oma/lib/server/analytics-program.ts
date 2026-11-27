@@ -5,7 +5,7 @@ import { createParser, generateSystemPrompt, parseExpression, split, tokenize, w
 import { analyticsDateRange, observationColumns, observationQueryTool } from "../analytics";
 import { observationDashboard, observationQueryStatement } from "../observation-dashboard";
 import spec from "./analytics-library.spec.json";
-import { dropUndefinedReferences, structureProblem, trimArguments } from "./openui-repair";
+import { dropCalls, dropUndefinedReferences, structureProblem, trimArguments } from "./openui-repair";
 import type { MeasurementField } from "./campaign-observations";
 
 const library = spec as LibrarySpec;
@@ -63,8 +63,11 @@ function binding(node: ASTNode | undefined, dataset: keyof typeof fields, allowe
 export function validateAnalyticsProgram(value: string, measurements: MeasurementField[] = []) {
   const fenced = /^\s*```(?:openui(?:-lang)?)?\s*\n([\s\S]*?)\n```\s*$/i.exec(value);
   // The live query has exactly one valid form, so restore it when a model fills in defaults or changes the refresh.
-  const source = dropUndefinedReferences(trimArguments((fenced ? fenced[1] : value).trim()
-    .replace(new RegExp(`^${queryName}\\s*=\\s*Query\\(\\s*"${observationQueryTool}".*$`, "m"), observationQueryStatement), maxArgs), parser);
+  const trimmed = trimArguments((fenced ? fenced[1] : value).trim()
+    .replace(new RegExp(`^${queryName}\\s*=\\s*Query\\(\\s*"${observationQueryTool}".*$`, "m"), observationQueryStatement), maxArgs);
+  // The note is one string for the table subtitle, but models often add it as a seventh column too.
+  const source = dropUndefinedReferences(dropCalls(trimmed, "Column",
+    ([, value]) => value === `${queryName}.observations.note`), parser);
   if (!source || source.length > 16_000 || /\]\]>openui:|<script/i.test(source)) {
     throw new Error("Return a short OpenUI Lang dashboard without scripts.");
   }
@@ -108,6 +111,21 @@ export function validateAnalyticsProgram(value: string, measurements: Measuremen
     return field.id;
   }
 
+  /** Name the exact binding a component got wrong and what it accepts instead. */
+  function checkBinding(node: ASTNode | undefined, dataset: keyof typeof fields, allowed: string[], component: string, expected: string) {
+    const field = binding(node, dataset, allowed);
+    if (field) return field;
+    const path = expression(node);
+    const [, id, key] = /^activity\.measurements\.([^.]+)\.(\w+)$/.exec(path ?? "") ?? [];
+    const offered = id ? offeredFields.get(id) : undefined;
+    const shown = !path ? "a fixed value instead of query data"
+      : id && !offered ? `${path}, but ${id} is not one of the measurement_fields IDs in the user message`
+      : offered && !offered.numeric && (key === "latest" || key === "values") ? `${path}, but ${id} is not numeric, so it has no .${key}`
+      : path.endsWith(".note") ? `${path}, but notes are only card subtitles (the fourth Card argument)`
+      : path;
+    throw new Error(`${component} shows ${shown}. Bind displayed values directly to ${expected}.`);
+  }
+
   for (const statement of split(tokenize(source))) {
     if (statement.id === queryName) continue;
     walkAST(parseExpression(statement.tokens), (node) => {
@@ -118,7 +136,7 @@ export function validateAnalyticsProgram(value: string, measurements: Measuremen
       }
       if (node.name === "Bars") {
         const id = measurementBinding(node.args[0], ["labels"]);
-        if (!id) checkBinding(node.args[0], "sources", ["labels"]);
+        if (!id) checkBinding(node.args[0], "sources", ["labels"], "Bars", "activity.measurements.<id>.labels or activity.sources.labels");
         const series = node.args[1];
         if (series?.k !== "Arr" || (id && series.els.length !== 1) || !series.els.length ||
             !series.els.every((item) => item.k === "Comp" && item.name === "Series" && (id
@@ -128,10 +146,14 @@ export function validateAnalyticsProgram(value: string, measurements: Measuremen
       }
       if (node.name === "Kpi" || node.name === "Stat") {
         const stat = node.args[node.name === "Kpi" ? 1 : 0];
-        if (!measurementBinding(stat, ["latest"])) checkBinding(stat, "sources", ["total"]);
+        if (!measurementBinding(stat, ["latest"])) {
+          checkBinding(stat, "sources", ["total"], node.name, "activity.measurements.<id>.latest or activity.sources.total");
+        }
       }
       if (node.name === "Series") {
-        if (!measurementBinding(node.args[1], ["values"])) checkBinding(node.args[1], "sources", ["counts"]);
+        if (!measurementBinding(node.args[1], ["values"])) {
+          checkBinding(node.args[1], "sources", ["counts"], "Series", "activity.measurements.<id>.values or activity.sources.counts");
+        }
       }
       if (node.name === "Table") {
         const columns = node.args[0]?.k === "Arr" ? node.args[0].els : [];
@@ -152,7 +174,7 @@ export function validateAnalyticsProgram(value: string, measurements: Measuremen
         const display = measurementBinding(node.args[1], ["display"]);
         const labels = measurementBinding(node.args[1], ["labels"]);
         const count = !field && !numeric && !display && !labels &&
-          checkBinding(node.args[1], "sources", ["labels", "counts"]) === "counts";
+          checkBinding(node.args[1], "sources", ["labels", "counts"], "Column", columnBindings) === "counts";
         if (field) observationFields.add(field);
         const allowed = count || numeric ? ["number", "bar"] : ["primary", "text"];
         const format = node.args[2];
@@ -164,7 +186,8 @@ export function validateAnalyticsProgram(value: string, measurements: Measuremen
         const subtitle = node.args[3];
         if (binding(subtitle, "observations", ["note"])) observationsNote = true;
         else if (subtitle?.k === "Member" && !measurementBinding(subtitle, ["note"])) {
-          checkBinding(subtitle, "sources", ["note"]);
+          checkBinding(subtitle, "sources", ["note"], "Card subtitle",
+            "activity.observations.note, activity.measurements.<id>.note, activity.sources.note, or a plain string");
         }
       }
       if (node.name === "SelectFilter") {
@@ -180,8 +203,15 @@ export function validateAnalyticsProgram(value: string, measurements: Measuremen
       }
     });
   }
-  if (filters !== 1 || !observationsNote || observationFields.size !== observationColumns.length) {
-    throw new Error("Show the date filter and every observation column. Use activity.observations.note as the table card subtitle.");
+  if (filters !== 1) {
+    throw new Error(`Add exactly one SelectFilter for $dateRange with the 7d and 28d options from the example (found ${filters}).`);
+  }
+  const missing = observationColumns.filter((column) => !observationFields.has(column));
+  if (missing.length) {
+    throw new Error(`Add the missing observation table columns: ${missing.map((column) => `${queryName}.observations.${column}`).join(", ")}.`);
+  }
+  if (!observationsNote) {
+    throw new Error("Pass activity.observations.note as the fourth argument (subtitle) of the Card that holds the observations table, as in the example.");
   }
   if (offeredFields.size && !usesMeasurement) {
     throw new Error("Show actual values from at least one of the measurement_fields in the user message.");
@@ -189,8 +219,13 @@ export function validateAnalyticsProgram(value: string, measurements: Measuremen
   return { source, measurementFields: [...usedFields] };
 }
 
-function checkBinding(node: ASTNode | undefined, dataset: keyof typeof fields, allowed: string[]) {
-  const field = binding(node, dataset, allowed);
-  if (!field) throw new Error("Bind displayed values directly to activity query fields.");
-  return field;
+const columnBindings = `activity.observations.<${observationColumns.join("|")}>, ` +
+  "activity.measurements.<id>.labels, .display, or .values, or activity.sources.labels or .counts";
+
+/** Spell out a reference such as activity.observations.note, or undefined for anything else. */
+function expression(node: ASTNode | undefined): string | undefined {
+  if (node?.k === "Ref") return node.n;
+  if (node?.k !== "Member") return;
+  const object = expression(node.obj);
+  return object && `${object}.${node.field}`;
 }
